@@ -742,11 +742,14 @@ datasets:
     trait_stat: 1 # ('mean', 'std', 'median', 'q05', 'q95', 'count') (bands start at 1)
     traits:
       - 4 # Stem specific density (SSD) or wood density (stem dry mass per stem fresh volume)
+      - 4 # Stem specific density (SSD) or wood density (stem dry mass per stem fresh volume)
       - 6 # Root rooting depth
+      - 11 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is included or excluded)
       - 11 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is included or excluded)
       - 13 # Leaf carbon (C) content per leaf dry mass
       - 14 # Leaf nitrogen (N) content per leaf dry mass
       - 15 # Leaf phosphorus (P) content per leaf dry mass
+      - 18 # Plant height
       - 18 # Plant height
       - 21 # Stem diameter
       - 26 # Seed dry mass
@@ -757,6 +760,7 @@ datasets:
       - 55 # Leaf dry mass (single leaf)
       - 78 # Leaf nitrogen (N) isotope signature (delta 15N)
       - 95 # Seed germination rate (germination efficiency)
+      - 138 # Seed number per reproduction unit
       - 138 # Seed number per reproduction unit
       - 144 # Leaf length
       - 145 # Leaf width
@@ -772,6 +776,7 @@ datasets:
       - 1080 # Root length per root dry mass (specific root length, SRL)
       - 3112 # Leaf area (in case of compound leaves: leaf, undefined if petiole in- or excluded)
       - 3113 # Leaf area (in case of compound leaves: leaflet, undefined if petiole is in- or excluded)
+      - 3114 # Leaf area (in case of compound leaves: undefined if leaf or leaflet, undefined if petiole is in- or excluded)
       - 3114 # Leaf area (in case of compound leaves: undefined if leaf or leaflet, undefined if petiole is in- or excluded)
       - 3120 # Leaf water content per leaf dry mass (not saturated)
 
@@ -821,10 +826,11 @@ trydb:
     pfts: try_pft_v1.csv
   interim:
     dir: try
+    extracted_csv: mean_gf_bt_sp.csv
     quantile_range: [0.005, 0.995]  # Use [0.005, 0.995] for TRY5. No filtering needed for TRY6
     transform: null # "log", "power" (yeo-johnson), null (no transformation)
     already_norm: null
-    filtered: traits.parquet
+    filtered: mean_gf_bt_sp_filt.parquet
     transformer_fn: power_transformer.pkl
 
 biomes: # Used for model analysis by biome
