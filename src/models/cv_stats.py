@@ -29,7 +29,6 @@ from src.utils.trait_utils import get_trait_number_from_id
 
 TMP_DIR = Path("tmp")
 
-
 @delayed
 def generate_fold_obs_vs_pred(fold_dir: Path, xy: pd.DataFrame) -> pd.DataFrame:
     """Process a single fold of data."""
