@@ -1,9 +1,12 @@
 """Utility functions for Dask. For Dask-CUDA, see src/utils/dask_cuda_utils.py."""
 
+import os
+import signal
 from typing import Any
 
 import dask.dataframe as dd
 import pandas as pd
+from dask.distributed import TimeoutError
 from distributed import Client, LocalCluster
 from distributed.utils import TimeoutError
 from src.conf.environment import log
