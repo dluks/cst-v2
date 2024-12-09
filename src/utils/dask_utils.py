@@ -2,6 +2,7 @@
 
 import dask.dataframe as dd
 import pandas as pd
+from dask.distributed import TimeoutError
 from distributed import Client, LocalCluster
 from distributed.utils import TimeoutError
 
