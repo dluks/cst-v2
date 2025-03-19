@@ -519,6 +519,11 @@ def train_models(
     dry_run_text = set_dry_run_text(dry_run)
     suppress_dask_logging()
 
+    valid_trait_sets = ("splot", "gbif", "splot_gbif")
+
+    if trait_sets is None:
+        trait_sets = valid_trait_sets
+
     train_opts = TrainOptions(sample, debug, resume, dry_run)
 
     log.info("Loading data...%s", dry_run_text)
@@ -552,7 +557,7 @@ def train_models(
                     TraitSetInfo(
                         trait_set, label_col, latest_run / trait_set
                     ).is_full_model_complete
-                    for trait_set in ["splot", "splot_gbif", "gbif"]
+                    for trait_set in trait_sets
                 ]
 
                 if all(completed):
@@ -584,16 +589,9 @@ def train_models(
                 xy = dd.read_parquet(tmp_xy_path).compute().reset_index(drop=True)
 
         trait_trainer = TraitTrainer(xy, label_col, train_opts)
-
-        valid_trait_sets = ("splot", "gbif", "splot_gbif")
-
-        if trait_sets is None:
-            trait_sets = valid_trait_sets
-
         for ts in trait_sets:
             if ts not in valid_trait_sets:
                 raise ValueError(f"Invalid trait set: {ts}")
-
             if ts == "splot":
                 trait_trainer.train_splot()
             elif ts == "gbif":
