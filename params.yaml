@@ -9,7 +9,7 @@ container:
   image: "cit-sci-traits.sif"
 
 model_res: "1km"
-PFT: "Shrub_Tree_Grass"
+PFT: "Shrub_Tree"
 random_seed: 42
 base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
 target_resolution: 1000 # Target resolution for model training
@@ -925,7 +925,7 @@ train:
   Y:
     fn: Y.parquet
   missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values
-  trait_sets: ["splot", "gbif", "splot_gbif"]
+  trait_sets: ["splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
   cv_splits:
     range_stat: "mean"
