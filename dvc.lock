@@ -46,12 +46,19 @@ stages:
           interim:
             dir: try
             quantile_range:
+            transform: power
+            already_norm:
             filtered: traits.parquet
+            transformer_fn: power_transformer.pkl
     outs:
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      size: 2163
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: 546b4d12b8c75663f4e07d2a47ad828e
-      size: 18025426
+      md5: 1c0ff1ba06e5a8ce7de4590483280220
+      size: 6079896
   match_gbif_pfts:
     cmd: python src/data/match_gbif_pfts.py
     deps:
@@ -66,8 +73,8 @@ stages:
       size: 2232209
     - path: src/data/match_gbif_pfts.py
       hash: md5
-      md5: 6eb77a3b1d810e69a28df4ddcb0b5450
-      size: 2541
+      md5: 3df32335940ce1cd561f810db81ebc7d
+      size: 2556
     params:
       params.yaml:
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
@@ -77,8 +84,8 @@ stages:
     outs:
     - path: data/interim/gbif/gbif_pfts.parquet
       hash: md5
-      md5: c2cf56ca2bedf888ff4c99014a82320c.dir
-      size: 4473036358
+      md5: 3588c721bb421ef1f67c9a9c00b72c49.dir
+      size: 4026649735
       nfiles: 159
   extract_splot:
     cmd: python src/data/extract_splot.py
@@ -175,3 +182,127 @@ stages:
       hash: md5
       md5: a5b2d37a18df4f9d1ebcc60484d413d0
       size: 529921831
+  build_gbif_maps:
+    cmd: python src/data/build_gbif_maps.py
+    deps:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: 3588c721bb421ef1f67c9a9c00b72c49.dir
+      size: 4026649735
+      nfiles: 159
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 1c0ff1ba06e5a8ce7de4590483280220
+      size: 6079896
+    - path: src/data/build_gbif_maps.py
+      hash: md5
+      md5: 58efa57b08c69d098fdcb0207b7b4252
+      size: 4065
+    params:
+      params.yaml:
+        PFT: Shrub_Tree
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        gbif.interim.dir: gbif
+        model_res: 1km
+        target_resolution: 1000
+        trydb.interim.dir: try
+        trydb.interim.filtered: traits.parquet
+    outs:
+    - path: data/interim/gbif/trait_maps/Shrub_Tree/1km
+      hash: md5
+      md5: ede3cccffc02425b20e53a22d9df5a01.dir
+      size: 2569240781
+      nfiles: 31
+  build_splot_maps:
+    cmd: python src/data/build_splot_maps.py
+    deps:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 1c0ff1ba06e5a8ce7de4590483280220
+      size: 6079896
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/build_splot_maps.py
+      hash: md5
+      md5: c8c6b1d35dfeb304bae62f2e6710b03c
+      size: 9272
+    params:
+      params.yaml:
+        PFT: Shrub_Tree
+        model_res: 1km
+        splot.interim:
+          dir: splot
+          extracted: extracted
+          traits: trait_maps
+        target_resolution: 1000
+    outs:
+    - path: data/interim/splot/trait_maps/Shrub_Tree/1km
+      hash: md5
+      md5: da0669886e7068b0944733e43decc7cf.dir
+      size: 1023998799
+      nfiles: 31
+  build_y:
+    cmd: python src/features/build_y.py
+    deps:
+    - path: data/interim/gbif/trait_maps/Shrub_Tree/1km
+      hash: md5
+      md5: ede3cccffc02425b20e53a22d9df5a01.dir
+      size: 2569240781
+      nfiles: 31
+    - path: data/interim/splot/trait_maps/Shrub_Tree/1km
+      hash: md5
+      md5: da0669886e7068b0944733e43decc7cf.dir
+      size: 1023998799
+      nfiles: 31
+    - path: src/features/build_y.py
+      hash: md5
+      md5: 5c636d0f1fe3fb3afd2d61c9b056b8cd
+      size: 4335
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 614
+        - 1080
+        - 3106
+        - 3113
+        - 3117
+        - 3120
+    outs:
+    - path: data/features/Shrub_Tree/1km/Y.parquet
+      hash: md5
+      md5: 559690c5a075fabd7c0aa52b97bec88c.dir
+      size: 421443528
+      nfiles: 44
