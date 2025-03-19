@@ -12,7 +12,11 @@ from sklearn.preprocessing import PowerTransformer
 from src.conf.conf import get_config
 from src.conf.environment import log
 from src.utils.df_utils import filter_outliers
-from src.utils.trait_utils import clean_species_name, get_trait_number_from_id
+from src.utils.trait_utils import (
+    clean_species_name,
+    filter_pft,
+    get_trait_number_from_id,
+)
 
 
 def _filter_if_specified(
@@ -51,6 +55,8 @@ def _power_transform(df: pd.DataFrame, transformer_fn: Path) -> pd.DataFrame:
     pt = PowerTransformer(method="yeo-johnson")
     df_t = pt.fit_transform(df)
 
+    if transformer_fn.exists():
+        transformer_fn.unlink()
     with open(transformer_fn, "wb") as f:
         pickle.dump(pt, f)
 
@@ -87,26 +93,51 @@ def main(cfg: ConfigBox = get_config()) -> None:
     try_prep_dir = Path(cfg.interim_dir, cfg.trydb.interim.dir)
 
     log.info("Extracting raw TRY traits data...")
-    with zipfile.ZipFile(try_raw_dir / cfg.trydb.raw.zip, "r") as zip_ref:
+    with zipfile.ZipFile(try_raw_dir / cfg.trydb.raw.zip, "r") as zip_ref:  # noqa: SIM117
         with zip_ref.open(cfg.trydb.raw.zipfile_csv) as zf:
             if cfg.trydb.raw.zipfile_csv.endswith(".zip"):
-                with zipfile.ZipFile(zf, "r") as nested_zip_ref:
+                with zipfile.ZipFile(zf, "r") as nested_zip_ref:  # noqa: SIM117
                     with nested_zip_ref.open(nested_zip_ref.namelist()[0]) as csvfile:
                         traits = pd.read_csv(csvfile, encoding="latin-1", index_col=0)
             else:
                 traits = pd.read_csv(zf, encoding="latin-1", index_col=0)
 
     log.info("Getting species mean trait values...")
-    trait_cols = [col for col in traits.columns if col.startswith("X")]
+    traits = traits.pipe(standardize_trait_ids)
+    valid_traits = [f"X{t}" for t in cfg.datasets.Y.traits]
+    trait_cols = [
+        col for col in traits.columns if col.startswith("X") and col in valid_traits
+    ]
+
     keep_cols = ["Species"] + trait_cols
     mean_filt_traits = (
         traits[keep_cols]
         .pipe(_filter_if_specified, trait_cols, cfg.trydb.interim.quantile_range)
-        .pipe(standardize_trait_ids)
+        # .pipe(standardize_trait_ids)
         .pipe(clean_species_name, "Species", "speciesname")
         .drop(columns=["Species"])
         .groupby("speciesname")
         .mean()
+    )
+
+    # Match with PFTs
+    log.info("Filtering by plant functional types...")
+    log.info("Loading PFTs...")
+    pfts = pd.read_parquet(Path(cfg.raw_dir, cfg.trydb.raw.pfts))
+    pfts = (
+        pfts.drop(columns=["AccSpeciesID"])
+        .dropna(subset=["AccSpeciesName"])
+        .pipe(clean_species_name, "AccSpeciesName", "speciesname")
+        .drop(columns=["AccSpeciesName"])
+        .drop_duplicates(subset=["speciesname"])
+        .pipe(filter_pft, cfg.PFT)
+        .set_index("speciesname")
+    )
+
+    log.info("Matching trait data with filtered PFTs...")
+    mean_filt_traits = (
+        mean_filt_traits.join(pfts, how="inner")
+        .drop(columns=["pft"])
         .pipe(
             _transform,
             cfg.trydb.interim.transform,
@@ -116,6 +147,9 @@ def main(cfg: ConfigBox = get_config()) -> None:
     )
 
     log.info("Saving filtered and mean trait values...")
+    out_fn = try_prep_dir / cfg.trydb.interim.filtered
+    if out_fn.exists():
+        out_fn.unlink()
     mean_filt_traits.to_parquet(
         try_prep_dir / cfg.trydb.interim.filtered, index=False, compression="zstd"
     )
