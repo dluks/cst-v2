@@ -368,12 +368,13 @@ geos:
     calc_spatial_autocorr:
       n_workers: 1
       n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
       gpu_ids: [0, 1]
     skcv_splits:
       n_workers: 50
       threads_per_worker: 1
     aoa:
-      device_ids: [0, 2, 3]
+      device_ids: [0, 1]
       predict_sample: 0.5
       splot:
         chunked_dist: false
