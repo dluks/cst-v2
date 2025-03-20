@@ -300,3 +300,54 @@ stages:
       md5: 559690c5a075fabd7c0aa52b97bec88c.dir
       size: 421443528
       nfiles: 44
+  calculate_spatial_autocorr:
+    cmd: python src/features/calc_spatial_autocorr_gpu.py
+    deps:
+    - path: data/features/Shrub_Tree/1km/Y.parquet
+      hash: md5
+      md5: 559690c5a075fabd7c0aa52b97bec88c.dir
+      size: 421443528
+      nfiles: 44
+    - path: src/features/calc_spatial_autocorr.py
+      hash: md5
+      md5: 66dbc61b038a0d82f63d1dd1ffd298ce
+      size: 10631
+    params:
+      params.yaml:
+        calc_spatial_autocorr:
+          use_existing: false
+        train.spatial_autocorr: spatial_autocorr.parquet
+    outs:
+    - path: data/features/Shrub_Tree/1km/spatial_autocorr.parquet
+      hash: md5
+      md5: 5de834538a6d27f68383263cc302c5ac
+      size: 7472
+  build_cv_splits:
+    cmd: python src/features/skcv_splits.py -o
+    deps:
+    - path: data/features/Shrub_Tree/1km/Y.parquet
+      hash: md5
+      md5: 559690c5a075fabd7c0aa52b97bec88c.dir
+      size: 421443528
+      nfiles: 44
+    - path: data/features/Shrub_Tree/1km/spatial_autocorr.parquet
+      hash: md5
+      md5: 5de834538a6d27f68383263cc302c5ac
+      size: 7472
+    - path: src/features/skcv_splits.py
+      hash: md5
+      md5: a17ab9d0efe98b372ddc6042a074cd91
+      size: 10734
+    params:
+      params.yaml:
+        train.cv_splits:
+          range_stat: median
+          n_splits: 5
+          n_sims: 200
+          dir: skcv_splits
+    outs:
+    - path: data/features/Shrub_Tree/1km/skcv_splits
+      hash: md5
+      md5: 23348efe6e9abe25a995ce5afb6b71ba.dir
+      size: 154174708
+      nfiles: 31
