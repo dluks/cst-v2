@@ -27,8 +27,8 @@ stages:
       size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: c918e38e1c0d49fbac88a6308042cdc2
-      size: 5918
+      md5: 4591adf83bc478f9c90d6357b8e0f852
+      size: 5673
     params:
       params.yaml:
         trydb:
@@ -36,12 +36,6 @@ stages:
             dir: TRY_6_gapfilled_for_distribution
             zip: TRY6_gapfilled_for_distribution.zip
             zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
-            already_norm:
-            - 13
-            - 47
-            - 95
-            - 78
-            - 4
             pfts: try_pft_v2.parquet
           interim:
             dir: try
