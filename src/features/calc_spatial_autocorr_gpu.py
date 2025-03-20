@@ -101,7 +101,10 @@ def add_utm(df: pd.DataFrame, chunksize: int = 10000) -> pd.DataFrame:
 
 
 def spherical_model(
-    h: torch.Tensor, nugget: float, sill: float, range_param: float
+    h: torch.Tensor,
+    nugget: float | torch.Tensor,
+    sill: float | torch.Tensor,
+    range_param: float | torch.Tensor,
 ) -> torch.Tensor:
     """
     Compute the spherical semivariogram model.
@@ -541,7 +544,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
     ]
 
     log.info("Computing range statistics for all traits...")
-    ranges_df = pd.concat(compute(*results), ignore_index=True)
+    ranges_df = pd.concat(compute(*results), ignore_index=True)  # type: ignore
 
     close_dask(client, cluster)
 

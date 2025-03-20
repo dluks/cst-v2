@@ -308,7 +308,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
     ]
 
     log.info("Computing range statistics for all traits...")
-    ranges_df = pd.concat(compute(*results), ignore_index=True)
+    ranges_df = pd.concat(compute(*results), ignore_index=True)  # type: ignore
 
     close_dask(client, cluster)
 
