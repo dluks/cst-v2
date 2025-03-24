@@ -14,29 +14,107 @@ print_error() {
     echo -e "${RED}[✗] $1${NC}"
 }
 
+# Function to print usage
+print_usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  --all           Run all steps"
+    echo "  --step1         Test Singularity container build"
+    echo "  --step2         Test requirements in container"
+    echo "  --step3         Test SLURM task creation"
+    echo "  --step4         Test train_models with dry-run"
+    echo "  --step5         Test train_models with single trait"
+    echo "  --step6         Test train_models with multiple traits"
+    echo "  -h, --help      Show this help message"
+    exit 1
+}
+
+# Parse command line arguments
+if [ $# -eq 0 ]; then
+    print_usage
+fi
+
+# Initialize flags
+RUN_ALL=false
+RUN_STEP1=false
+RUN_STEP2=false
+RUN_STEP3=false
+RUN_STEP4=false
+RUN_STEP5=false
+RUN_STEP6=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --all)
+            RUN_ALL=true
+            shift
+            ;;
+        --step1)
+            RUN_STEP1=true
+            shift
+            ;;
+        --step2)
+            RUN_STEP2=true
+            shift
+            ;;
+        --step3)
+            RUN_STEP3=true
+            shift
+            ;;
+        --step4)
+            RUN_STEP4=true
+            shift
+            ;;
+        --step5)
+            RUN_STEP5=true
+            shift
+            ;;
+        --step6)
+            RUN_STEP6=true
+            shift
+            ;;
+        -h|--help)
+            print_usage
+            ;;
+        *)
+            echo "Unknown option: $1"
+            print_usage
+            ;;
+    esac
+done
+
 # Create a temporary directory for the container
 TMP_DIR=$(mktemp -d)
 cd $TMP_DIR
 
 # Copy the Singularity definition file and project files
-cp /home/dl1070/projects/cit-sci-traits/cit-sci-traits.def .
-cp -r /home/dl1070/projects/cit-sci-traits/* .
+cp $HOME/projects/cit-sci-traits/cit-sci-traits.def .
+cp -r $HOME/projects/cit-sci-traits/* .
 
-# Step 1: Test Singularity container build
-echo "Step 1: Testing Singularity container build..."
-if singularity build --force cit-sci-traits-test.sif cit-sci-traits.def; then
-    print_status "Singularity container built successfully"
-else
-    print_error "Singularity container build failed"
+# Function to clean up and exit
+cleanup_and_exit() {
     cd -
     rm -rf $TMP_DIR
-    exit 1
+    exit $1
+}
+
+# Step 1: Test Singularity container build
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP1" = true ]; then
+    echo "Step 1: Testing Singularity container build..."
+    if singularity build --force cit-sci-traits-test.sif cit-sci-traits.def; then
+        print_status "Singularity container built successfully"
+    else
+        print_error "Singularity container build failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Step 2: Test requirements in container
-echo -e "\nStep 2: Testing requirements in container..."
-# Create a Python script to test imports
-cat > test_imports.py << 'EOF'
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP2" = true ]; then
+    echo -e "\nStep 2: Testing requirements in container..."
+    # Create a Python script to test imports
+    cat > test_imports.py << 'EOF'
 def test_imports():
     # Test core dependencies
     import autogluon
@@ -67,19 +145,19 @@ if __name__ == "__main__":
     test_imports()
 EOF
 
-if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif python test_imports.py; then
-    print_status "Requirements check passed"
-else
-    print_error "Requirements check failed"
-    cd -
-    rm -rf $TMP_DIR
-    exit 1
+    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif python test_imports.py; then
+        print_status "Requirements check passed"
+    else
+        print_error "Requirements check failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Step 3: Test SLURM task creation
-echo -e "\nStep 3: Testing SLURM task creation..."
-# Create a test SLURM script with minimal resources
-cat > test_slurm.slurm << 'EOF'
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP3" = true ]; then
+    echo -e "\nStep 3: Testing SLURM task creation..."
+    # Create a test SLURM script with minimal resources
+    cat > test_slurm.slurm << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=test_slurm
 #SBATCH --output=test_slurm_%j.log
@@ -107,50 +185,48 @@ cd -
 rm -rf $TMP_DIR
 EOF
 
-if sbatch test_slurm.slurm; then
-    print_status "SLURM task creation successful"
-else
-    print_error "SLURM task creation failed"
-    cd -
-    rm -rf $TMP_DIR
-    exit 1
+    if sbatch test_slurm.slurm; then
+        print_status "SLURM task creation successful"
+    else
+        print_error "SLURM task creation failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Step 4: Test train_models with dry-run
-echo -e "\nStep 4: Testing train_models with dry-run..."
-if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --dry-run splot_gbif; then
-    print_status "Dry-run test passed"
-else
-    print_error "Dry-run test failed"
-    cd -
-    rm -rf $TMP_DIR
-    exit 1
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP4" = true ]; then
+    echo -e "\nStep 4: Testing train_models with dry-run..."
+    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --dry-run splot_gbif; then
+        print_status "Dry-run test passed"
+    else
+        print_error "Dry-run test failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Step 5: Test train_models with single trait
-echo -e "\nStep 5: Testing train_models with single trait..."
-if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 splot_gbif; then
-    print_status "Single trait test passed"
-else
-    print_error "Single trait test failed"
-    cd -
-    rm -rf $TMP_DIR
-    exit 1
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP5" = true ]; then
+    echo -e "\nStep 5: Testing train_models with single trait..."
+    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 splot_gbif; then
+        print_status "Single trait test passed"
+    else
+        print_error "Single trait test failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Step 6: Test train_models with multiple traits
-echo -e "\nStep 6: Testing train_models with multiple traits..."
-if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 --trait-index 1 splot_gbif; then
-    print_status "Multiple traits test passed"
-else
-    print_error "Multiple traits test failed"
-    cd -
-    rm -rf $TMP_DIR
-    exit 1
+if [ "$RUN_ALL" = true ] || [ "$RUN_STEP6" = true ]; then
+    echo -e "\nStep 6: Testing train_models with multiple traits..."
+    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 --trait-index 1 splot_gbif; then
+        print_status "Multiple traits test passed"
+    else
+        print_error "Multiple traits test failed"
+        cleanup_and_exit 1
+    fi
 fi
 
 # Clean up
-cd -
-rm -rf $TMP_DIR
+cleanup_and_exit 0
 
-print_status "All tests completed successfully!" 
+print_status "All selected tests completed successfully!" 
