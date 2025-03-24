@@ -310,8 +310,8 @@ stages:
       nfiles: 44
     - path: src/features/calc_spatial_autocorr.py
       hash: md5
-      md5: 66dbc61b038a0d82f63d1dd1ffd298ce
-      size: 10631
+      md5: c63e08470059ad976ccfd73fb19f3897
+      size: 10647
     params:
       params.yaml:
         calc_spatial_autocorr:
@@ -351,3 +351,87 @@ stages:
       md5: 23348efe6e9abe25a995ce5afb6b71ba.dir
       size: 154174708
       nfiles: 31
+  train_models:
+    cmd: python src/models/train_models.py -r && python src/models/cv_stats.py
+    deps:
+    - path: data/features/Shrub_Tree/1km/Y.parquet
+      hash: md5
+      md5: 559690c5a075fabd7c0aa52b97bec88c.dir
+      size: 421443528
+      nfiles: 44
+    - path: data/features/Shrub_Tree/1km/skcv_splits
+      hash: md5
+      md5: 23348efe6e9abe25a995ce5afb6b71ba.dir
+      size: 154174708
+      nfiles: 31
+    - path: data/features/predict/1km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 9372b044d0d211e6450b9bee0b772100
+      size: 28557279604
+    - path: data/features/predict/1km/eo_predict_mask.parquet
+      hash: md5
+      md5: a5b2d37a18df4f9d1ebcc60484d413d0
+      size: 529921831
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      size: 2163
+    - path: src/models/train_models.py
+      hash: md5
+      md5: 4a332953a91f0a6213d760bdff209a99
+      size: 1179
+    params:
+      params.yaml:
+        autogluon:
+          included_model_types:
+          - GBM
+          presets: high
+          save_bag_folds: true
+          refit_full: false
+          set_best_to_refit_full: false
+          cv_fit_time_limit: 7200
+          full_fit_time_limit: 12600
+          num_gpus: 2
+          num_cpus: 99
+          feature_importance: true
+          FI_time_limit: 1800
+          FI_num_shuffle_sets: 10
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 614
+        - 1080
+        - 3106
+        - 3113
+        - 3117
+        - 3120
+        train.arch: autogluon
+    outs:
+    - path: models/Shrub_Tree/1km
+      hash: md5
+      md5: c4fe80ce3344204d69e3e0a514feb3ac.dir
+      size: 58285661058
+      nfiles: 6339
