@@ -10,6 +10,8 @@ import dask.dataframe as dd
 import pandas as pd
 from autogluon.tabular import TabularDataset, TabularPredictor
 from box import ConfigBox
+from dask import compute, delayed
+from dask.distributed import Client, LocalCluster
 
 from src.conf.conf import get_config
 from src.conf.environment import log
@@ -223,57 +225,17 @@ class TraitTrainer:
             .agg(["mean", "std"])
         )
 
-    # We set this to avoid a bug in LightGBM when used with GPU.
-    # See https://github.com/microsoft/LightGBM/issues/3679
-
-    def _train_full_model(self, ts_info: TraitSetInfo):
-        train_full = TabularDataset(
-            self.xy.pipe(filter_trait_set, ts_info.trait_set)
-            .dropna(subset=[self.trait_name])
-            .pipe(assign_weights, w_gbif=self.opts.cfg.train.weights.gbif)
-            .drop(columns=["x", "y", "source", "fold"])
-        )
-
-        HYPERPARAMS: dict = {
-            "GBM": {
-                "device": "cpu",
-                # "ag_args_fit": {
-                #     "num_gpus": self.opts.cfg.autogluon.num_gpus // 4,
-                #     "num_cpus": self.opts.cfg.autogluon.num_cpus // 4,
-                # },
-            }
-        }
-
-        predictor = TabularPredictor(
-            label=ts_info.trait_name,
-            sample_weight="weights",  # pyright: ignore[reportArgumentType]
-            path=str(ts_info.full_model),
-        ).fit(
-            train_full,
-            included_model_types=self.opts.cfg.autogluon.included_model_types,
-            num_gpus=self.opts.cfg.autogluon.num_gpus,
-            num_cpus=self.opts.cfg.autogluon.num_cpus,
-            presets=self.opts.cfg.autogluon.presets,
-            time_limit=self.opts.cfg.autogluon.full_fit_time_limit,
-            save_bag_folds=self.opts.cfg.autogluon.save_bag_folds,
-            hyperparameters=HYPERPARAMS,
-            feature_prune_kwargs={},
-        )
-
-        ts_info.mark_full_model_complete()
-        predictor.save_space()
-
-    def _train_fold(self, fold_id: int, cv_dir: Path, trait_set: str) -> None:
+    def _train_fold_parallel(self, fold_id: int, cv_dir: Path, trait_set: str) -> None:
+        """Train a single fold in parallel."""
         log.info("Training model for fold %d...", fold_id)
         fold_model_path = cv_dir / f"fold_{fold_id}"
 
         HYPERPARAMS: dict = {
             "GBM": {
-                "device": "cpu",
-                # "ag_args_fit": {
-                #     "num_gpus": self.opts.cfg.autogluon.num_gpus // 4,
-                #     "num_cpus": self.opts.cfg.autogluon.num_cpus // 4,
-                # },
+                "device": "cpu",  # Use CPU for training
+                "ag_args_fit": {
+                    "num_cpus": self.opts.cfg.autogluon.num_cpus,
+                },
             }
         }
 
@@ -302,13 +264,11 @@ class TraitTrainer:
             ).fit(
                 train,
                 included_model_types=self.opts.cfg.autogluon.included_model_types,
-                num_gpus=self.opts.cfg.autogluon.num_gpus,
                 num_cpus=self.opts.cfg.autogluon.num_cpus,
                 presets=self.opts.cfg.autogluon.presets,
                 time_limit=self.opts.cfg.autogluon.cv_fit_time_limit,
                 save_bag_folds=self.opts.cfg.autogluon.save_bag_folds,
                 hyperparameters=HYPERPARAMS,
-                # ds_args={"validation_procedure": "holdout", "holdout_data": val},
                 feature_prune_kwargs={},
             )
 
@@ -325,7 +285,6 @@ class TraitTrainer:
                     "vodca": {"startswith": True, "match": "vodca"},
                     "worldclim": {"startswith": True, "match": "wc2.1"},
                 }
-                # Generate a list of tuples of (dataset, [features]) for each dataset
                 datasets = []
                 for ds, ds_info in feat_ds_map.items():
                     if ds_info["startswith"]:
@@ -339,8 +298,6 @@ class TraitTrainer:
                             feat for feat in features if feat.endswith(ds_info["match"])
                         ]
                     datasets.append((ds, ds_feats))
-
-                # Now add all features as well
                 datasets += features
 
                 feature_importance = predictor.feature_importance(
@@ -381,6 +338,57 @@ class TraitTrainer:
             log.error("Error training model: %s", e)
             raise
 
+    def _train_models_cv(self, ts_info: TraitSetInfo) -> None:
+        """Train cross-validation models sequentially since we're using all cores per fold."""
+        ts_info.cv_dir.mkdir(parents=True, exist_ok=True)
+
+        last_complete_fold = ts_info.get_last_complete_fold_id()
+        starting_fold = last_complete_fold + 1 if last_complete_fold is not None else 0
+
+        # Train folds sequentially since we're using all cores per fold
+        for i in range(starting_fold, max(self.xy["fold"].unique()) + 1):
+            self._train_fold_parallel(i, ts_info.cv_dir, ts_info.trait_set)
+            ts_info.mark_cv_fold_complete(i)
+
+        self._aggregate_cv_results(ts_info.cv_dir, ts_info.training_dir)
+        ts_info.mark_cv_complete()
+
+    def _train_full_model(self, ts_info: TraitSetInfo):
+        """Train the full model using all available CPUs."""
+        train_full = TabularDataset(
+            self.xy.pipe(filter_trait_set, ts_info.trait_set)
+            .dropna(subset=[self.trait_name])
+            .pipe(assign_weights, w_gbif=self.opts.cfg.train.weights.gbif)
+            .drop(columns=["x", "y", "source", "fold"])
+        )
+
+        HYPERPARAMS: dict = {
+            "GBM": {
+                "device": "cpu",  # Use CPU for training
+                "ag_args_fit": {
+                    "num_cpus": self.opts.cfg.autogluon.num_cpus,
+                },
+            }
+        }
+
+        predictor = TabularPredictor(
+            label=ts_info.trait_name,
+            sample_weight="weights",  # pyright: ignore[reportArgumentType]
+            path=str(ts_info.full_model),
+        ).fit(
+            train_full,
+            included_model_types=self.opts.cfg.autogluon.included_model_types,
+            num_cpus=self.opts.cfg.autogluon.num_cpus,
+            presets=self.opts.cfg.autogluon.presets,
+            time_limit=self.opts.cfg.autogluon.full_fit_time_limit,
+            save_bag_folds=self.opts.cfg.autogluon.save_bag_folds,
+            hyperparameters=HYPERPARAMS,
+            feature_prune_kwargs={},
+        )
+
+        ts_info.mark_full_model_complete()
+        predictor.save_space()
+
     def _aggregate_cv_results(self, cv_dir: Path, training_dir: Path):
         log.info("Aggregating evaluation results...")
         eval_df = self._aggregate_results(cv_dir, self.opts.cfg.train.eval_results)
@@ -389,19 +397,6 @@ class TraitTrainer:
         log.info("Aggregating feature importance...")
         fi_df = self._aggregate_results(cv_dir, self.opts.cfg.train.feature_importance)
         fi_df.to_csv(training_dir / self.opts.cfg.train.feature_importance)
-
-    def _train_models_cv(self, ts_info: TraitSetInfo) -> None:
-        ts_info.cv_dir.mkdir(parents=True, exist_ok=True)
-
-        last_complete_fold = ts_info.get_last_complete_fold_id()
-        starting_fold = last_complete_fold + 1 if last_complete_fold is not None else 0
-
-        for i in range(starting_fold, max(self.xy["fold"].unique()) + 1):
-            self._train_fold(i, ts_info.cv_dir, ts_info.trait_set)
-            ts_info.mark_cv_fold_complete(i)
-
-        self._aggregate_cv_results(ts_info.cv_dir, ts_info.training_dir)
-        ts_info.mark_cv_complete()
 
     def _train_trait_set(self, trait_set: str) -> None:
         """Train AutoGluon models for a single trait using the given configuration."""
@@ -514,8 +509,9 @@ def train_models(
     debug: bool = False,
     resume: bool = True,
     dry_run: bool = False,
+    trait_index: int | None = None,
 ) -> None:
-    """Train a set of AutoGluon models for each  using the given configuration."""
+    """Train a set of AutoGluon models for each trait using the given configuration."""
     dry_run_text = set_dry_run_text(dry_run)
     suppress_dask_logging()
 
@@ -525,7 +521,27 @@ def train_models(
 
     feats, feats_mask, labels = load_data()
 
-    for label_col in labels.columns.difference(["x", "y", "source"]):
+    # Get list of traits to train
+    traits_to_train = list(labels.columns.difference(["x", "y", "source"]))
+
+    # If trait_index is specified, only train that trait
+    if trait_index is not None:
+        if trait_index >= len(traits_to_train):
+            raise ValueError(f"Invalid trait index: {trait_index}")
+        traits_to_train = [traits_to_train[trait_index]]
+
+    # Validate trait sets
+    valid_trait_sets = ("splot", "gbif", "splot_gbif")
+    if trait_sets is None:
+        trait_sets = valid_trait_sets
+    else:
+        for ts in trait_sets:
+            if ts not in valid_trait_sets:
+                raise ValueError(
+                    f"Invalid trait set: {ts}. Must be one of {valid_trait_sets}"
+                )
+
+    for label_col in traits_to_train:
         tmp_xy_path = get_trait_models_dir(label_col) / "tmp" / "xy.parquet"
 
         if not tmp_xy_path.exists() and resume:
@@ -552,7 +568,7 @@ def train_models(
                     TraitSetInfo(
                         trait_set, label_col, latest_run / trait_set
                     ).is_full_model_complete
-                    for trait_set in ["splot", "splot_gbif", "gbif"]
+                    for trait_set in trait_sets
                 ]
 
                 if all(completed):
@@ -585,15 +601,7 @@ def train_models(
 
         trait_trainer = TraitTrainer(xy, label_col, train_opts)
 
-        valid_trait_sets = ("splot", "gbif", "splot_gbif")
-
-        if trait_sets is None:
-            trait_sets = valid_trait_sets
-
         for ts in trait_sets:
-            if ts not in valid_trait_sets:
-                raise ValueError(f"Invalid trait set: {ts}")
-
             if ts == "splot":
                 trait_trainer.train_splot()
             elif ts == "gbif":
