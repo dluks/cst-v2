@@ -1,0 +1,34 @@
+Bootstrap: docker
+From: python:3.11-slim
+
+%post
+    # Install system dependencies
+    apt-get update && apt-get install -y \
+        git \
+        wget \
+        curl \
+        build-essential \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Install Poetry
+    pip install poetry
+
+    # Configure Poetry to not create a virtual environment
+    poetry config virtualenvs.create false
+
+%files
+    pyproject.toml poetry.lock /app/
+
+%post
+    # Set up working directory
+    cd /app
+
+    # Install dependencies
+    poetry install --no-interaction --no-ansi
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export PYTHONPATH=/app:$PYTHONPATH
+
+%runscript
+    python /app/src/models/train_models.py "$@" 

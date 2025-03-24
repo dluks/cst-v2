@@ -18,16 +18,16 @@ print_error() {
 TMP_DIR=$(mktemp -d)
 cd $TMP_DIR
 
-# Copy the Dockerfile and project files
-cp /home/dl1070/projects/cit-sci-traits/Dockerfile .
+# Copy the Singularity definition file and project files
+cp /home/dl1070/projects/cit-sci-traits/cit-sci-traits.def .
 cp -r /home/dl1070/projects/cit-sci-traits/* .
 
-# Step 1: Test Enroot container build
-echo "Step 1: Testing Enroot container build..."
-if enroot create --force cit-sci-traits-test.sqsh <<< $(docker build -q .); then
-    print_status "Enroot container built successfully"
+# Step 1: Test Singularity container build
+echo "Step 1: Testing Singularity container build..."
+if singularity build --force cit-sci-traits-test.sif cit-sci-traits.def; then
+    print_status "Singularity container built successfully"
 else
-    print_error "Enroot container build failed"
+    print_error "Singularity container build failed"
     cd -
     rm -rf $TMP_DIR
     exit 1
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     test_imports()
 EOF
 
-if enroot start --mount /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sqsh python test_imports.py; then
+if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif python test_imports.py; then
     print_status "Requirements check passed"
 else
     print_error "Requirements check failed"
@@ -91,19 +91,16 @@ cat > test_slurm.slurm << 'EOF'
 #SBATCH --mem=1G
 #SBATCH --partition=Genoa
 
-# Load required modules
-module load enroot
-
 # Create a temporary directory for the container
 TMP_DIR=$(mktemp -d)
 cd $TMP_DIR
 
 # Copy the container and project files
-cp /home/dl1070/projects/cit-sci-traits/cit-sci-traits-test.sqsh .
+cp /home/dl1070/projects/cit-sci-traits/cit-sci-traits-test.sif .
 cp -r /home/dl1070/projects/cit-sci-traits/* .
 
 # Run a simple test
-enroot start --mount /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sqsh echo "Test SLURM job running"
+singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif echo "Test SLURM job running"
 
 # Clean up
 cd -
@@ -121,7 +118,7 @@ fi
 
 # Step 4: Test train_models with dry-run
 echo -e "\nStep 4: Testing train_models with dry-run..."
-if enroot start --mount /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sqsh python src/models/train_models.py splot_gbif --dry-run; then
+if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --dry-run splot_gbif; then
     print_status "Dry-run test passed"
 else
     print_error "Dry-run test failed"
@@ -132,7 +129,7 @@ fi
 
 # Step 5: Test train_models with single trait
 echo -e "\nStep 5: Testing train_models with single trait..."
-if enroot start --mount /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sqsh python src/models/train_models.py splot_gbif --trait-index 0; then
+if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 splot_gbif; then
     print_status "Single trait test passed"
 else
     print_error "Single trait test failed"
@@ -143,7 +140,7 @@ fi
 
 # Step 6: Test train_models with multiple traits
 echo -e "\nStep 6: Testing train_models with multiple traits..."
-if enroot start --mount /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sqsh python src/models/train_models.py splot_gbif --trait-index 0 --trait-index 1; then
+if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 --trait-index 1 splot_gbif; then
     print_status "Multiple traits test passed"
 else
     print_error "Multiple traits test failed"
