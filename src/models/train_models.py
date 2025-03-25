@@ -22,6 +22,11 @@ def cli() -> argparse.Namespace:
     parser.add_argument("-s", "--sample", type=float, default=1.0, help="Sample size")
     parser.add_argument("-r", "--resume", action="store_true", help="Resume training")
     parser.add_argument("-n", "--dry-run", action="store_true", help="Dry run")
+    parser.add_argument(
+        "--trait-id",
+        type=int,
+        help="Specific trait ID to train. If not provided, trains all traits.",
+    )
     return parser.parse_args()
 
 
@@ -30,7 +35,12 @@ def main(args: argparse.Namespace, cfg: ConfigBox = get_config()) -> None:
     activate_env()
     if cfg.train.arch == "autogluon":
         autogluon.train_models(
-            args.trait_sets, args.sample, args.debug, args.resume, args.dry_run
+            args.trait_sets,
+            args.sample,
+            args.debug,
+            args.resume,
+            args.dry_run,
+            trait_id=args.trait_id,
         )
     else:
         raise ValueError(f"Unknown architecture: {cfg.train.arch}")

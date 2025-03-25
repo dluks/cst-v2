@@ -509,7 +509,7 @@ def train_models(
     debug: bool = False,
     resume: bool = True,
     dry_run: bool = False,
-    trait_index: int | None = None,
+    trait_id: int | None = None,
 ) -> None:
     """Train a set of AutoGluon models for each trait using the given configuration."""
     dry_run_text = set_dry_run_text(dry_run)
@@ -524,11 +524,12 @@ def train_models(
     # Get list of traits to train
     traits_to_train = list(labels.columns.difference(["x", "y", "source"]))
 
-    # If trait_index is specified, only train that trait
-    if trait_index is not None:
-        if trait_index >= len(traits_to_train):
-            raise ValueError(f"Invalid trait index: {trait_index}")
-        traits_to_train = [traits_to_train[trait_index]]
+    # If trait_id is specified, only train that trait
+    if trait_id is not None:
+        trait_id_str = str(trait_id)
+        if trait_id_str not in traits_to_train:
+            raise ValueError(f"Invalid trait ID: {trait_id}")
+        traits_to_train = [trait_id_str]
 
     # Validate trait sets
     valid_trait_sets = ("splot", "gbif", "splot_gbif")
