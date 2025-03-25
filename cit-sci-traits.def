@@ -8,27 +8,43 @@ From: python:3.11-slim
         wget \
         curl \
         build-essential \
+        r-base \
+        r-base-dev \
+        r-recommended \
+        python3-dev \
         && rm -rf /var/lib/apt/lists/*
 
     # Install Poetry
     pip install poetry
 
     # Configure Poetry to not create a virtual environment
-    poetry config virtualenvs.create false
+    poetry config virtualenvs.create true
+    poetry config virtualenvs.in-project true
 
 %files
-    pyproject.toml poetry.lock /app/
+    pyproject.toml /app/
+    poetry.lock /app/
+    params.yaml /app/
+    README.md /app/
+    reference /app/
+    results /app/
 
 %post
-    # Set up working directory
+    # Create data directory for binding
+    mkdir /app/data
+    mkdir /app/models
+    mkdir /app/src
+    
     cd /app
 
-    # Install dependencies
-    poetry install --no-interaction --no-ansi
+    # Install dependencies with specific options to handle problematic packages
+    poetry install --no-interaction --no-ansi --without dev --no-root
 
 %environment
     export PYTHONUNBUFFERED=1
     export PYTHONPATH=/app:$PYTHONPATH
 
 %runscript
-    python /app/src/models/train_models.py "$@" 
+    #!/bin/bash
+    cd /app # Ensure we're in the project directory
+    exec "$@"
