@@ -85,12 +85,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Create a temporary directory for the container
-TMP_DIR=$(mktemp -d)
+# TMP_DIR=$(mktemp -d)
+TMP_DIR=$(pwd)/tmp_$(date +%Y%m%d_%H%M%S)
+mkdir -p $TMP_DIR
 cd $TMP_DIR
-
 # Copy the Singularity definition file and project files
-cp $HOME/projects/cit-sci-traits/cit-sci-traits.def .
-cp -r $HOME/projects/cit-sci-traits/* .
+cp -r $HOME/projects/cit-sci-traits/{pyproject.toml,poetry.lock,README.md,reference,results,src,.env,cit-sci-traits.sif,params.yaml} .
 
 # Function to clean up and exit
 cleanup_and_exit() {
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     test_imports()
 EOF
 
-    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif python test_imports.py; then
+    if singularity run --bind test_imports.py:/app/test_imports.py,src:/app/src,.env:/app/.env cit-sci-traits-test.sif test_imports.py; then
         print_status "Requirements check passed"
     else
         print_error "Requirements check failed"
@@ -167,22 +167,21 @@ if [ "$RUN_ALL" = true ] || [ "$RUN_STEP3" = true ]; then
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=1G
-#SBATCH --partition=Genoa
+#SBATCH --partition=cpu
 
 # Create a temporary directory for the container
-TMP_DIR=$(mktemp -d)
-cd $TMP_DIR
+# TMP_DIR=$(mktemp -d)
+# cd $TMP_DIR
 
 # Copy the container and project files
-cp /home/dl1070/projects/cit-sci-traits/cit-sci-traits-test.sif .
-cp -r /home/dl1070/projects/cit-sci-traits/* .
+# cp -r $HOME/projects/cit-sci-traits/* .
 
 # Run a simple test
-singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif echo "Test SLURM job running"
+singularity run --bind src:/app/src,.env:/app/.env cit-sci-traits.sif echo "Test SLURM job running"
 
 # Clean up
-cd -
-rm -rf $TMP_DIR
+# cd -
+# rm -rf $TMP_DIR
 EOF
 
     if sbatch test_slurm.slurm; then
@@ -196,7 +195,7 @@ fi
 # Step 4: Test train_models with dry-run
 if [ "$RUN_ALL" = true ] || [ "$RUN_STEP4" = true ]; then
     echo -e "\nStep 4: Testing train_models with dry-run..."
-    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --dry-run splot_gbif; then
+    if singularity run --bind $HOME/projects/cit-sci-traits:/app cit-sci-traits-test.sif --dry-run splot_gbif; then
         print_status "Dry-run test passed"
     else
         print_error "Dry-run test failed"
@@ -207,7 +206,7 @@ fi
 # Step 5: Test train_models with single trait
 if [ "$RUN_ALL" = true ] || [ "$RUN_STEP5" = true ]; then
     echo -e "\nStep 5: Testing train_models with single trait..."
-    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 splot_gbif; then
+    if singularity run --bind $HOME/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 splot_gbif; then
         print_status "Single trait test passed"
     else
         print_error "Single trait test failed"
@@ -218,7 +217,7 @@ fi
 # Step 6: Test train_models with multiple traits
 if [ "$RUN_ALL" = true ] || [ "$RUN_STEP6" = true ]; then
     echo -e "\nStep 6: Testing train_models with multiple traits..."
-    if singularity run --bind /home/dl1070/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 --trait-index 1 splot_gbif; then
+    if singularity run --bind $HOME/projects/cit-sci-traits:/app cit-sci-traits-test.sif --trait-index 0 --trait-index 1 splot_gbif; then
         print_status "Multiple traits test passed"
     else
         print_error "Multiple traits test failed"
@@ -227,6 +226,6 @@ if [ "$RUN_ALL" = true ] || [ "$RUN_STEP6" = true ]; then
 fi
 
 # Clean up
-cleanup_and_exit 0
+# cleanup_and_exit 0
 
 print_status "All selected tests completed successfully!" 
