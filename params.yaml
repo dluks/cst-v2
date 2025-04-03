@@ -1,9 +1,9 @@
-version: "1.1.0"
-model_res: "001"
+version: "1.0.0"
+model_res: "1"
 PFT: "Shrub_Tree_Grass"
 random_seed: 42
-base_resolution: 0.01 # Shared best resolution of all EO datasets (used for masking)
-target_resolution: 0.01 # Target resolution for model training
+base_resolution: 1 # Shared best resolution of all EO datasets (used for masking)
+target_resolution: 1 # Target resolution for model training
 extent: [-180, -60, 180, 90] # Extent of the final dataset
 crs: "EPSG:4326"
 tmp_dir: tmp
@@ -831,7 +831,7 @@ trydb:
     transform: null # "log", "power" (yeo-johnson), null (no transformation)
     already_norm: null
     filtered: mean_gf_bt_sp_filt.parquet
-    transformer_fn: power_transformer.pkl
+    transformer_fn: no_transform.pkl # When no transformation is needed, set to "no_transform.pkl"
 
 biomes: # Used for model analysis by biome
   reclassification:
