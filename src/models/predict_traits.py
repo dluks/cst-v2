@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Generator
 
 import dask.dataframe as dd
-import numpy as np
 import pandas as pd
 from autogluon.tabular import TabularPredictor
 from box import ConfigBox
@@ -27,8 +26,6 @@ from src.utils.dataset_utils import (
 )
 from src.utils.df_utils import pipe_log, rasterize_points
 from src.utils.raster_utils import pack_xr, xr_to_raster
-from src.utils.stat_utils import power_back_transform
-from src.utils.trait_utils import get_trait_number_from_id
 
 
 def cli() -> argparse.Namespace:
@@ -64,20 +61,6 @@ def cli() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def predict_trait_ag_dask(
-    data: dd.DataFrame,
-    model_path: Path,
-) -> pd.DataFrame:
-    """Predict the trait using the given model in batches, optimized for Dask DataFrames,
-    ensuring order is preserved."""
-    log.info("Prediction with Dask...")
-    return (
-        data.map_partitions(predict_partition, predictor_path=model_path)
-        .compute()
-        .set_index(["y", "x"])
-    )
-
-
 def predict_trait_ag(data: pd.DataFrame, model_path: Path) -> pd.DataFrame:
     """Predict the trait using the given model in batches."""
     model = TabularPredictor.load(str(model_path))
@@ -94,6 +77,20 @@ def predict_trait_ag(data: pd.DataFrame, model_path: Path) -> pd.DataFrame:
         axis=1,
     )
     return result.set_index(["y", "x"])
+
+
+def predict_trait_ag_dask(
+    data: dd.DataFrame,
+    model_path: Path,
+) -> pd.DataFrame:
+    """Predict the trait using the given model in batches, optimized for Dask DataFrames,
+    ensuring order is preserved."""
+    log.info("Prediction with Dask...")
+    return (
+        data.map_partitions(predict_partition, predictor_path=model_path)
+        .compute()
+        .set_index(["y", "x"])
+    )
 
 
 def predict_partition(partition: pd.DataFrame, predictor_path: Path):
@@ -236,28 +233,17 @@ def predict_traits_ag(
                 close_dask(client)
             else:
                 log.info("Predicting traits for %s...", trait_set_dir)
+                # Ensure we have a pandas DataFrame for non-Dask prediction
                 if isinstance(predict_data, dd.DataFrame):
                     predict_data = predict_data.compute()
+                # Type assertion to help type checker
+                assert isinstance(predict_data, pd.DataFrame)
                 pred = predict_trait_ag(
-                    pd.DataFrame(predict_data), trait_set_dir / "full_model"
+                    predict_data, trait_set_dir / "full_model"
                 )
                 tmp_dir = None
 
             log.info("Writing predictions to raster...")
-            xform = get_config().trydb.interim.transform
-            if xform is not None:
-                if xform not in ("log", "power"):
-                    raise ValueError(f"Unknown transform: {xform}")
-                log.info("Detected %s transform. Back-transforming...", xform)
-                if xform == "log":
-                    pred = pred.apply(lambda x: np.expm1(x.values), axis=1).to_frame()
-                elif xform == "power":
-                    pred = pred.apply(
-                        lambda x: power_back_transform(
-                            x.values, get_trait_number_from_id(trait)
-                        ),
-                        axis=1,
-                    ).to_frame()
             pred_r = rasterize_points(pred, data=trait, res=res, crs=crs)
             pred_r = pack_xr(pred_r)
             xr_to_raster(pred_r, out_fn)
