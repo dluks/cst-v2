@@ -123,7 +123,13 @@ def main(cfg: ConfigBox = get_config()) -> None:
     # Match with PFTs
     log.info("Filtering by plant functional types...")
     log.info("Loading PFTs...")
-    pfts = pd.read_parquet(Path(cfg.raw_dir, cfg.trydb.raw.pfts))
+    pft_path = Path(cfg.raw_dir, cfg.trydb.raw.pfts)
+    if pft_path.suffix == ".csv":
+        pfts = pd.read_csv(pft_path, encoding="latin-1")
+    elif pft_path.suffix == ".parquet":
+        pfts = pd.read_parquet(pft_path)
+    else:
+        raise ValueError(f"Unsupported PFT file format: {pft_path.suffix}")
     pfts = (
         pfts.drop(columns=["AccSpeciesID"])
         .dropna(subset=["AccSpeciesName"])
