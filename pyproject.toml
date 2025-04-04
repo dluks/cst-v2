@@ -42,6 +42,10 @@ rio-cogeo = "^5.3.6"
 ease-grid = "^0.2"
 verstack = "^4.1.4"
 
+[tool.poetry.group.hpc.dependencies]
+dask-mpi = "^2022.4.0"
+mpi4py = "^4.0.3"
+
 [tool.poetry.group.cuda.dependencies]
 cudf-cu11 = { version = "24.10.*", source = "nvidia" }
 cuml-cu11 = { version = "24.10.*", source = "nvidia" }
@@ -49,6 +53,7 @@ cupy-cuda11x = "^13.3.0"
 
 [tool.poetry.group.r.dependencies]
 rpy2 = "^3.5.16"
+
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.6.2"
 pytest = "^8.1.1"
