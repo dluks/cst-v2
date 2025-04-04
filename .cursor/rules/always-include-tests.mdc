@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Always write tests
+
+For every unit of code written, include a test as well.
