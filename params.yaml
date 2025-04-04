@@ -1,4 +1,13 @@
 version: "1.1.0"
+
+# Container configuration
+container:
+  type: "singularity"  # "singularity" or "docker"
+  name: "cit-sci-traits"
+  docker_tag: "latest"
+  def: "cit-sci-traits.def"
+  image: "cit-sci-traits.sif"
+
 model_res: "1km"
 PFT: "Shrub_Tree_Grass"
 random_seed: 42

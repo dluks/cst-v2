@@ -26,8 +26,6 @@ From: python:3.11-slim
     poetry.lock /app/
     params.yaml /app/
     README.md /app/
-    reference /app/
-    results /app/
 
 %post
     # Create data directory for binding
@@ -35,6 +33,8 @@ From: python:3.11-slim
     mkdir /app/models
     mkdir /app/src
     mkdir /app/tests
+    mkdir /app/reference
+    mkdir /app/results
     
     cd /app
 

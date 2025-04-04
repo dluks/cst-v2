@@ -1,5 +1,29 @@
 stages:
   ######################################################################################
+  # CONTAINER BUILDING -----------------------------------------------------------------
+  ######################################################################################
+
+  build_container:
+    cmd: >-
+      stages/build_container.sh
+      ${container.type}
+      ${container.name}
+      ${container.docker_tag}
+      ${container.def}
+      ${container.image}
+    deps:
+      - ${container.def}
+      - pyproject.toml
+      - poetry.lock
+      - README.md
+      - stages/build_container.sh
+    params:
+      - container
+    outs:
+      - ${container.image}:
+          persist: true
+
+  ######################################################################################
   # RES-IND., PFT-DEP. STAGES ----------------------------------------------------------
   ######################################################################################
 
