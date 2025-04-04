@@ -4,3 +4,12 @@ outs:
   nfiles: 1
   hash: md5
   path: TRY_6_gapfilled_for_distribution
+md5: 42834a490616064bda28fc60feac7fd3
+frozen: true
+deps:
+- md5: 85fb88337543d010867ce942cc758043.dir
+  size: 307941318
+  nfiles: 1
+  hash: md5
+  path: 
+    ssh://geos/mnt/gsdata/projects/panops/panops-data-registry/data/try/TRY_6_gapfilled_for_distribution
