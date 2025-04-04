@@ -136,8 +136,8 @@ stages:
     deps:
     - path: cit-sci-traits.sif
       hash: md5
-      md5: 0e7180f735aea0ce387fd441e79c3845
-      size: 20653719552
+      md5: b9fe9063182e349ad66bbe5b625a912b
+      size: 20693336064
     - path: data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
       hash: md5
       md5: f2cc4a7dd419bed117f42e62780b16e8
@@ -183,9 +183,9 @@ stages:
     outs:
     - path: data/interim/try/power_transformer.pkl
       hash: md5
-      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      md5: d21efd0d564ee1dc6fdc499c12c06bc3
       size: 2163
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: 1c0ff1ba06e5a8ce7de4590483280220
-      size: 6079896
+      md5: e72bbe287c0bcc22a16e6989703d0c24
+      size: 10537510
