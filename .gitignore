@@ -100,3 +100,4 @@ target/
 scratch
 /results/all_results.parquet.bak
 cit-sci-traits.sif
+/logs
