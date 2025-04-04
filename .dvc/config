@@ -3,5 +3,3 @@
     remote = ufrnas
 [remote "ufrnas"]
     url = ssh://geos/mnt/gsdata/projects/panops/cit-sci-traits/dvc-cache
-[remote "panops-registry"]
-    url = ssh://geos/mnt/gsdata/projects/panops/panops-data-registry
