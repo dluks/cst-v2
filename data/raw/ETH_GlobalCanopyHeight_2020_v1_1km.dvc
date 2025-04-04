@@ -1,14 +1,12 @@
-md5: f9a62ee129f31cd1bb322f7bedf9b9a6
+md5: 584a2e94182435a6915d0919d4b2495e
 frozen: true
 deps:
-- path: data/canopy_height/ETH_GlobalCanopyHeight_2020_v1_1km
-  repo:
-    url: https://github.com/GeoSense-Freiburg/panops-data-registry
-    rev_lock: ac7118ccc38730b4309c8805f776e4cd61f275b6
-    remote: gcs
-outs:
-- md5: 7f7cab159554265edd5e012518dbb8eb.dir
+- path: 
+    ssh://geos/mnt/gsdata/projects/panops/panops-data-registry/data/canopy_height/ETH_GlobalCanopyHeight_2020_v1_1km
+  md5: 7f7cab159554265edd5e012518dbb8eb.dir
   size: 188155434
   nfiles: 2
   hash: md5
+outs:
+- hash: md5
   path: ETH_GlobalCanopyHeight_2020_v1_1km

@@ -1,14 +1,17 @@
 md5: d1df3109154ff7a8d0597baab5a56265
 frozen: true
 deps:
-- path: 
-    ssh://geos/mnt/gsdata/projects/panops/panops-data-registry/data/gbif/all_tracheophyta_non-cult_2024-04-10
-  md5: ada860692d425bd047bd09fd4531fdbf.dir
+- md5: ada860692d425bd047bd09fd4531fdbf.dir
   size: 30005038638
   nfiles: 1584
   hash: md5
+  path: 
+    ssh://geos/mnt/gsdata/projects/panops/panops-data-registry/data/gbif/all_tracheophyta_non-cult_2024-04-10
 outs:
-- hash: md5
+- md5: ada860692d425bd047bd09fd4531fdbf.dir
+  size: 30005038638
+  nfiles: 1584
+  hash: md5
   path: all_tracheophyta_non-cult_2024-04-10
   md5: ada860692d425bd047bd09fd4531fdbf.dir
   size: 30005038638

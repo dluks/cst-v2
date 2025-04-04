@@ -1,10 +1,11 @@
-md5: 9d4023876dfb6811498f69db870b32fe
+md5: 910f3e26a318a9a59ddd10f9c3c2d0dd
 frozen: true
 deps:
-- path: data/try/try_pft_v2.parquet
-  repo:
-    url: /mnt/gsdata/projects/panops/panops-data-registry/
-    rev_lock: da94d6d39e2e9ba54294dadfb7fdb5338dff29cf
+- path: 
+    ssh://geos/mnt/gsdata/projects/panops/panops-data-registry/data/try/try_pft_v2.parquet
+  md5: d49a4b1611eebbd529c9e9aba6aa5f69
+  size: 2232209
+  hash: md5
 outs:
 - md5: d49a4b1611eebbd529c9e9aba6aa5f69
   size: 2232209
