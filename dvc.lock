@@ -27,8 +27,8 @@ stages:
       size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: 178b7e508d456465569dcf8cd90a39c5
-      size: 4617
+      md5: c918e38e1c0d49fbac88a6308042cdc2
+      size: 5918
     params:
       params.yaml:
         trydb:
@@ -47,12 +47,12 @@ stages:
     outs:
     - path: data/interim/try/power_transformer.pkl
       hash: md5
-      md5: 1baf90006b4ab6ec21964725243b8f9a
-      size: 2463
+      md5: d21efd0d564ee1dc6fdc499c12c06bc3
+      size: 2163
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: b2b7f0703fc52483df2ab7c17c76a251
-      size: 18311878
+      md5: e72bbe287c0bcc22a16e6989703d0c24
+      size: 10537510
   match_gbif_pfts:
     cmd: python src/data/match_gbif_pfts.py
     deps:
@@ -67,8 +67,8 @@ stages:
       size: 2232209
     - path: src/data/match_gbif_pfts.py
       hash: md5
-      md5: d46c0f918ff0aa9bf84e0f7829d95ca0
-      size: 2220
+      md5: 6eb77a3b1d810e69a28df4ddcb0b5450
+      size: 2541
     params:
       params.yaml:
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
@@ -78,8 +78,8 @@ stages:
     outs:
     - path: data/interim/gbif/gbif_pfts.parquet
       hash: md5
-      md5: 2a71cab6ec8f6969a36ad7831473e3ee.dir
-      size: 4480158671
+      md5: 3588c721bb421ef1f67c9a9c00b72c49.dir
+      size: 4026649735
       nfiles: 159
   extract_splot:
     cmd: python src/data/extract_splot.py
