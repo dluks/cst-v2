@@ -58,4 +58,4 @@ if __name__ == "__main__":
         xr_to_raster_rasterio(pack_xr(bt), fn)
         r.close()
 
-    close_dask(client, cluster)
+    close_dask(client)
