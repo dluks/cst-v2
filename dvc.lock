@@ -157,8 +157,8 @@ stages:
       nfiles: 150
     - path: src/features/featurize_predict.py
       hash: md5
-      md5: ca3da443b6f09c8a58773d046fa54dca
-      size: 5035
+      md5: 507a3cdc24f7b6d2de56726a9a5559ae
+      size: 5020
     params:
       params.yaml:
         eo_data.interim.dir: eo_data
@@ -190,8 +190,8 @@ stages:
       size: 6079896
     - path: src/data/build_gbif_maps.py
       hash: md5
-      md5: 58efa57b08c69d098fdcb0207b7b4252
-      size: 4065
+      md5: a56d597d791cc613a0268eb47400507c
+      size: 4050
     params:
       params.yaml:
         PFT: Shrub_Tree
@@ -225,8 +225,8 @@ stages:
       size: 2232209
     - path: src/data/build_splot_maps.py
       hash: md5
-      md5: c8c6b1d35dfeb304bae62f2e6710b03c
-      size: 9272
+      md5: 2d1e407f35a6660674645a3492f0a63c
+      size: 9257
     params:
       params.yaml:
         PFT: Shrub_Tree
@@ -257,8 +257,8 @@ stages:
       nfiles: 31
     - path: src/features/build_y.py
       hash: md5
-      md5: 5c636d0f1fe3fb3afd2d61c9b056b8cd
-      size: 4335
+      md5: c49b25003b8e889e4f897430c8bda3d6
+      size: 4320
     params:
       params.yaml:
         datasets.Y.trait_stat: 1
@@ -310,8 +310,8 @@ stages:
       nfiles: 44
     - path: src/features/calc_spatial_autocorr.py
       hash: md5
-      md5: c63e08470059ad976ccfd73fb19f3897
-      size: 10647
+      md5: 2c1beea009e24a7c778e2ecfa8536a1b
+      size: 10632
     params:
       params.yaml:
         calc_spatial_autocorr:
@@ -336,8 +336,8 @@ stages:
       size: 7472
     - path: src/features/skcv_splits.py
       hash: md5
-      md5: a17ab9d0efe98b372ddc6042a074cd91
-      size: 10734
+      md5: 319be027b312b202afba38b9b05e59a2
+      size: 10719
     params:
       params.yaml:
         train.cv_splits:
@@ -536,8 +536,8 @@ stages:
       nfiles: 6339
     - path: src/analysis/aoa.py
       hash: md5
-      md5: 99192677b52b2cb7c03622299cf477d4
-      size: 15768
+      md5: 03b0d5572c787381aac642ddc2435e47
+      size: 15717
     params:
       params.yaml:
         aoa:
