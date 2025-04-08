@@ -580,3 +580,45 @@ stages:
       md5: 63e01423de02145aaed14cf3fa6a1ec4.dir
       size: 8494242118
       nfiles: 31
+  build_final_product:
+    cmd: python src/data/build_final_product.py -o
+    deps:
+    - path: data/processed/Shrub_Tree/1km/aoa
+      hash: md5
+      md5: 63e01423de02145aaed14cf3fa6a1ec4.dir
+      size: 8494242118
+      nfiles: 31
+    - path: data/processed/Shrub_Tree/1km/cov
+      hash: md5
+      md5: ed4367174b853f3372f5ddeefc035b61.dir
+      size: 9312207979
+      nfiles: 31
+    - path: data/processed/Shrub_Tree/1km/predict
+      hash: md5
+      md5: 15be8024a047c629c52ad31fb5c52dfa.dir
+      size: 8906681013
+      nfiles: 31
+    - path: reference/trait_mapping.json
+      hash: md5
+      md5: 795047b5fb1160358448d6e875d9d1ea
+      size: 5485
+    - path: reference/trait_stat_mapping.json
+      hash: md5
+      md5: 849cf0970f8069d7351f66056f8c5ff5
+      size: 104
+    - path: src/data/build_final_product.py
+      hash: md5
+      md5: 8a134b2fa61ef635f658bebaf00771e1
+      size: 11868
+    params:
+      params.yaml:
+        public:
+          destination: both
+          local_dir: final
+          sftp_dir: PANOPS/cit-sci-traits/trait_maps
+    outs:
+    - path: data/processed/Shrub_Tree/1km/final
+      hash: md5
+      md5: 0e4c890ac79fa16de1e3494b8d664d62.dir
+      size: 21597978654
+      nfiles: 31
