@@ -41,7 +41,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
 
     # Initialize Dask client
     log.info("Initializing Dask client...")
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.n_workers,
         memory_limit=syscfg.memory_limit,
@@ -116,7 +116,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
             xr_to_raster(raster, out_fn)
             log.info("Wrote %s.tif.", col)
     finally:
-        close_dask(client, cluster)
+        close_dask(client)
         log.info("Done!")
 
 

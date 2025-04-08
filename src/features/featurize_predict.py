@@ -77,7 +77,7 @@ def main(cfg: ConfigBox = get_config(), args: argparse.Namespace = cli()) -> Non
         log.info("Running in debug mode...")
 
     log.info("Initializing Dask client...")
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.n_workers,
         memory_limit=syscfg.memory_limit,
@@ -100,7 +100,7 @@ def main(cfg: ConfigBox = get_config(), args: argparse.Namespace = cli()) -> Non
     df = compute_partitions(ddf).reset_index(drop=True).set_index(["y", "x"])
 
     log.info("Closing Dask client...")
-    close_dask(client, cluster)
+    close_dask(client)
 
     log.info("Creating mask for missing values...")
     mask = df.isna().reset_index(drop=False)

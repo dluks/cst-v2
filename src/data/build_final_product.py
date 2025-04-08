@@ -343,7 +343,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
     ]
     compute(*tasks)
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     log.info("Computing metadata...")
     build_metadata()

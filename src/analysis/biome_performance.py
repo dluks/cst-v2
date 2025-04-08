@@ -43,7 +43,7 @@ def main() -> None:
 
 
 def calc_model_stats_per_biome(overwrite: bool = False) -> None:
-    client, cluster = init_dask(dashboard_address=cfg.dask_dashboard)
+    client, _ = init_dask(dashboard_address=cfg.dask_dashboard)
 
     all_model_dirs = get_all_trait_models()
     if N_FILES is not None:
@@ -52,7 +52,7 @@ def calc_model_stats_per_biome(overwrite: bool = False) -> None:
     tasks = [delayed(process_model_dir)(d) for d in all_model_dirs]
     results = compute(*tasks)
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     model_stats_df = pd.concat(results)
     all_biome_results_df = create_or_open_all_biome_results(overwrite=overwrite)
@@ -87,7 +87,7 @@ def calc_cov_per_biome() -> None:
     )
     tasks = [delayed(process_cov)(raster) for raster in all_cov_maps]
     results = compute(*tasks)
-    close_dask(client, cluster)
+    close_dask(client)
     all_cov_means = pd.concat(results)
     all_biome_results_df = create_or_open_all_biome_results()
     all_biome_results_df = pd.merge(
@@ -111,12 +111,12 @@ def calc_inside_aoa_pct_per_biome() -> None:
         "resolution",
         "transform",
     ]
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard, n_workers=8, threads_per_worker=1
     )
     tasks = [delayed(process_aoa)(raster) for raster in all_aoa_maps]
     results = compute(*tasks)
-    close_dask(client, cluster)
+    close_dask(client)
     all_aoa_fracs = pd.concat(results)
     all_biome_results_df = create_or_open_all_biome_results()
     all_biome_results_df = pd.merge(

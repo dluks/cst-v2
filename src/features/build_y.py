@@ -63,7 +63,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
     syscfg = cfg[detect_system()][cfg.model_res]["featurize_train"]
 
     log.info("Initializing Dask client...")
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.n_workers,
         threads_per_worker=syscfg.threads_per_worker,
@@ -138,7 +138,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
             Path(parquet_path).unlink(missing_ok=True)
 
     log.info("Closing Dask client...")
-    close_dask(client, cluster)
+    close_dask(client)
 
 
 if __name__ == "__main__":

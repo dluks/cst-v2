@@ -15,7 +15,7 @@ def main(cfg: ConfigBox = get_config()):
     """Match GBIF and PFT data and save to disk."""
     syscfg = cfg[detect_system()][cfg.model_res]["match_gbif_pfts"]
     # 00. Initialize Dask client
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard, n_workers=syscfg.n_workers
     )
 
@@ -72,7 +72,7 @@ def main(cfg: ConfigBox = get_config()):
         )
     finally:
         log.info("Shutting down Dask client...")
-        close_dask(client, cluster)
+        close_dask(client)
 
 
 if __name__ == "__main__":

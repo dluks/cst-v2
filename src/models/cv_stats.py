@@ -84,7 +84,7 @@ def load_x() -> pd.DataFrame:
         log.info("Found cached X data. Loading...")
         return pd.read_parquet(tmp_x_path)
 
-    client, cluster = init_dask(dashboard_address=get_config().dask_dashboard)
+    client, _ = init_dask(dashboard_address=get_config().dask_dashboard)
 
     x_mask = dd.read_parquet(get_predict_mask_fn())
     x_imp = dd.read_parquet(get_predict_imputed_fn())
@@ -102,7 +102,7 @@ def load_x() -> pd.DataFrame:
         dd.merge(x_mask, xy, how="inner", on=["x", "y"]).compute().set_index(["y", "x"])
     )
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     x_trait_masked = x_imp_trait.mask(mask_trait)
     tmp_x_path.parent.mkdir(parents=True, exist_ok=True)

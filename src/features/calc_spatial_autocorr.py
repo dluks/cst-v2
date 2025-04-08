@@ -273,7 +273,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
     y_fn = get_y_fn(cfg)
 
     log.info("Initializing Dask...")
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.n_workers,
         threads_per_worker=2,
@@ -310,7 +310,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
     log.info("Computing range statistics for all traits...")
     ranges_df = pd.concat(compute(*results), ignore_index=True)  # type: ignore
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     log.info("Saving range statistics to DataFrame...")
     # Path to be checked into DVC

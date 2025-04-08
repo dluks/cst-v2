@@ -188,7 +188,7 @@ def average_train_distance_chunked(
 
     chunk_results = client.gather(futures)
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     # Compute the overall mean of the average distances
     avg_distances = cp.mean(cp.array(chunk_results))
@@ -228,7 +228,7 @@ def average_train_distance(
 
     batch_results = client.gather(futures)
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     # Sum the results and normalize by the number of batches
     avg_distances = cp.sum(cp.array(batch_results), axis=0) / num_batches
@@ -287,7 +287,7 @@ def calc_di_threshold(
 
     # min_distances_batches = compute(*futures)
     min_distances_batches = client.gather(futures)
-    close_dask(client, cluster)
+    close_dask(client)
 
     # Combine the results from all batches
     min_distances = cp.concatenate([cp.array(dist) for dist in min_distances_batches])
@@ -335,7 +335,7 @@ def calc_di_predict(
     distances = predict_gpu.map_partitions(_compute_nearest_neighbors, train_gpu)
     distances = distances.compute()
 
-    close_dask(client, cluster)
+    close_dask(client)
 
     distances["di"] = distances["distance"] / mean_distance
     distances["aoa"] = distances["di"] > di_threshold
@@ -399,7 +399,7 @@ def calc_aoa(
     log.info("DI threshold: %.4f", di_threshold)
 
     log.info("Loading, scaling, and weighting predict data...")
-    client, cluster = init_dask()
+    client, _ = init_dask()
     pred_scaled_weighted = scale_and_weight_predict(
         df=load_predict_data(
             npartitions=ts_cfg.predict_partitions, sample=syscfg.predict_sample
@@ -408,7 +408,7 @@ def calc_aoa(
         means=train_means,
         stds=train_stds,
     )
-    close_dask(client, cluster)
+    close_dask(client)
 
     log.info("Computing DI values for predict data...")
     predict_di = calc_di_predict(

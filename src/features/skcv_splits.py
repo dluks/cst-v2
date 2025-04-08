@@ -285,7 +285,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
         syscfg.skcv_splits.n_workers = 40
 
     log.info("Initializing Dask...")
-    client, cluster = init_dask(
+    client, _ = init_dask(
         dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.skcv_splits.n_workers,
         # threads_per_worker=syscfg.skcv_splits.threads_per_worker,
@@ -312,7 +312,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
     for trait_col in trait_cols:
         _assign_trait_splits(traits, trait_col, ranges, args.overwrite, cfg)
 
-    close_dask(client, cluster)
+    close_dask(client)
     log.info("Done!")
 
 

@@ -38,7 +38,7 @@ def main() -> None:
         return fn.parents[1].stem, frac
 
     # Initalize dask
-    client, cluster = init_dask(dashboard_address=cfg.dask_dashboard)
+    client, _ = init_dask(dashboard_address=cfg.dask_dashboard)
 
     log.info("Computing sPlot AOA fractions...")
     splot_aoa_fracs = compute(*[_aoa_frac(fn) for fn in splot_fns])
@@ -46,7 +46,7 @@ def main() -> None:
     comb_aoa_fracs = compute(*[_aoa_frac(fn) for fn in comb_fns])
 
     # Close dask
-    close_dask(client, cluster)
+    close_dask(client)
 
     log.info("Updating results...")
     all_aoa_fn = Path("results/all_aoa.parquet")

@@ -99,7 +99,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
 
     # create dict of dask kws, but only if they are not None
     dask_kws = {k: v for k, v in sys_cfg.dask.items() if v is not None}
-    client, cluster = init_dask(dashboard_address=cfg.dask_dashboard, **dask_kws)
+    client, _ = init_dask(dashboard_address=cfg.dask_dashboard, **dask_kws)
     # /Setup ################
 
     # Load header and set plot IDs as index for later joining with vegetation data
@@ -252,7 +252,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
             xr_to_raster(gridded_trait, out_fn)
             log.info("Wrote %s.", out_fn)
     finally:
-        close_dask(client, cluster)
+        close_dask(client)
         log.info("Done!")
 
 
