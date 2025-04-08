@@ -435,3 +435,148 @@ stages:
       md5: c4fe80ce3344204d69e3e0a514feb3ac.dir
       size: 58285661058
       nfiles: 6339
+  cov:
+    cmd: python src/models/predict_traits.py -r -v --cov
+    deps:
+    - path: data/features/predict/1km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 9372b044d0d211e6450b9bee0b772100
+      size: 28557279604
+    - path: data/features/predict/1km/eo_predict_mask.parquet
+      hash: md5
+      md5: a5b2d37a18df4f9d1ebcc60484d413d0
+      size: 529921831
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      size: 2163
+    - path: models/Shrub_Tree/1km
+      hash: md5
+      md5: c4fe80ce3344204d69e3e0a514feb3ac.dir
+      size: 58285661058
+      nfiles: 6339
+    - path: src/models/predict_traits.py
+      hash: md5
+      md5: 4aaa243e3624d1a7fa53707f763eaba0
+      size: 11585
+    params:
+      params.yaml:
+        cov:
+          dir: cov
+        predict:
+          dir: predict
+          geos:
+            n_workers: 1
+            batches: 8
+          pylos:
+            n_workers: 1
+            batches: 24
+    outs:
+    - path: data/processed/Shrub_Tree/1km/cov
+      hash: md5
+      md5: ed4367174b853f3372f5ddeefc035b61.dir
+      size: 9312207979
+      nfiles: 31
+  predict:
+    cmd: python src/models/predict_traits.py -r -v
+    deps:
+    - path: data/features/predict/1km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 9372b044d0d211e6450b9bee0b772100
+      size: 28557279604
+    - path: data/features/predict/1km/eo_predict_mask.parquet
+      hash: md5
+      md5: a5b2d37a18df4f9d1ebcc60484d413d0
+      size: 529921831
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      size: 2163
+    - path: models/Shrub_Tree/1km
+      hash: md5
+      md5: c4fe80ce3344204d69e3e0a514feb3ac.dir
+      size: 58285661058
+      nfiles: 6339
+    - path: src/models/predict_traits.py
+      hash: md5
+      md5: 4aaa243e3624d1a7fa53707f763eaba0
+      size: 11585
+    params:
+      params.yaml:
+        predict:
+          dir: predict
+          geos:
+            n_workers: 1
+            batches: 8
+          pylos:
+            n_workers: 1
+            batches: 24
+    outs:
+    - path: data/processed/Shrub_Tree/1km/predict
+      hash: md5
+      md5: 15be8024a047c629c52ad31fb5c52dfa.dir
+      size: 8906681013
+      nfiles: 31
+  aoa:
+    cmd: python src/analysis/aoa.py
+    deps:
+    - path: data/features/Shrub_Tree/1km/Y.parquet
+      hash: md5
+      md5: 559690c5a075fabd7c0aa52b97bec88c.dir
+      size: 421443528
+      nfiles: 44
+    - path: data/features/predict/1km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 9372b044d0d211e6450b9bee0b772100
+      size: 28557279604
+    - path: models/Shrub_Tree/1km
+      hash: md5
+      md5: c4fe80ce3344204d69e3e0a514feb3ac.dir
+      size: 58285661058
+      nfiles: 6339
+    - path: src/analysis/aoa.py
+      hash: md5
+      md5: 99192677b52b2cb7c03622299cf477d4
+      size: 15768
+    params:
+      params.yaml:
+        aoa:
+          dir: aoa
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 614
+        - 1080
+        - 3106
+        - 3113
+        - 3117
+        - 3120
+    outs:
+    - path: data/processed/Shrub_Tree/1km/aoa
+      hash: md5
+      md5: 63e01423de02145aaed14cf3fa6a1ec4.dir
+      size: 8494242118
+      nfiles: 31
