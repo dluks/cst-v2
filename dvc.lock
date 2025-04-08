@@ -27,8 +27,8 @@ stages:
       size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: 2e3f44bf4e467e6da01e73daf0d1afd1
-      size: 3432
+      md5: c918e38e1c0d49fbac88a6308042cdc2
+      size: 5918
     params:
       params.yaml:
         trydb:
@@ -66,8 +66,8 @@ stages:
       size: 2232209
     - path: src/data/match_gbif_pfts.py
       hash: md5
-      md5: 7d1a4ba3531b7f4adfaebae71825792b
-      size: 2507
+      md5: 6eb77a3b1d810e69a28df4ddcb0b5450
+      size: 2541
     params:
       params.yaml:
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
