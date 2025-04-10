@@ -2,7 +2,7 @@ Bootstrap: docker
 From: python:3.11-slim
 
 %post
-    # Install system dependencies
+    # Install system dependencies including minimal MPI for building mpi4py
     apt-get update && apt-get install -y \
         git \
         wget \
@@ -12,8 +12,6 @@ From: python:3.11-slim
         r-base-dev \
         r-recommended \
         python3-dev \
-        libopenmpi-dev \
-        openmpi-bin \
         && rm -rf /var/lib/apt/lists/*
 
     # Install Poetry
@@ -22,11 +20,6 @@ From: python:3.11-slim
     # Configure Poetry to not create a virtual environment
     poetry config virtualenvs.create true
     poetry config virtualenvs.in-project true
-
-    # Create mountpoints for host MPI if needed
-    mkdir -p /opt/mpi
-    mkdir -p /opt/slurm
-    mkdir -p /etc/libibverbs.d
 
 %files
     pyproject.toml /app/
@@ -48,11 +41,15 @@ From: python:3.11-slim
     # Fix potential lock file issues first
     poetry lock || true
     
-    # Force mpi4py to use the system-provided MPI
-    export MPICC=mpicc
-    
     # Install dependencies with specific options to handle problematic packages
-    poetry install --no-interaction --no-ansi --without dev --no-root
+    poetry install \
+        --no-interaction \
+        --no-ansi \
+        --with cuda \
+        --with r \
+        --with profiling \
+        --without dev \
+        --no-root
 
 %environment
     # Standard environment variables
@@ -60,50 +57,7 @@ From: python:3.11-slim
     export PYTHONPATH=/app:$PYTHONPATH
     export PROJECT_ROOT=/app
     
-    # MPI-specific environment variables for better compatibility
-    export PMIX_MCA_gds=hash
-    export OMPI_MCA_btl_vader_single_copy_mechanism=none
-    
-    # Disable OpenMPI's shared memory communications if using host MPI
-    export OMPI_MCA_mpi_yield_when_idle=1
-    export OMPI_MCA_hwloc_base_binding_policy=none
-    
-    # Help OpenMPI find Infiniband devices if available
-    export OMPI_MCA_btl=^openib
-    
-    # Improve OpenMPI and SLURM integration
-    export SLURM_MPI_TYPE=pmix_v4
-    
-    # Make sure Python MPI packages use the correct MPI implementation
-    export MPICC=mpicc
-
 %runscript
     #!/bin/bash
-    cd /app # Ensure we\'re in the project directory
+    cd /app # Ensure we're in the project directory
     exec "$@"
-
-%labels
-    MPI.Available yes
-    MPI.Type OpenMPI
-    MPI.BindMount yes
-
-%help
-    Citizen Science Traits container with MPI support
-    
-    For optimal performance on HPC systems, run with:
-    
-    apptainer run --bind /path/to/host/mpi:/opt/mpi cit-sci-traits.sif python script.py
-    
-    When running under Slurm:
-    
-    srun apptainer exec --bind /opt/slurm:/opt/slurm,/path/to/host/mpi:/opt/mpi cit-sci-traits.sif python script.py
-    
-    For Dask + MPI workloads, it\'s recommended to use:
-    
-    sbatch <<EOF
-    #!/bin/bash
-    #SBATCH --nodes=N
-    #SBATCH --ntasks-per-node=M
-    
-    srun --mpi=pmix_v4 apptainer exec --bind /opt/slurm:/opt/slurm,/path/to/host/mpi:/opt/mpi cit-sci-traits.sif python dask_mpi_script.py
-    EOF
