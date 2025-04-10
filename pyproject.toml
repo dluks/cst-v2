@@ -37,14 +37,9 @@ autogluon-tabular = {extras = ["all"], version = "^1.1.0"}
 statsmodels = "^0.14.2"
 tabulate = "^0.9.0"
 scikit-learn = "~1.4"
-
 rio-cogeo = "^5.3.6"
 ease-grid = "^0.2"
 verstack = "^4.1.4"
-
-[tool.poetry.group.hpc.dependencies]
-dask-mpi = "^2022.4.0"
-mpi4py = "^4.0.3"
 
 [tool.poetry.group.cuda.dependencies]
 cudf-cu11 = { version = "24.10.*", source = "nvidia" }
@@ -63,6 +58,8 @@ pytest-mock = "^3.12.0"
 paramiko = "^3.4.0"
 earthengine-api = "^1.4.5"
 
+[tool.poetry.group.profiling.dependencies]
+line_profiler = "^4"
 
 [tool.poetry.group.analysis.dependencies]
 adjusttext = "^1.3.0"
