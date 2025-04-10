@@ -132,12 +132,8 @@ stages:
       size: 529921831
   get_TRY_mean_traits:
     cmd: stages/get_TRY_mean_traits.sh singularity cit-sci-traits latest cit-sci-traits.sif
-      src/data/build_try_traits.py
+      poetry run python src/data/build_try_traits.py
     deps:
-    - path: cit-sci-traits.sif
-      hash: md5
-      md5: b9fe9063182e349ad66bbe5b625a912b
-      size: 20693336064
     - path: data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
       hash: md5
       md5: f2cc4a7dd419bed117f42e62780b16e8
@@ -146,19 +142,6 @@ stages:
       hash: md5
       md5: b2abe3321c2d974a13903cd15dd86f34
       size: 5820
-    - path: src/utils/df_utils.py
-      hash: md5
-      md5: 90d2a81a74833b6948b10c674b51f5c4
-      size: 19453
-    - path: src/utils/trait_utils.py
-      hash: md5
-      md5: 7f0c8716b2226238f2c20e373ebc2e5b
-      size: 3177
-    - path: stages/get_TRY_mean_traits.sh
-      hash: md5
-      md5: 43a243112634930bafe1713fa0b4cddd
-      size: 727
-      isexec: true
     params:
       params.yaml:
         container:
@@ -183,9 +166,9 @@ stages:
     outs:
     - path: data/interim/try/power_transformer.pkl
       hash: md5
-      md5: d21efd0d564ee1dc6fdc499c12c06bc3
+      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
       size: 2163
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: e72bbe287c0bcc22a16e6989703d0c24
-      size: 10537510
+      md5: 848e3e1cf12cf3741c18bd9869ad3b5a
+      size: 6078698
