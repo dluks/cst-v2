@@ -723,6 +723,10 @@ geos:
     build_final_product:
       n_workers: 5
       threads_per_worker: 1
+nemo2:
+  "1km":
+    match_gbif_pfts:
+      n_workers: 60
 
 mask:
   path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
