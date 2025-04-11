@@ -72,6 +72,7 @@ stages:
     params:
       params.yaml:
         PFT: Grass
+        try_version: 6
         trydb:
           raw:
             dir: TRY_6_gapfilled_for_distribution
@@ -113,6 +114,7 @@ stages:
       size: 3375
     params:
       params.yaml:
+        PFT: Grass
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
         gbif.interim.dir: gbif
         gbif.interim.matched: gbif_pfts.parquet
