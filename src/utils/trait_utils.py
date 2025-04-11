@@ -42,11 +42,10 @@ def clean_species_name(
     if new_sp_col is None:
         new_sp_col = sp_col
 
-    # Pipeline of operations with conditional meta parameter
+    # Perform all operations in one chain
     result = df.assign(
-        **{new_sp_col: trim_species_name(df[sp_col])},
+        **{new_sp_col: trim_species_name(df[sp_col]).str.lower()},
     ).dropna(subset=[new_sp_col])
-    result[new_sp_col] = result[new_sp_col].str.lower()
 
     return result
 
