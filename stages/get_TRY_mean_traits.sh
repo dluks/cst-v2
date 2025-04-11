@@ -22,10 +22,10 @@ if is_slurm_available; then
         --job-name="try_traits" \
         --output="logs/try_traits/%j.log" \
         --error="logs/try_traits/%j.err" \
-        --time="00:30:00" \
+        --time="00:05:00" \
         --nodes=1 \
         --ntasks=1 \
-        --cpus=8 \
+        --cpus=2 \
         --mem="3G" \
         --partition="cpu" \
         "stages/utils/run_in_container.sh $@"
