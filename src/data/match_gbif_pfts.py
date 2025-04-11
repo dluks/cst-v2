@@ -9,7 +9,7 @@ from distributed import Client
 
 from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
-from src.utils.trait_utils import clean_species_name
+from src.utils.trait_utils import clean_species_name, filter_pft
 
 
 def main(cfg: ConfigBox = get_config()):
@@ -80,7 +80,8 @@ def main(cfg: ConfigBox = get_config()):
 
         # 03. Preprocess PFT data
         pfts = (
-            pfts.dropna(subset=["AccSpeciesName"])
+            pfts.pipe(filter_pft, cfg.PFT)
+            .dropna(subset=["AccSpeciesName"])
             .pipe(clean_species_name, "AccSpeciesName", "speciesname")
             .drop(columns=["AccSpeciesName"])
             .sort_values(by="speciesname")

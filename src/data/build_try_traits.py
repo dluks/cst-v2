@@ -24,27 +24,34 @@ def main(cfg: ConfigBox = get_config()) -> None:
     try_raw_dir = Path(cfg.raw_dir, cfg.trydb.raw.dir)
     try_prep_dir = Path(cfg.interim_dir, cfg.trydb.interim.dir)
 
+    if cfg.try_version not in [5, 6]:
+        raise ValueError(f"Unsupported TRY version: {cfg.try_version}")
+    if cfg.try_version == 6:
+        trait_cols = [f"X.X{t}." for t in cfg.datasets.Y.traits]
+    else:
+        trait_cols = [f"X{t}" for t in cfg.datasets.Y.traits]
+
+    trait_cols = ["Species"] + trait_cols
+
     log.info("Extracting raw TRY traits data...")
     with zipfile.ZipFile(try_raw_dir / cfg.trydb.raw.zip, "r") as zip_ref:  # noqa: SIM117
         with zip_ref.open(cfg.trydb.raw.zipfile_csv) as zf:
             if cfg.trydb.raw.zipfile_csv.endswith(".zip"):
                 with zipfile.ZipFile(zf, "r") as nested_zip_ref:  # noqa: SIM117
                     with nested_zip_ref.open(nested_zip_ref.namelist()[0]) as csvfile:
-                        traits = pd.read_csv(csvfile, encoding="latin-1", index_col=0)
+                        traits = pd.read_csv(
+                            csvfile,
+                            encoding="latin-1",
+                            usecols=trait_cols,
+                        )
             else:
-                traits = pd.read_csv(zf, encoding="latin-1", index_col=0)
+                traits = pd.read_csv(zf, encoding="latin-1", usecols=trait_cols)
 
     log.info("Getting species mean trait values...")
-    traits = traits.pipe(standardize_trait_ids)
-    valid_traits = [f"X{t}" for t in cfg.datasets.Y.traits]
-    trait_cols = [
-        col for col in traits.columns if col.startswith("X") and col in valid_traits
-    ]
+    traits = traits.astype({"Species": "string[pyarrow]"}).pipe(standardize_trait_ids)
 
-    keep_cols = ["Species"] + trait_cols
     mean_filt_traits = (
-        traits[keep_cols]
-        .pipe(_filter_if_specified, trait_cols, cfg.trydb.interim.quantile_range)
+        traits.pipe(_filter_if_specified, trait_cols, cfg.trydb.interim.quantile_range)
         .pipe(clean_species_name, "Species", "speciesname")
         .drop(columns=["Species"])
         .groupby("speciesname")
@@ -55,19 +62,29 @@ def main(cfg: ConfigBox = get_config()) -> None:
     log.info("Filtering by plant functional types...")
     log.info("Loading PFTs...")
     pft_path = Path(cfg.raw_dir, cfg.trydb.raw.pfts)
+    pft_columns = ["AccSpeciesName", "pft"]
     if pft_path.suffix == ".csv":
-        pfts = pd.read_csv(pft_path, encoding="latin-1")
+        pfts = pd.read_csv(
+            pft_path,
+            encoding="latin-1",
+            usecols=pft_columns,
+        )
     elif pft_path.suffix == ".parquet":
-        pfts = pd.read_parquet(pft_path)
+        pfts = pd.read_parquet(pft_path, columns=pft_columns)
     else:
         raise ValueError(f"Unsupported PFT file format: {pft_path.suffix}")
     pfts = (
-        pfts.drop(columns=["AccSpeciesID"])
+        pfts.pipe(filter_pft, cfg.PFT)
+        .astype(
+            {
+                "AccSpeciesName": "string[pyarrow]",
+                "pft": "category",
+            }
+        )
         .dropna(subset=["AccSpeciesName"])
         .pipe(clean_species_name, "AccSpeciesName", "speciesname")
         .drop(columns=["AccSpeciesName"])
         .drop_duplicates(subset=["speciesname"])
-        .pipe(filter_pft, cfg.PFT)
         .set_index("speciesname")
     )
 
