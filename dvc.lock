@@ -172,3 +172,32 @@ stages:
       hash: md5
       md5: 848e3e1cf12cf3741c18bd9869ad3b5a
       size: 6078698
+  match_gbif_pfts:
+    cmd: stages/match_gbif_pfts.sh singularity cit-sci-traits latest cit-sci-traits.sif
+      poetry run python src/data/match_gbif_pfts.py
+    deps:
+    - path: data/raw/all_tracheophyta_non-cult_2024-04-10
+      hash: md5
+      md5: ada860692d425bd047bd09fd4531fdbf.dir
+      size: 30005038638
+      nfiles: 1584
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/match_gbif_pfts.py
+      hash: md5
+      md5: 84f86797181e29b0f356b9550376d969
+      size: 3541
+    params:
+      params.yaml:
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        gbif.interim.dir: gbif
+        gbif.interim.matched: gbif_pfts.parquet
+        gbif.raw.dir: all_tracheophyta_non-cult_2024-04-10
+    outs:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: 0dbd2f7f67ad45b89d15eadda9853794.dir
+      size: 4020105939
+      nfiles: 159
