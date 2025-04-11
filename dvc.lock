@@ -114,8 +114,8 @@ stages:
       size: 2232209
     - path: src/data/match_gbif_pfts.py
       hash: md5
-      md5: 84f86797181e29b0f356b9550376d969
-      size: 3541
+      md5: 91966aa4046de98ff6592e9a3a3c1109
+      size: 3324
     params:
       params.yaml:
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
@@ -125,8 +125,8 @@ stages:
     outs:
     - path: data/interim/gbif/gbif_pfts.parquet
       hash: md5
-      md5: 0dbd2f7f67ad45b89d15eadda9853794.dir
-      size: 4020105939
+      md5: 5e6549f849262b7fae26103a97af3485.dir
+      size: 4017861797
       nfiles: 159
   extract_splot:
     cmd: stages/extract_splot.sh singularity cit-sci-traits latest cit-sci-traits.sif
