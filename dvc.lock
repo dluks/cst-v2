@@ -67,16 +67,11 @@ stages:
       size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: b2abe3321c2d974a13903cd15dd86f34
-      size: 5820
+      md5: 67de4c1da7c8459a46379ec9ef05c691
+      size: 6309
     params:
       params.yaml:
-        container:
-          type: singularity
-          name: cit-sci-traits
-          docker_tag: latest
-          def: cit-sci-traits.def
-          image: cit-sci-traits.sif
+        PFT: Grass
         trydb:
           raw:
             dir: TRY_6_gapfilled_for_distribution
@@ -93,12 +88,12 @@ stages:
     outs:
     - path: data/interim/try/power_transformer.pkl
       hash: md5
-      md5: 56c46ca6411ddfd4ac490a28b3ad12b4
+      md5: 3af58b921bc9e9fe73758f2337be08b1
       size: 2163
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: 848e3e1cf12cf3741c18bd9869ad3b5a
-      size: 6078698
+      md5: 104c0200f41f91ca4be7973dccdc234f
+      size: 4473730
   match_gbif_pfts:
     cmd: stages/match_gbif_pfts.sh singularity cit-sci-traits latest cit-sci-traits.sif
       poetry run python src/data/match_gbif_pfts.py
@@ -114,8 +109,8 @@ stages:
       size: 2232209
     - path: src/data/match_gbif_pfts.py
       hash: md5
-      md5: 91966aa4046de98ff6592e9a3a3c1109
-      size: 3324
+      md5: 957225b51ba6d03bb35139a7fabc6059
+      size: 3375
     params:
       params.yaml:
         datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
@@ -125,8 +120,8 @@ stages:
     outs:
     - path: data/interim/gbif/gbif_pfts.parquet
       hash: md5
-      md5: 5e6549f849262b7fae26103a97af3485.dir
-      size: 4017861797
+      md5: c7504b332aaf296efab1598be6bfbf61.dir
+      size: 2938908051
       nfiles: 159
   extract_splot:
     cmd: stages/extract_splot.sh singularity cit-sci-traits latest cit-sci-traits.sif
