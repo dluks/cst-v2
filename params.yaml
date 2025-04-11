@@ -9,7 +9,7 @@ container:
   image: "cit-sci-traits.sif"
 
 model_res: "1km"
-PFT: "Shrub_Tree"
+PFT: "Grass"
 random_seed: 42
 base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
 target_resolution: 1000 # Target resolution for model training
