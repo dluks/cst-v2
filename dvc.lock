@@ -148,3 +148,76 @@ stages:
       md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
       size: 508142149
       nfiles: 3
+  harmonize_eo_data:
+    cmd: python src/data/harmonize_eo_data.py
+    deps:
+    - path: src/data/harmonize_eo_data.py
+      hash: md5
+      md5: 364b84bb720f57c2eadf2bd47e1b987d
+      size: 8078
+    params:
+      params.yaml:
+        base_resolution: 1000
+        datasets.X:
+          canopy_height: ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: modis_sur_refl_monthly_avg_1km
+          soilgrids: soilgrids_v2-0_1km
+          vodca: vodca_mean-p5-p95_1km
+          worldclim: wc2-1_30s_bio
+        eo_data.interim.dir: eo_data
+        mask:
+          path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+          keep_classes:
+          - 10
+          - 20
+          - 30
+          - 40
+          - 60
+          - 70
+          - 90
+          - 95
+          - 100
+        model_res: 1km
+        target_resolution: 1000
+        worldclim.bio_vars:
+        - '1'
+        - '4'
+        - '7'
+        - '12'
+        - 13-14
+        - '15'
+    outs:
+    - path: data/interim/eo_data/1km
+      hash: md5
+      md5: f647487e3ff8b6aed0d0c49eac9613be.dir
+      size: 30797034288
+      nfiles: 150
+  build_predict:
+    cmd: python src/features/featurize_predict.py
+    deps:
+    - path: data/interim/eo_data/1km
+      hash: md5
+      md5: f647487e3ff8b6aed0d0c49eac9613be.dir
+      size: 30797034288
+      nfiles: 150
+    - path: src/features/featurize_predict.py
+      hash: md5
+      md5: ca3da443b6f09c8a58773d046fa54dca
+      size: 5035
+    params:
+      params.yaml:
+        eo_data.interim.dir: eo_data
+        eo_data.predict.dir: predict
+        eo_data.predict.imputed_fn: eo_predict_imputed.parquet
+        eo_data.predict.mask_fn: eo_predict_mask.parquet
+        model_res: 1km
+        train.dir: data/features
+    outs:
+    - path: data/features/predict/1km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 9372b044d0d211e6450b9bee0b772100
+      size: 28557279604
+    - path: data/features/predict/1km/eo_predict_mask.parquet
+      hash: md5
+      md5: a5b2d37a18df4f9d1ebcc60484d413d0
+      size: 529921831
