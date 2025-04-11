@@ -35,6 +35,7 @@ From: python:3.11-slim
     mkdir /app/tests
     mkdir /app/reference
     mkdir /app/results
+    mkdir /app/profiling
     
     cd /app
 

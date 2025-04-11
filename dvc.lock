@@ -28,16 +28,16 @@ stages:
       size: 9726
     - path: cit-sci-traits.def
       hash: md5
-      md5: 0cdc5c34643aae92f0187c3097d9cce9
-      size: 1421
+      md5: 483c21414f26b4519255902a9ddb34ab
+      size: 1446
     - path: poetry.lock
       hash: md5
-      md5: b50d9005aa87bbd832b5810cce6a1ab4
-      size: 652979
+      md5: 8f7cfac13e06acaf604d74b7951ca402
+      size: 667727
     - path: pyproject.toml
       hash: md5
-      md5: a03ecd165d01135e337256b4ff7762a3
-      size: 1711
+      md5: abb62da99ab8238dbfd94f6814da0866
+      size: 1732
     - path: stages/build_container.sh
       hash: md5
       md5: 52742d9dcb076bd83a511a755757a5f3
@@ -54,6 +54,6 @@ stages:
     outs:
     - path: cit-sci-traits.sif
       hash: md5
-      md5: 7993dfbb26e75e464ae06021fbde83df
-      size: 20658462720
+      md5: 710945b9ebe0a3d5eed3d0e839dca3ea
+      size: 20662411264
       isexec: true
