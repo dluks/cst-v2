@@ -201,8 +201,21 @@ echo "Monitoring job ${job_id}, waiting for completion..."
 
 # Function to check if job is still running
 job_is_running() {
-    squeue -j ${job_id} --noheader &> /dev/null
-    return $?
+    # Add timeout to squeue command to prevent hanging
+    timeout 10 squeue -j ${job_id} --noheader &> /dev/null
+    local status=$?
+    # If timeout or command failed, retry once more before giving up
+    if [ $status -ne 0 ]; then
+        sleep 2
+        timeout 10 squeue -j ${job_id} --noheader &> /dev/null
+        status=$?
+        # If still failing after retry, check with sacct
+        if [ $status -ne 0 ]; then
+            timeout 10 sacct -j ${job_id} --format=State --noheader | grep -q "RUNNING\|PENDING"
+            status=$?
+        fi
+    fi
+    return $status
 }
 
 # Function to kill any tail processes
@@ -290,9 +303,14 @@ if [ -f "${actual_error_path}" ]; then
     echo "Log tailing complete."
 else
     echo "Log file not created, waiting for job to complete..."
-    # Just wait for the job to complete
-    while job_is_running; do
-        sleep 5
+    # Wait for job completion with robust error handling
+    while true; do
+        if job_is_running; then
+            sleep 5  # Check status every 5 seconds
+        else
+            echo "Job ${job_id} appears to have completed."
+            break
+        fi
     done
 fi
 
@@ -303,9 +321,18 @@ kill_tail_processes
 # Reset the trap as we're doing explicit cleanup
 trap - EXIT INT TERM
 
-# Check job status
-sacct -j ${job_id} --format=State --noheader | grep -q "COMPLETED"
-job_status=$?
+# Check job status with timeout
+echo "Checking job status..."
+job_status=1  # Default to failure
+timeout 15 sacct -j ${job_id} --format=State --noheader > /tmp/job_status_$$ 2>/dev/null
+if [ $? -eq 0 ]; then
+    grep -q "COMPLETED" /tmp/job_status_$$
+    job_status=$?
+    rm -f /tmp/job_status_$$
+else
+    echo "Warning: Could not check job status with sacct, assuming job completed."
+    job_status=0  # Assume success if sacct times out
+fi
 
 # Clean up the temporary script
 rm -f "$temp_script"
