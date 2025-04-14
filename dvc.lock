@@ -221,3 +221,66 @@ stages:
       hash: md5
       md5: a5b2d37a18df4f9d1ebcc60484d413d0
       size: 529921831
+  build_gbif_maps:
+    cmd: stages/build_gbif_maps_parallel.sh
+    deps:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: c7504b332aaf296efab1598be6bfbf61.dir
+      size: 2938908051
+      nfiles: 159
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 104c0200f41f91ca4be7973dccdc234f
+      size: 4473730
+    - path: src/data/build_gbif_maps.py
+      hash: md5
+      md5: 03fc46c8cff8e6f60b175d81c1f525c4
+      size: 4720
+    params:
+      params.yaml:
+        PFT: Grass
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 614
+        - 1080
+        - 3106
+        - 3113
+        - 3117
+        - 3120
+        gbif.interim.dir: gbif
+        model_res: 1km
+        target_resolution: 1000
+        trydb.interim.dir: try
+        trydb.interim.filtered: traits.parquet
+    outs:
+    - path: data/interim/gbif/trait_maps/Grass/1km
+      hash: md5
+      md5: d9486a799f91852523470799b3a53966.dir
+      size: 3166467685
+      nfiles: 31
