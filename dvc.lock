@@ -284,3 +284,70 @@ stages:
       md5: d9486a799f91852523470799b3a53966.dir
       size: 3166467685
       nfiles: 31
+  build_splot_maps:
+    cmd: stages/build_splot_maps_parallel.sh
+    deps:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 104c0200f41f91ca4be7973dccdc234f
+      size: 4473730
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/build_splot_maps.py
+      hash: md5
+      md5: a65700ef9171fed866341b466069ec63
+      size: 13108
+    params:
+      params.yaml:
+        PFT: Grass
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 614
+        - 1080
+        - 3106
+        - 3113
+        - 3117
+        - 3120
+        model_res: 1km
+        splot.interim:
+          dir: splot
+          extracted: extracted
+          traits: trait_maps
+        target_resolution: 1000
+    outs:
+    - path: data/interim/splot/trait_maps/Grass/1km
+      hash: md5
+      md5: c6e67dac73f7414b364790a5f79075d8.dir
+      size: 1134104113
+      nfiles: 31
