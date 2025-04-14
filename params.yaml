@@ -727,6 +727,9 @@ nemo2:
   "1km":
     match_gbif_pfts:
       n_workers: 60
+    build_gbif_maps:
+      n_workers: 32
+      threads_per_worker: 5
 
 mask:
   path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
