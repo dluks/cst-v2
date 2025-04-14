@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Create the bind path string with additional MPI-related paths
-BIND_PATHS="src:/app/src,tests:/app/tests,models:/app/models,data:/app/data,reference:/app/reference,results:/app/results,profiling:/app/profiling,.env:/app/.env,params.yaml:/app/params.yaml"
+BIND_PATHS="src:/app/src,tests:/app/tests,models:/app/models,data:/app/data,reference:/app/reference,results:/app/results,profiling:/app/profiling,tmp:/app/tmp,.env:/app/.env,params.yaml:/app/params.yaml"
 
 echo "BIND_PATHS: $BIND_PATHS"
 
