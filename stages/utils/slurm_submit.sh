@@ -11,6 +11,7 @@ NODES=1
 NTASKS=1
 NTASKS_PER_NODE=""  # New parameter for tasks per node
 CPUS=1
+THREADS_PER_CORE=1  # New parameter for threads per core
 MEM="500M"
 PARTITION="cpu"
 CONSTRAINT=""       # New parameter for node constraints
@@ -53,6 +54,10 @@ while [ $# -gt 0 ]; do
       ;;
     --cpus=*|--cpus-per-task=*)
       CPUS="${1#*=}"
+      shift
+      ;;
+    --threads-per-core=*)
+      THREADS_PER_CORE="${1#*=}"
       shift
       ;;
     --mem=*)
@@ -114,6 +119,7 @@ if [ -z "$COMMAND" ]; then
   echo "  --ntasks-per-node=<n>       Tasks per node (optional)"
   echo "  --cpus=<n>                  CPUs per task (default: 1)"
   echo "  --cpus-per-task=<n>         Alias for --cpus"
+  echo "  --threads-per-core=<n>      Threads per core (optional)"
   echo "  --mem=<mem>                 Memory per node (default: 500M)"
   echo "  --partition=<part>          Partition/queue (default: cpu)"
   echo "  --constraint=<features>     Node features/constraints (optional)"
@@ -146,6 +152,7 @@ EOF
 # Add optional parameters if specified
 [ -n "$NTASKS_PER_NODE" ] && echo "#SBATCH --ntasks-per-node=$NTASKS_PER_NODE" >> "$temp_script"
 echo "#SBATCH --cpus-per-task=$CPUS" >> "$temp_script"
+[ -n "$THREADS_PER_CORE" ] && echo "#SBATCH --threads-per-core=$THREADS_PER_CORE" >> "$temp_script"
 echo "#SBATCH --mem=$MEM" >> "$temp_script"
 echo "#SBATCH --partition=$PARTITION" >> "$temp_script"
 [ -n "$CONSTRAINT" ] && echo "#SBATCH --constraint=$CONSTRAINT" >> "$temp_script"
@@ -230,12 +237,32 @@ kill_tail_processes() {
     fi
 }
 
+# Function to cancel the Slurm job
+cancel_slurm_job() {
+    echo "Cancelling Slurm job ${job_id}..."
+    scancel ${job_id} 2>/dev/null || true
+}
+
 # Register cleanup handler that will run on script exit
 cleanup() {
+    local exit_code=$?
     echo "Cleaning up monitoring processes..."
     kill_tail_processes
+    
+    # Only cancel the job if we're being interrupted
+    if [ $exit_code -eq 130 ] || [ $exit_code -eq 143 ]; then  # SIGINT (Ctrl-C) or SIGTERM
+        cancel_slurm_job
+    fi
+    
     # Kill any other processes we might have started
     jobs -p | xargs -r kill -9 2>/dev/null || true
+    # Clean up the temporary script
+    rm -f "$temp_script"
+    
+    # Only exit with error if we were interrupted
+    if [ $exit_code -eq 130 ] || [ $exit_code -eq 143 ]; then
+        exit 1
+    fi
 }
 trap cleanup EXIT INT TERM
 
