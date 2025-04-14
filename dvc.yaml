@@ -179,7 +179,13 @@ stages:
           persist: false
 
   build_y:
-    cmd: python src/features/build_y.py
+    cmd: >-
+      stages/build_y.sh
+      ${container.type}
+      ${container.name}
+      ${container.docker_tag}
+      ${container.image}
+      poetry run src/features/build_y.py
     deps:
       - src/features/build_y.py
       - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.traits}/${PFT}/${model_res}
@@ -187,7 +193,6 @@ stages:
     params:
       - datasets.Y.trait_stat
       - datasets.Y.traits
-
     outs:
       - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
 

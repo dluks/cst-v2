@@ -8,6 +8,7 @@ import dask.dataframe as dd
 import pandas as pd
 import xarray as xr
 from box import ConfigBox
+from distributed import Client
 
 from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
@@ -62,83 +63,77 @@ def main(cfg: ConfigBox = get_config()) -> None:
     """
     syscfg = cfg[detect_system()][cfg.model_res]["featurize_train"]
 
-    log.info("Initializing Dask client...")
-    client, _ = init_dask(
-        dashboard_address=cfg.dask_dashboard,
+    with Client(
         n_workers=syscfg.n_workers,
         threads_per_worker=syscfg.threads_per_worker,
         memory_limit=syscfg.memory_limit,
-    )
+    ):
+        log.info("Gathering trait map filenames...")
+        valid_traits = [str(trait_num) for trait_num in cfg.datasets.Y.traits]
 
-    log.info("Gathering trait map filenames...")
-    valid_traits = [str(trait_num) for trait_num in cfg.datasets.Y.traits]
+        # Process traits in batches
+        batch_size = 8  # Adjust based on your system
+        all_y_dfs = []
 
-    # Process traits in batches
-    batch_size = 8  # Adjust based on your system
-    all_y_dfs = []
+        for i in range(0, len(valid_traits), batch_size):
+            batch_traits = valid_traits[i : i + batch_size]
+            log.info(f"Processing trait batch {i // batch_size + 1}: {batch_traits}")
 
-    for i in range(0, len(valid_traits), batch_size):
-        batch_traits = valid_traits[i : i + batch_size]
-        log.info(f"Processing trait batch {i // batch_size + 1}: {batch_traits}")
+            gbif_batch_fns = [
+                fn
+                for fn in get_trait_map_fns("gbif", cfg)
+                if get_trait_number_from_id(fn.stem) in batch_traits
+            ]
+            splot_batch_fns = [
+                fn
+                for fn in get_trait_map_fns("splot", cfg)
+                if get_trait_number_from_id(fn.stem) in batch_traits
+            ]
 
-        gbif_batch_fns = [
-            fn
-            for fn in get_trait_map_fns("gbif", cfg)
-            if get_trait_number_from_id(fn.stem) in batch_traits
-        ]
-        splot_batch_fns = [
-            fn
-            for fn in get_trait_map_fns("splot", cfg)
-            if get_trait_number_from_id(fn.stem) in batch_traits
-        ]
+            batch_df = dd.concat(
+                [
+                    build_y_df(gbif_batch_fns, cfg, syscfg, "gbif"),
+                    build_y_df(splot_batch_fns, cfg, syscfg, "splot"),
+                ],
+                axis=0,
+                ignore_index=True,
+            )
 
-        batch_df = dd.concat(
-            [
-                build_y_df(gbif_batch_fns, cfg, syscfg, "gbif"),
-                build_y_df(splot_batch_fns, cfg, syscfg, "splot"),
-            ],
-            axis=0,
-            ignore_index=True,
-        )
+            # Write intermediate results
+            temp_path = Path(cfg.tmp_dir) / f"y_batch_{i // batch_size}.parquet"
+            temp_path.parent.mkdir(parents=True, exist_ok=True)
+            batch_df.to_parquet(temp_path, compression="zstd")
+            all_y_dfs.append(temp_path)
 
-        # Write intermediate results
-        temp_path = Path(cfg.tmp_dir) / f"y_batch_{i // batch_size}.parquet"
-        temp_path.parent.mkdir(parents=True, exist_ok=True)
-        batch_df.to_parquet(temp_path, compression="zstd")
-        all_y_dfs.append(temp_path)
+            # Force garbage collection
+            gc.collect()
 
-        # Force garbage collection
-        gc.collect()
+        # Start with the first batch
+        y_df = None
+        for i, parquet_path in enumerate(all_y_dfs):
+            batch_df = dd.read_parquet(parquet_path)
 
-    # Start with the first batch
-    y_df = None
-    for i, parquet_path in enumerate(all_y_dfs):
-        batch_df = dd.read_parquet(parquet_path)
+            if y_df is None:
+                y_df = batch_df
+            else:
+                # Merge on common spatial coordinates and source
+                y_df = y_df.merge(batch_df, on=["x", "y", "source"], how="outer")
 
         if y_df is None:
-            y_df = batch_df
-        else:
-            # Merge on common spatial coordinates and source
-            y_df = y_df.merge(batch_df, on=["x", "y", "source"], how="outer")
+            raise ValueError("No Y data was loaded. Check the trait map filenames.")
 
-    if y_df is None:
-        raise ValueError("No Y data was loaded. Check the trait map filenames.")
+        out_path = get_y_fn(cfg)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        log.info("Writing Y data to %s...", str(out_path))
+        y_df.to_parquet(out_path, compression="zstd")
 
-    out_path = get_y_fn(cfg)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    log.info("Writing Y data to %s...", str(out_path))
-    y_df.to_parquet(out_path, compression="zstd")
-
-    # Clean up intermediate files
-    log.info("Cleaning up intermediate files...")
-    for parquet_path in all_y_dfs:
-        if Path(parquet_path).is_dir():
-            shutil.rmtree(parquet_path, ignore_errors=True)
-        else:
-            Path(parquet_path).unlink(missing_ok=True)
-
-    log.info("Closing Dask client...")
-    close_dask(client)
+        # Clean up intermediate files
+        log.info("Cleaning up intermediate files...")
+        for parquet_path in all_y_dfs:
+            if Path(parquet_path).is_dir():
+                shutil.rmtree(parquet_path, ignore_errors=True)
+            else:
+                Path(parquet_path).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
