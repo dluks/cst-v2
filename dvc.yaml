@@ -141,7 +141,8 @@ stages:
   ######################################################################################
   
   build_gbif_maps:
-    cmd: python src/data/build_gbif_maps.py
+    cmd: >-
+      stages/build_gbif_maps_parallel.sh
     deps:
       - src/data/build_gbif_maps.py
       - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.matched}
@@ -151,12 +152,13 @@ stages:
       - trydb.interim.dir
       - trydb.interim.filtered
       - datasets.Y.gbif
+      - datasets.Y.traits
       - PFT
       - model_res
       - target_resolution
     outs:
       - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.traits}/${PFT}/${model_res}:
-          persist: false
+          persist: false 
 
   build_splot_maps:
     cmd: python src/data/build_splot_maps.py

@@ -8,13 +8,13 @@ from pathlib import Path
 
 import dask.dataframe as dd
 from box import ConfigBox
+from dask.distributed import Client
 
 from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
-from src.utils.dask_utils import close_dask, init_dask
 from src.utils.df_utils import rasterize_points, reproject_geo_to_xy
 from src.utils.raster_utils import xr_to_raster
-from src.utils.trait_utils import filter_pft, get_trait_number_from_id
+from src.utils.trait_utils import filter_pft
 
 
 def cli() -> argparse.Namespace:
@@ -24,6 +24,12 @@ def cli() -> argparse.Namespace:
     )
     parser.add_argument(
         "-o", "--overwrite", action="store_true", help="Overwrite existing files."
+    )
+    parser.add_argument(
+        "-t",
+        "--trait",
+        type=str,
+        help="Trait ID to process (e.g. '3'). If not provided, all traits will be processed.",
     )
     return parser.parse_args()
 
@@ -39,15 +45,6 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
 
     npartitions = syscfg.get("npartitions", None)
 
-    # Initialize Dask client
-    log.info("Initializing Dask client...")
-    client, _ = init_dask(
-        dashboard_address=cfg.dask_dashboard,
-        n_workers=syscfg.n_workers,
-        memory_limit=syscfg.memory_limit,
-        threads_per_worker=syscfg.threads_per_worker,
-    )
-
     out_dir = (
         Path(cfg.interim_dir)
         / cfg.gbif.interim.dir
@@ -57,44 +54,70 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
     )
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load data
-    gbif = (
-        dd.read_parquet(
-            Path(cfg.interim_dir, cfg.gbif.interim.dir, cfg.gbif.interim.matched)
-        )
-        .pipe(_repartition_if_set, npartitions)
-        .pipe(filter_pft, cfg.PFT)
-        .set_index("speciesname")
-    )
-
-    mn_traits = (
-        dd.read_parquet(
-            Path(cfg.interim_dir, cfg.trydb.interim.dir, cfg.trydb.interim.filtered)
-        )
-        .pipe(_repartition_if_set, npartitions)
-        .set_index("speciesname")
-    )
-
-    # Merge GBIF and trait data
-    merged = (
-        gbif.join(mn_traits, how="inner").reset_index(drop=True).drop(columns=["pft"])
-    )
-
-    # Reproject coordinates to target CRS
-    if cfg.crs == "EPSG:6933":
-        merged = merged.map_partitions(
-            reproject_geo_to_xy,
-            to_crs=cfg.crs,
-            x="decimallongitude",
-            y="decimallatitude",
-        ).drop(columns=["decimallatitude", "decimallongitude"])
-
-    # Grid trait stats (mean, STD, median, 5th and 95th quantiles) for each grid cell
-    cols = [col for col in merged.columns if col.startswith("X")]
     valid_traits = [str(trait_num) for trait_num in cfg.datasets.Y.traits]
-    cols = [col for col in cols if get_trait_number_from_id(col) in valid_traits]
 
-    try:
+    # If trait is specified, only process that one
+    if args.trait:
+        if args.trait not in valid_traits:
+            raise ValueError(
+                f"Invalid trait ID: {args.trait}. Valid traits are: {', '.join(valid_traits)}"
+            )
+        traits_to_process = [args.trait]
+    else:
+        traits_to_process = valid_traits
+
+    with Client(
+        dashboard_address=cfg.dask_dashboard,
+        n_workers=syscfg.n_workers,
+        threads_per_worker=syscfg.threads_per_worker,
+    ):
+        # Load data
+        gbif = (
+            dd.read_parquet(
+                Path(cfg.interim_dir, cfg.gbif.interim.dir, cfg.gbif.interim.matched)
+            )
+            .pipe(_repartition_if_set, npartitions)
+            .pipe(filter_pft, cfg.PFT)
+            .set_index("speciesname")
+        )
+
+        # Only load the needed trait columns
+        needed_columns = ["speciesname"]
+        needed_columns.extend([f"X{trait_num}" for trait_num in traits_to_process])
+
+        mn_traits = (
+            dd.read_parquet(
+                Path(
+                    cfg.interim_dir, cfg.trydb.interim.dir, cfg.trydb.interim.filtered
+                ),
+                columns=needed_columns,
+            )
+            .pipe(_repartition_if_set, npartitions)
+            .set_index("speciesname")
+        )
+
+        # Merge GBIF and trait data
+        merged = (
+            gbif.join(mn_traits, how="inner")
+            .reset_index(drop=True)
+            .drop(columns=["pft"])
+        )
+
+        # Reproject coordinates to target CRS
+        if cfg.crs != "EPSG:4326":
+            if cfg.crs != "EPSG:6933":
+                raise ValueError(f"Unsupported CRS: {cfg.crs}")
+
+            merged = merged.map_partitions(
+                reproject_geo_to_xy,
+                to_crs=cfg.crs,
+                x="decimallongitude",
+                y="decimallatitude",
+            ).drop(columns=["decimallatitude", "decimallongitude"])
+
+        # Grid trait stats for each specified trait
+        cols = [f"X{trait}" for trait in traits_to_process]
+
         for col in cols:
             out_fn = out_dir / f"{col}.tif"
             if out_fn.exists() and not args.overwrite:
@@ -115,9 +138,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
             log.info("Writing to disk...")
             xr_to_raster(raster, out_fn)
             log.info("Wrote %s.tif.", col)
-    finally:
-        close_dask(client)
-        log.info("Done!")
+    log.info("Done!")
 
 
 if __name__ == "__main__":
