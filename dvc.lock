@@ -27,8 +27,8 @@ stages:
       size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: 2e3f44bf4e467e6da01e73daf0d1afd1
-      size: 3432
+      md5: c918e38e1c0d49fbac88a6308042cdc2
+      size: 5918
     params:
       params.yaml:
         trydb:
@@ -36,22 +36,23 @@ stages:
             dir: TRY_6_gapfilled_for_distribution
             zip: TRY6_gapfilled_for_distribution.zip
             zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
-            already_norm:
-            - 13
-            - 47
-            - 95
-            - 78
-            - 4
             pfts: try_pft_v2.parquet
           interim:
             dir: try
             quantile_range:
+            transform:
+            already_norm:
             filtered: traits.parquet
+            transformer_fn: no_transform.pkl
     outs:
+    - path: data/interim/try/no_transform.pkl
+      hash: md5
+      md5: 7d1e55650014e21b4568ed3e3d1fc531
+      size: 4
     - path: data/interim/try/traits.parquet
       hash: md5
-      md5: 546b4d12b8c75663f4e07d2a47ad828e
-      size: 18025426
+      md5: 2aef32b0d5ab309c849c5f88de2a3ce6
+      size: 10422220
   match_gbif_pfts:
     cmd: python src/data/match_gbif_pfts.py
     deps:
@@ -102,3 +103,38 @@ stages:
       md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
       size: 508142149
       nfiles: 3
+  build_splot_maps:
+    cmd: python src/data/build_splot_maps.py
+    deps:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 2aef32b0d5ab309c849c5f88de2a3ce6
+      size: 10422220
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/build_splot_maps.py
+      hash: md5
+      md5: c8c6b1d35dfeb304bae62f2e6710b03c
+      size: 9272
+    params:
+      params.yaml:
+        PFT: Shrub_Tree_Grass
+        model_res: '1'
+        splot.interim:
+          dir: splot
+          extracted: extracted
+          traits: trait_maps
+        target_resolution: 1
+    outs:
+    - path: data/interim/splot/trait_maps/Shrub_Tree_Grass/1
+      hash: md5
+      md5: 72981c80a508d1062f9ec4d96a2e8eb1.dir
+      size: 9511855
+      nfiles: 31
