@@ -57,3 +57,52 @@ stages:
       md5: 2168f356be5b96afb1549bb3bec41a15
       size: 20662411264
       isexec: true
+  get_TRY_mean_traits:
+    cmd: stages/get_TRY_mean_traits.sh singularity cit-sci-traits latest cit-sci-traits.sif
+      "poetry run python src/data/build_try_traits.py"
+    deps:
+    - path: src/data/build_try_traits.py
+      hash: md5
+      md5: d3879d5fb8804ea19af493949990f275
+      size: 15089
+    params:
+      params.yaml:
+        PFT: Shrub_Tree_Grass
+        try_version: 5
+        trydb:
+          raw:
+            try6:
+              dir: TRY_6_gapfilled_for_distribution
+              zip: TRY6_gapfilled_for_distribution.zip
+              zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+            try5:
+              dir: TRY_5_GapFilledData_2020
+              zip: TRY_5_GapFilledData_2020.zip
+              zipfile_csv: 
+                TRY_50_2020_01/gapfilled_data/mean_gap_filled_back_transformed_incl_species_names.csv
+            pfts: try_pft_v2.parquet
+          interim:
+            dir: try
+            quantile_range:
+            - 0.005
+            - 0.995
+            transform: norm
+            already_norm:
+            filtered: traits.parquet
+            transformer_fn: norm_scaler.pkl
+            perform_pca: true
+            pca_n_components: 0.5
+            pca_fn: trait_pca.pkl
+    outs:
+    - path: data/interim/try/norm_scaler.pkl
+      hash: md5
+      md5: e9cbab77d1f8619b812039a6410f7a4f
+      size: 1420
+    - path: data/interim/try/trait_pca.pkl
+      hash: md5
+      md5: c7d560abf85efe52d8de85216731804c
+      size: 2304
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 9286b2e6c494ff099ab0ae5e3ba32800
+      size: 1828448
