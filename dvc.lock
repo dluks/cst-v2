@@ -159,3 +159,160 @@ stages:
       md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
       size: 508142149
       nfiles: 3
+  build_splot_maps:
+    cmd: stages/build_splot_maps_parallel.sh
+    deps:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 9286b2e6c494ff099ab0ae5e3ba32800
+      size: 1828448
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/build_splot_maps.py
+      hash: md5
+      md5: d39d1da13ddd7674bc48b3c5b64606ef
+      size: 14108
+    params:
+      params.yaml:
+        PFT: Shrub_Tree_Grass
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 11
+        - 13
+        - 14
+        - 15
+        - 18
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 1080
+        - 3113
+        - 3120
+        - 1000
+        model_res: 1km
+        splot.interim:
+          dir: splot
+          extracted: extracted
+          traits: trait_maps
+        target_resolution: 1000
+    outs:
+    - path: data/interim/splot/trait_maps/Shrub_Tree_Grass/1km
+      hash: md5
+      md5: 326b6d157894bf1fe1734b1113db66c2.dir
+      size: 10587079
+      nfiles: 1
+  build_gbif_maps:
+    cmd: stages/build_gbif_maps_parallel.sh
+    deps:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: 84c01f5bca440b2901ac096cd577ed11.dir
+      size: 4022072469
+      nfiles: 159
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 9286b2e6c494ff099ab0ae5e3ba32800
+      size: 1828448
+    - path: src/data/build_gbif_maps.py
+      hash: md5
+      md5: 5d277f3e4f93cda17e82ad9f4bf486fd
+      size: 8624
+    params:
+      params.yaml:
+        PFT: Shrub_Tree_Grass
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 11
+        - 13
+        - 14
+        - 15
+        - 18
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 237
+        - 281
+        - 282
+        - 289
+        - 1080
+        - 3113
+        - 3120
+        - 1000
+        gbif.interim.dir: gbif
+        model_res: 1km
+        target_resolution: 1000
+        trydb.interim.dir: try
+        trydb.interim.filtered: traits.parquet
+    outs:
+    - path: data/interim/gbif/trait_maps/Shrub_Tree_Grass/1km
+      hash: md5
+      md5: 198f7f89d02634b1d7ad5e92609ee74d.dir
+      size: 38024113
+      nfiles: 1
+  build_y:
+    cmd: stages/build_y.sh singularity cit-sci-traits latest cit-sci-traits.sif poetry
+      run python src/features/build_y.py
+    deps:
+    - path: data/interim/gbif/trait_maps/Shrub_Tree_Grass/1km
+      hash: md5
+      md5: 198f7f89d02634b1d7ad5e92609ee74d.dir
+      size: 38024113
+      nfiles: 1
+    - path: data/interim/splot/trait_maps/Shrub_Tree_Grass/1km
+      hash: md5
+      md5: 326b6d157894bf1fe1734b1113db66c2.dir
+      size: 10587079
+      nfiles: 1
+    - path: src/features/build_y.py
+      hash: md5
+      md5: 4c4a7d0eac0ec2344b0d262f9a7743f8
+      size: 4408
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        datasets.Y.traits:
+        - 1000
+    outs:
+    - path: data/features/Shrub_Tree_Grass/1km/Y.parquet
+      hash: md5
+      md5: ae52c5ce97c9009dbb07235e764d2461.dir
+      size: 29006593
+      nfiles: 44
