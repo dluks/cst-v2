@@ -306,7 +306,7 @@ def xy_to_rowcol_df(
 def agg_df(
     df: pd.DataFrame,
     by: str | list[str],
-    data: str,
+    data: str | list[str],
     funcs: dict[str, Any] | None = None,
     n_min: int = 1,
     n_max: int | None = None,
@@ -360,8 +360,9 @@ def agg_df(
         df = df.groupby(by, observed=False, group_keys=False).apply(
             lambda x: x.sample(n=min(n_max, len(x)), random_state=seed)
         )
-
-    df = df.groupby(by, observed=False)[[data]].agg(list(funcs.values()))
+    if isinstance(data, str):
+        data = [data]
+    df = df.groupby(by, observed=False)[data].agg(list(funcs.values()))
 
     df.columns = list(funcs.keys())
 
@@ -374,10 +375,10 @@ def agg_df(
 
 def rasterize_points(
     df: pd.DataFrame,
-    data: str | None = None,
+    data_cols: str | list[str] | None = None,
     x: str = "x",
     y: str = "y",
-    raster: xr.DataArray | xr.Dataset | None = None,
+    ref_raster: xr.DataArray | xr.Dataset | None = None,
     res: int | float | None = None,
     crs: str | None = None,
     nodata: int | float = np.nan,
@@ -385,6 +386,7 @@ def rasterize_points(
     funcs: dict[str, Any] | None = None,
     n_min: int = 1,
     n_max: int | None = None,
+    already_row_col: bool = False,
 ) -> xr.Dataset:
     """
     Rasterizes point data from a DataFrame into a raster dataset.
@@ -413,6 +415,8 @@ def rasterize_points(
         Minimum number of points required to aggregate, by default 1.
     n_max : int, optional
         Maximum number of points to aggregate, by default None.
+    already_row_col : bool, optional
+        Whether the data is already in row, column format, by default False.
 
     Returns:
     --------
@@ -425,7 +429,7 @@ def rasterize_points(
         If neither `raster` nor both `res` and `crs` are provided.
         If `res` and `crs` are provided when `raster` is also provided.
     """
-    if raster is None:
+    if ref_raster is None:
         if res is None or crs is None:
             raise ValueError(
                 "Either 'raster' or both 'res' and 'crs' must be provided."
@@ -439,27 +443,44 @@ def rasterize_points(
         )
     else:
         # Create an empty raster with the same shape, CRS, resolution, and nodata value
-        ref = raster.copy()
+        ref = ref_raster.copy()
         # Drop all existing data variables
         for var in ref.data_vars:
             ref = ref.drop_vars(var)  # pyright: ignore[reportArgumentType]
 
-    transform = ref.rio.transform().to_gdal()
-
-    grid_df = xy_to_rowcol_df(df, transform, x=x, y=y).drop(columns=["x", "y"])
-
-    if agg:
-        if data is None:
-            raise ValueError("Data column must be provided for aggregation.")
-        grid_df = agg_df(
-            grid_df, by=["row", "col"], data=data, funcs=funcs, n_min=n_min, n_max=n_max
+    if already_row_col and agg:
+        raise ValueError(
+            "already_row_col specified. Cannot aggregate already aggregated data."
         )
+
+    if already_row_col:
+        grid_df = df
+    else:
+        transform = ref.rio.transform().to_gdal()
+
+        grid_df = xy_to_rowcol_df(df, transform, x=x, y=y).drop(columns=["x", "y"])
+
+        if isinstance(data_cols, str):
+            data_cols = [data_cols]
+
+        if agg:
+            if not data_cols:
+                raise ValueError("Data column must be provided for aggregation.")
+            grid_df = agg_df(
+                grid_df,
+                by=["row", "col"],
+                data=data_cols,
+                funcs=funcs,
+                n_min=n_min,
+                n_max=n_max,
+            )
 
     if dask.is_dask_collection(grid_df):
         grid_df = grid_df.compute()  # pyright: ignore[reportCallIssue]
 
     # Write each column of the DataFrame to a separate data variable in the raster
     for col in grid_df.columns:
+        log.info("Rasterizing %s", col)
         if str(col) in ("row", "col"):
             continue
         ref[col] = (("y", "x"), np.full(ref.rio.shape, nodata))
