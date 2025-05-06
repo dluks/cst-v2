@@ -262,6 +262,26 @@ def get_power_transformer_fn(config: ConfigBox = cfg) -> Path:
     )
 
 
+def get_try_traits_interim_fn(config: ConfigBox = cfg) -> Path:
+    """Get the path to the TRY traits interim file."""
+    return Path(
+        config.interim_dir,
+        config.trydb.interim.dir,
+        config.trydb.interim.filtered,
+    )
+
+
+def load_pfts(config: ConfigBox = cfg) -> pd.DataFrame:
+    """Load the PFTs DataFrame."""
+    pft_path = Path(cfg.raw_dir, cfg.trydb.raw.pfts)
+    if pft_path.suffix == ".csv":
+        return pd.read_csv(pft_path, encoding="latin-1")
+    elif pft_path.suffix == ".parquet":
+        return pd.read_parquet(pft_path)
+    else:
+        raise ValueError(f"Unsupported PFT file format: {pft_path.suffix}")
+
+
 def check_y_set(y_set: str) -> None:
     """Check if the specified y_set is valid."""
     y_sets = ["gbif", "splot", "splot_gbif"]
