@@ -851,9 +851,14 @@ splot:
 
 trydb:
   raw:
-    dir: TRY_6_gapfilled_for_distribution
-    zip: TRY6_gapfilled_for_distribution.zip
-    zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+    try6:
+      dir: TRY_6_gapfilled_for_distribution
+      zip: TRY6_gapfilled_for_distribution.zip
+      zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+    try5:
+      dir: TRY_5_GapFilledData_2020
+      zip: TRY_5_GapFilledData_2020.zip
+      zipfile_csv: TRY_50_2020_01/gapfilled_data/mean_gap_filled_back_transformed_incl_species_names.csv
     pfts: try_pft_v2.parquet
   interim:
     dir: try
@@ -862,6 +867,9 @@ trydb:
     already_norm: null
     filtered: traits.parquet
     transformer_fn: power_transformer.pkl
+    perform_pca: false # This will reduce the number of traits by projecting them onto the principal components
+    pca_n_components: 4 # Fraction of variance to keep. If integer, this is the number of components.
+    pca_fn: no_pca.pkl # Set to no_pca.pkl if perform_pca is false
 
 biomes: # Used for model analysis by biome
   reclassification:
