@@ -64,18 +64,18 @@ def subprocess_logger(name, level: str | int = "INFO"):
 
 def setup_file_logger(
     logger_name: str = "__main__",
-    log_file: str | os.PathLike = "log.txt",
-    level=logging.INFO,
+    log_file: str | os.PathLike = "logs/cit-sci-traits.log",
+    level: str | int = "INFO",
 ):
     """Setup a file logger."""
-    l = logging.getLogger(logger_name)
+    file_log = logging.getLogger(logger_name)
     formatter = logging.Formatter("%(asctime)s : %(message)s")
     file_handler = logging.FileHandler(log_file, mode="a")
     file_handler.setFormatter(formatter)
 
-    l.setLevel(level)
-    l.addHandler(file_handler)
-    return l
+    file_log.setLevel(level)
+    file_log.addHandler(file_handler)
+    return file_log
 
 
 def get_loggers_starting_with(s: str) -> list[str]:

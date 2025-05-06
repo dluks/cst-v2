@@ -4,7 +4,7 @@ import os
 
 from dotenv import find_dotenv, load_dotenv
 
-from src.utils.log_utils import setup_logger
+from src.utils.log_utils import setup_file_logger, setup_logger
 
 # Load environment variables
 load_dotenv(find_dotenv(), override=True)
@@ -12,8 +12,9 @@ PROJECT_ROOT = os.environ["PROJECT_ROOT"]
 
 os.chdir(PROJECT_ROOT)
 
-# Setup logger
+# Setup loggers
 log = setup_logger(__name__, "INFO")
+file_log = setup_file_logger(__name__, "logs/cit-sci-traits.log", "INFO")
 
 
 def activate_env() -> None:
