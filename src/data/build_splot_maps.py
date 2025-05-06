@@ -14,56 +14,7 @@ from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
 from src.utils.dask_utils import repartition_if_set
 from src.utils.raster_utils import xr_to_raster
-from src.utils.trait_utils import clean_species_name, filter_pft
-
-
-def _cw_stats(g: pd.DataFrame, col: str) -> pd.Series:
-    """Calculate all community-weighted stats per plot."""
-    # Normalize the abundances to sum to 1. Important when not all species in a plot are
-    # present in the trait data.
-    normalized_abund = g["Rel_Abund_Plot"] / g["Rel_Abund_Plot"].sum()
-    if g.empty:
-        log.warning("Empty group detected, returning NaNs...")
-        return pd.Series(
-            [np.nan, np.nan, np.nan, np.nan, np.nan],
-            index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95"],
-        )
-    return pd.Series(
-        [
-            _cwm(g[col], normalized_abund),
-            _cw_std(g[col], normalized_abund),
-            _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.5),
-            _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.05),
-            _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.95),
-        ],
-        index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95"],
-    )
-
-
-def _cwm(data: pd.Series, weights: pd.Series) -> float | Any:
-    """Calculate the community-weighted mean."""
-    return np.average(data, weights=weights)
-
-
-def _cw_std(data: pd.Series, weights: pd.Series) -> float:
-    """Calculate the community-weighted standard deviation."""
-    return np.sqrt(np.average((data - data.mean()) ** 2, weights=weights))
-
-
-def _cw_quantile(data: np.ndarray, weights: np.ndarray, quantile: float) -> float:
-    """Calculate the community-weighted quantile."""
-    sorted_indices = np.argsort(data)
-    sorted_data = data[sorted_indices]
-    sorted_weights = weights[sorted_indices]
-
-    cumsum = np.cumsum(sorted_weights)
-    quantile_value = sorted_data[cumsum >= quantile][0]
-    return quantile_value
-
-
-def _filter_certain_plots(df: pd.DataFrame, givd_nu: str) -> pd.DataFrame:
-    """Filter out certain plots."""
-    return df[df["GIVD_NU"] != givd_nu]
+from src.utils.splot_utils import filter_certain_plots
 
 
 def cli() -> argparse.Namespace:
