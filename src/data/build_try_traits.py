@@ -192,7 +192,7 @@ def _log_transform_long_tails(df: pd.DataFrame, keep: list[str] | None) -> pd.Da
     log.info(f"Found {len(trait_cols)} trait columns")
 
     long_tailed_cols = [
-        col for col in trait_cols if int(get_trait_number_from_id(col)) not in keep
+        col for col in trait_cols if get_trait_number_from_id(col) not in keep
     ]
 
     if not long_tailed_cols:
