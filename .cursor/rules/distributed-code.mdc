@@ -3,11 +3,16 @@ description:
 globs: 
 alwaysApply: true
 ---
+---
+description: 
+globs: 
+alwaysApply: true
+---
 
 # Write code with a distributed processing approach
 
-All code suggestions should be made with the context that system it will be runnin on is an HPC. The HPC has 102 nodes, each with 190 cores and 750 GB of memory.
+All code suggestions should be made with the context that system it will be running on is an HPC.
 
 The HPC manages jobs using Slurm and supports Apptainer/Singularity containers.
 
-When possible, modify existing code that uses Dask LocalClusters to use instead a SlurmCluster. Otherwise, include bash/slurm scripts for job generation.
+When possible, code that can be parallelized should be written to be parallelizable across multiple machines. In other words, parallelization should be implemented such that the data can be split up and processed independently across processes and machines.
