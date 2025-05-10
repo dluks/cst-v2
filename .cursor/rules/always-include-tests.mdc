@@ -6,4 +6,4 @@ alwaysApply: true
 
 # Always write tests
 
-For every unit of code written, include a test as well. Prefer to use pytest and pytest-mock when writing tests. Tests should focus on behavioral coverage, not pure code coverage.
+For every unit of code written, include a test as well. Prefer to use pytest and pytest-mock when writing tests. Tests should focus on behavioral coverage, not pure code coverage. Unit tests should be written whenever a unit of code takes data as an input, modifies it, and returns data as an output.
