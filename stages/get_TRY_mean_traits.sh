@@ -17,18 +17,29 @@ COMMAND="${ARGS[${#ARGS[@]}-1]}"
 # Main logic
 if is_slurm_available; then
     echo "Running in Slurm environment..."
+    
+    # Determine the command to run in Slurm based on USE_CONTAINER
+    SLURM_CMD=""
+    if use_container; then
+        echo "Using container within Slurm..."
+        SLURM_CMD="stages/utils/run_in_container.sh $@"
+    else
+        echo "Running directly within Slurm without container..."
+        SLURM_CMD="$COMMAND"
+    fi
+    
     # Use the utility script with named parameters for better readability
     stages/utils/slurm_submit.sh \
         --job-name="try_traits" \
         --output="logs/try_traits/%j.log" \
         --error="logs/try_traits/%j.err" \
-        --time="00:05:00" \
+        --time="00:30:00" \
         --nodes=1 \
         --ntasks=1 \
         --cpus=2 \
-        --mem="3G" \
+        --mem="5G" \
         --partition="cpu" \
-        "stages/utils/run_in_container.sh $@"
+        "$SLURM_CMD"
 else
     if use_container; then
         echo "Running with container..."
