@@ -318,9 +318,8 @@ def main(cfg: ConfigBox = get_config()) -> None:
 
     # Path to be used as reference when computing ranges for other resolutions.
     # Tracked with git.
-    trait_stat = cfg.datasets.Y.trait_stats[cfg.datasets.Y.trait_stat - 1]
     ranges_fn_ref = Path(
-        "reference", f"{ranges_fn_dvc.stem}_{cfg.model_res}_{trait_stat}{ranges_fn_dvc.suffix}"
+        "reference", f"{ranges_fn_dvc.stem}_{cfg.model_res}{ranges_fn_dvc.suffix}"
     )
 
     ranges_df.to_parquet(ranges_fn_dvc)
