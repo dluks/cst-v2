@@ -731,9 +731,9 @@ nemo2:
       n_workers: 32
       threads_per_worker: 5
     build_splot_maps:
-      npartitions: 60  
+      npartitions: 80  
       dask:
-        n_workers: 40
+        n_workers: 80
         threads_per_worker: 5
         memory_limit: 40GB
     featurize_train:
