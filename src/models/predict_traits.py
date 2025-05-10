@@ -238,13 +238,11 @@ def predict_traits_ag(
                     predict_data = predict_data.compute()
                 # Type assertion to help type checker
                 assert isinstance(predict_data, pd.DataFrame)
-                pred = predict_trait_ag(
-                    predict_data, trait_set_dir / "full_model"
-                )
+                pred = predict_trait_ag(predict_data, trait_set_dir / "full_model")
                 tmp_dir = None
 
             log.info("Writing predictions to raster...")
-            pred_r = rasterize_points(pred, data=trait, res=res, crs=crs)
+            pred_r = rasterize_points(pred, data_col=trait, res=res, crs=crs)
             pred_r = pack_xr(pred_r)
             xr_to_raster(pred_r, out_fn)
 
