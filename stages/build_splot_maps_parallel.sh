@@ -16,6 +16,16 @@ get_traits() {
     python -c "from src.conf.conf import get_config; print(','.join([str(t) for t in get_config().datasets.Y.traits]))"
 }
 
+get_stats() {
+    # Extract stats from config
+    python -c "from src.conf.conf import get_config; print(','.join([str(t) for t in get_config().datasets.Y.trait_stats]))"
+}
+
+is_fd_mode() {
+    # Check if FD mode is enabled
+    python -c "from src.conf.conf import get_config; print(get_config().datasets.Y.fd_mode)"
+}
+
 # Function to get container parameters from params.yaml
 get_container_params() {
     # Extract container parameters using yq (assumes yq is installed)
@@ -54,7 +64,11 @@ if [[ "$1" == "-t" || "$1" == "--trait" ]]; then
 fi
 
 # Get all trait IDs if no specific trait was provided
-if [[ -z "$TRAIT" ]]; then
+if is_fd_mode; then
+    STATS=$(get_stats)
+    IFS=',' read -ra STAT_ARRAY <<< "$STATS"
+    echo "Found ${#STAT_ARRAY[@]} stats to process"
+elif [[ -z "$TRAIT" ]]; then
     TRAITS=$(get_traits)
     IFS=',' read -ra TRAIT_ARRAY <<< "$TRAITS"
     echo "Found ${#TRAIT_ARRAY[@]} traits to process"
@@ -65,12 +79,6 @@ else
     echo "Processing single trait: $TRAIT_NUM"
 fi
 
-# Get container parameters
-read -r CONTAINER_TYPE CONTAINER_NAME CONTAINER_TAG CONTAINER_IMAGE <<< "$(get_container_params)"
-
-# Set up directory for logs
-mkdir -p logs/build_splot_maps
-
 if is_slurm_available; then
     echo "Running in Slurm environment..."
     
@@ -78,45 +86,72 @@ if is_slurm_available; then
     PARAMS=(
         --output="logs/build_splot_maps/%j_%a.log" \
         --error="logs/build_splot_maps/%j_%a.err" \
-        --time="01:00:00" \
+        --time="02:00:00" \
         --nodes=1 \
         --ntasks=1 \
-        --cpus-per-task=42 \
+        --cpus-per-task=80 \
         --threads-per-core=1 \
-        --mem="150G" \
+        --mem="200G" \
         --partition="cpu"
     )
     
-    for TRAIT in "${TRAIT_ARRAY[@]}"; do
-        # Create job name with trait ID
-        JOB_NAME="sp_${TRAIT}"
-        
-        echo "Submitting job for trait ${TRAIT}..."
-        
-        # Construct command to run for this trait
-        if use_container; then
-            CMD="stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}"
-        else
-            CMD="poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}"
-        fi
-        
-        # Submit job
-        sbatch --job-name="${JOB_NAME}" "${PARAMS[@]}" --wrap="${CMD}"
-    done
+    if is_fd_mode; then
+        for STAT in "${STAT_ARRAY[@]}"; do
+            JOB_NAME="sp_${STAT}"
+            echo "Submitting job for stat ${STAT}..."
+            
+            # Construct command to run for this stat
+            if use_container; then
+                CMD="stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --fd-metric ${STAT}"
+            else
+                CMD="poetry run python -m src.data.build_splot_maps ${RESUME} --fd-metric ${STAT}"
+            fi
+            
+            # Submit job
+            sbatch --job-name="${JOB_NAME}" "${PARAMS[@]}" --wrap="${CMD}"
+        done
+    else
+        for TRAIT in "${TRAIT_ARRAY[@]}"; do
+            # Create job name with trait ID
+            JOB_NAME="sp_${TRAIT}"
+            
+            echo "Submitting job for trait ${TRAIT}..."
+            
+            # Construct command to run for this trait
+            if use_container; then
+                CMD="stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}"
+            else
+                CMD="poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}"
+            fi
+            
+            # Submit job
+            sbatch --job-name="${JOB_NAME}" "${PARAMS[@]}" --wrap="${CMD}"
+        done
+    fi
     
     echo "All trait rasterization jobs submitted"
 else
     echo "Not running in Slurm environment, processing sequentially..."
     
-    for TRAIT in "${TRAIT_ARRAY[@]}"; do
-        echo "Processing trait ${TRAIT}..."
-        
-        if use_container; then
-            stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}
-        else
-            poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}
-        fi
-    done
-    
-    echo "All traits processed"
+    if is_fd_mode; then
+        for STAT in "${STAT_ARRAY[@]}"; do
+            echo "Processing stat ${STAT}..."
+            
+            if use_container; then
+                stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --fd-metric ${STAT}
+            else
+                poetry run python -m src.data.build_splot_maps ${RESUME} --fd-metric ${STAT}
+            fi
+        done
+    else
+        for TRAIT in "${TRAIT_ARRAY[@]}"; do
+            echo "Processing trait ${TRAIT}..."
+            
+            if use_container; then
+                stages/utils/run_in_container.sh $CONTAINER_TYPE $CONTAINER_NAME $CONTAINER_TAG $CONTAINER_IMAGE poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}
+            else
+                poetry run python -m src.data.build_splot_maps ${RESUME} --trait ${TRAIT}
+            fi
+        done
+    fi
 fi 
