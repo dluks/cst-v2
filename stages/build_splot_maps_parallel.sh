@@ -22,8 +22,12 @@ get_stats() {
 }
 
 is_fd_mode() {
-    # Check if FD mode is enabled
-    python -c "from src.conf.conf import get_config; print(get_config().datasets.Y.fd_mode)"
+    # Check if FD mode is enabled and return proper boolean
+    if python -c "from src.conf.conf import get_config; print(get_config().datasets.Y.fd_mode)" | grep -q "true"; then
+        return 0  # true
+    else
+        return 1  # false
+    fi
 }
 
 # Function to get container parameters from params.yaml
@@ -91,7 +95,7 @@ if is_slurm_available; then
         --ntasks=1 \
         --cpus-per-task=80 \
         --threads-per-core=1 \
-        --mem="200G" \
+        --mem="50G" \
         --partition="cpu"
     )
     
