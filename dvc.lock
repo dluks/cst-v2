@@ -32,8 +32,8 @@ stages:
       size: 1465
     - path: poetry.lock
       hash: md5
-      md5: 8f7cfac13e06acaf604d74b7951ca402
-      size: 667727
+      md5: b311fbb31797269f8d56bfa3db0d66c1
+      size: 672611
     - path: pyproject.toml
       hash: md5
       md5: abb62da99ab8238dbfd94f6814da0866
@@ -56,28 +56,29 @@ stages:
       hash: md5
       md5: 2168f356be5b96afb1549bb3bec41a15
       size: 20662411264
-      isexec: true
   get_TRY_mean_traits:
     cmd: stages/get_TRY_mean_traits.sh singularity cit-sci-traits latest cit-sci-traits.sif
-      poetry run python src/data/build_try_traits.py
+      "poetry run python src/data/build_try_traits.py"
     deps:
-    - path: data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
-      hash: md5
-      md5: f2cc4a7dd419bed117f42e62780b16e8
-      size: 307941318
     - path: src/data/build_try_traits.py
       hash: md5
-      md5: 67de4c1da7c8459a46379ec9ef05c691
-      size: 6309
+      md5: 43a9bbe7465c7c9d9ce363ae6e44d790
+      size: 15084
     params:
       params.yaml:
         PFT: Grass
         try_version: 6
         trydb:
           raw:
-            dir: TRY_6_gapfilled_for_distribution
-            zip: TRY6_gapfilled_for_distribution.zip
-            zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+            try6:
+              dir: TRY_6_gapfilled_for_distribution
+              zip: TRY6_gapfilled_for_distribution.zip
+              zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+            try5:
+              dir: TRY_5_GapFilledData_2020
+              zip: TRY_5_GapFilledData_2020.zip
+              zipfile_csv: 
+                TRY_50_2020_01/gapfilled_data/mean_gap_filled_back_transformed_incl_species_names.csv
             pfts: try_pft_v2.parquet
           interim:
             dir: try
@@ -86,7 +87,14 @@ stages:
             already_norm:
             filtered: traits.parquet
             transformer_fn: power_transformer.pkl
+            perform_pca: false
+            pca_n_components: 4
+            pca_fn: no_pca.pkl
     outs:
+    - path: data/interim/try/no_pca.pkl
+      hash: md5
+      md5: d41d8cd98f00b204e9800998ecf8427e
+      size: 19421545
     - path: data/interim/try/power_transformer.pkl
       hash: md5
       md5: 3af58b921bc9e9fe73758f2337be08b1
@@ -97,7 +105,7 @@ stages:
       size: 4473730
   match_gbif_pfts:
     cmd: stages/match_gbif_pfts.sh singularity cit-sci-traits latest cit-sci-traits.sif
-      poetry run python src/data/match_gbif_pfts.py
+      "poetry run python src/data/match_gbif_pfts.py"
     deps:
     - path: data/raw/all_tracheophyta_non-cult_2024-04-10
       hash: md5
@@ -127,7 +135,7 @@ stages:
       nfiles: 159
   extract_splot:
     cmd: stages/extract_splot.sh singularity cit-sci-traits latest cit-sci-traits.sif
-      poetry run python src/data/extract_splot.py
+      "poetry run python src/data/extract_splot.py"
     deps:
     - path: data/raw/splot4-0
       hash: md5
@@ -136,8 +144,8 @@ stages:
       nfiles: 3
     - path: src/data/extract_splot.py
       hash: md5
-      md5: 2a89310e584294f1661965d542a50d18
-      size: 3108
+      md5: 5f916a29bb82cc2d228bcac2a6d853c0
+      size: 3203
     params:
       params.yaml:
         datasets.Y.splot: splot4-0
@@ -148,3 +156,76 @@ stages:
       md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
       size: 508142149
       nfiles: 3
+  harmonize_eo_data:
+    cmd: python src/data/harmonize_eo_data.py
+    deps:
+    - path: src/data/harmonize_eo_data.py
+      hash: md5
+      md5: 364b84bb720f57c2eadf2bd47e1b987d
+      size: 8078
+    params:
+      params.yaml:
+        base_resolution: 55000
+        datasets.X:
+          canopy_height: ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: modis_sur_refl_monthly_avg_1km
+          soilgrids: soilgrids_v2-0_1km
+          vodca: vodca_mean-p5-p95_1km
+          worldclim: wc2-1_30s_bio
+        eo_data.interim.dir: eo_data
+        mask:
+          path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+          keep_classes:
+          - 10
+          - 20
+          - 30
+          - 40
+          - 60
+          - 70
+          - 90
+          - 95
+          - 100
+        model_res: 55km
+        target_resolution: 55000
+        worldclim.bio_vars:
+        - '1'
+        - '4'
+        - '7'
+        - '12'
+        - 13-14
+        - '15'
+    outs:
+    - path: data/interim/eo_data/55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
+  build_predict:
+    cmd: python src/features/featurize_predict.py
+    deps:
+    - path: data/interim/eo_data/55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
+    - path: src/features/featurize_predict.py
+      hash: md5
+      md5: 507a3cdc24f7b6d2de56726a9a5559ae
+      size: 5020
+    params:
+      params.yaml:
+        eo_data.interim.dir: eo_data
+        eo_data.predict.dir: predict
+        eo_data.predict.imputed_fn: eo_predict_imputed.parquet
+        eo_data.predict.mask_fn: eo_predict_mask.parquet
+        model_res: 55km
+        train.dir: data/features
+    outs:
+    - path: data/features/predict/55km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 2c314baaded50a8949b8fef26c2de020
+      size: 11107078
+    - path: data/features/predict/55km/eo_predict_mask.parquet
+      hash: md5
+      md5: 1ad3cfece7a07456126cb939a4e088f4
+      size: 229806
