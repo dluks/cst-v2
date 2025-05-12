@@ -229,3 +229,75 @@ stages:
       hash: md5
       md5: 1ad3cfece7a07456126cb939a4e088f4
       size: 229806
+  build_gbif_maps:
+    cmd: stages/build_gbif_maps_parallel.sh
+    deps:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: c7504b332aaf296efab1598be6bfbf61.dir
+      size: 2938908051
+      nfiles: 159
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 104c0200f41f91ca4be7973dccdc234f
+      size: 4473730
+    - path: src/data/build_gbif_maps.py
+      hash: md5
+      md5: 10b87d47b292ec29a06ac126c3cc3ad9
+      size: 8524
+    params:
+      params.yaml:
+        PFT: Grass
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        datasets.Y.traits:
+        - 3106
+        - 3117
+        gbif.interim.dir: gbif
+        model_res: 55km
+        target_resolution: 55000
+        trydb.interim.dir: try
+        trydb.interim.filtered: traits.parquet
+    outs:
+    - path: data/interim/gbif/trait_maps/Grass/55km
+      hash: md5
+      md5: 4f777a3914faa4fa861a2ba0494b281c.dir
+      size: 3161890
+      nfiles: 2
+  build_splot_maps:
+    cmd: stages/build_splot_maps_parallel.sh
+    deps:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 104c0200f41f91ca4be7973dccdc234f
+      size: 4473730
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/build_splot_maps.py
+      hash: md5
+      md5: 0804aba6b6c2354f1de09649526dc29d
+      size: 14145
+    params:
+      params.yaml:
+        PFT: Grass
+        datasets.Y.traits:
+        - 3106
+        - 3117
+        model_res: 55km
+        splot.interim:
+          dir: splot
+          extracted: extracted
+          traits: trait_maps
+        target_resolution: 55000
+    outs:
+    - path: data/interim/splot/trait_maps/Grass/55km
+      hash: md5
+      md5: 0c3ddd402ec2811f2c27f5a9030b558e.dir
+      size: 1138162
+      nfiles: 2
