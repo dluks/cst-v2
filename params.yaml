@@ -761,6 +761,11 @@ nemo2:
         n_workers: 40
         threads_per_worker: 4
         memory_limit: 40GB
+    featurize_train:
+      n_chunks: 10
+      n_workers: 8
+      memory_limit: 150GB
+      threads_per_worker: 1
 
 mask:
   path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
