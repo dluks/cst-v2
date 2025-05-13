@@ -32,7 +32,7 @@ if is_slurm_available; then
     )
     
     # Use the enhanced utility script with the wrapper
-    stages/utils/slurm_submit.sh "${PARAMS[@]}" "stages/utils/run_in_container.sh $@"
+    stages/utils/slurm_submit.sh "${PARAMS[@]}" "stages/utils/run_in_container.sh" "$@"
 else
     if use_container; then
         echo "Running with container..."
