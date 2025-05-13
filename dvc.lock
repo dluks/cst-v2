@@ -301,3 +301,33 @@ stages:
       md5: 0c3ddd402ec2811f2c27f5a9030b558e.dir
       size: 1138162
       nfiles: 2
+  build_y:
+    cmd: stages/build_y.sh singularity cit-sci-traits latest cit-sci-traits.sif "poetry
+      run python src/features/build_y.py"
+    deps:
+    - path: data/interim/gbif/trait_maps/Grass/55km
+      hash: md5
+      md5: 4f777a3914faa4fa861a2ba0494b281c.dir
+      size: 3161890
+      nfiles: 2
+    - path: data/interim/splot/trait_maps/Grass/55km
+      hash: md5
+      md5: 0c3ddd402ec2811f2c27f5a9030b558e.dir
+      size: 1138162
+      nfiles: 2
+    - path: src/features/build_y.py
+      hash: md5
+      md5: 4c4a7d0eac0ec2344b0d262f9a7743f8
+      size: 4408
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        datasets.Y.traits:
+        - 3106
+        - 3117
+    outs:
+    - path: data/features/Grass/55km/Y.parquet
+      hash: md5
+      md5: cd4a5854e5bdb5d0e22f4031bf910da3.dir
+      size: 2240676
+      nfiles: 260
