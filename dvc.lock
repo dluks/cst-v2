@@ -410,3 +410,25 @@ stages:
       md5: 4d8e8623bf614eaf206c9a15e15b42e1.dir
       size: 547549598
       nfiles: 44
+  calculate_spatial_autocorr:
+    cmd: python src/features/calc_spatial_autocorr_gpu.py
+    deps:
+    - path: data/features/Grass/1km/Y.parquet
+      hash: md5
+      md5: 4d8e8623bf614eaf206c9a15e15b42e1.dir
+      size: 547549598
+      nfiles: 44
+    - path: src/features/calc_spatial_autocorr.py
+      hash: md5
+      md5: 2c1beea009e24a7c778e2ecfa8536a1b
+      size: 10632
+    params:
+      params.yaml:
+        calc_spatial_autocorr:
+          use_existing: false
+        train.spatial_autocorr: spatial_autocorr.parquet
+    outs:
+    - path: data/features/Grass/1km/spatial_autocorr.parquet
+      hash: md5
+      md5: f7828555be25c031af678b6cba940669
+      size: 7401
