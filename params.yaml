@@ -377,7 +377,7 @@ geos:
     calc_spatial_autocorr:
       n_workers: 1
       n_workers_variogram: 20  # For WGS84 coords only
-      n_chunks: 16 # x direction only
+      n_chunks: 12 # x direction only
       gpu_ids: [0, 1]
     skcv_splits:
       n_workers: 50
@@ -926,7 +926,7 @@ train:
   trait_sets: ["splot", "gbif", "splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
   cv_splits:
-    range_stat: "median"
+    range_stat: "mean"
     n_splits: 5
     n_sims: 200
     dir: skcv_splits
