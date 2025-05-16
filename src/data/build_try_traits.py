@@ -128,15 +128,18 @@ def main(cfg: ConfigBox = get_config()) -> None:
     log.info(f"Saved transformer to {transformer_path}")
 
     # Apply PCA if specified
+    pca_path = try_prep_dir / cfg.trydb.interim.pca_fn
     if hasattr(cfg.trydb.interim, "perform_pca") and cfg.trydb.interim.perform_pca:
         log.info("Performing PCA on trait data...")
-        pca_path = try_prep_dir / cfg.trydb.interim.pca_fn
         mean_filt_traits = _apply_pca(
             mean_filt_traits,
             pca_fn=pca_path,
             n_components=cfg.trydb.interim.pca_n_components,
         )
     else:
+        if pca_path.exists():
+            pca_path.unlink()
+        pca_path.touch()  # Create empty file to satisfy DVC
         log.info("Skipping PCA, using full trait set")
 
     # Reset index after all transformations
