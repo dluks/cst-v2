@@ -57,3 +57,26 @@ stages:
       md5: 2168f356be5b96afb1549bb3bec41a15
       size: 20662411264
       isexec: true
+  extract_splot:
+    cmd: stages/extract_splot.sh singularity cit-sci-traits latest cit-sci-traits.sif
+      "poetry run python src/data/extract_splot.py"
+    deps:
+    - path: data/raw/sPlotOpen_v76
+      hash: md5
+      md5: c06b62279da8afd1048f42572852ecc6.dir
+      size: 526410695
+      nfiles: 12
+    - path: src/data/extract_splot.py
+      hash: md5
+      md5: 81870e467b6fabf2fab2c844f0cc87bb
+      size: 4939
+    params:
+      params.yaml:
+        datasets.Y.splot: sPlotOpen_v76
+        splot.interim.dir: splot
+    outs:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: a72673c4a61c5107c5af271a945ecfc1.dir
+      size: 47948903
+      nfiles: 3
