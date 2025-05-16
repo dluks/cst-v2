@@ -43,13 +43,18 @@ def cli() -> argparse.Namespace:
         "-t",
         "--trait",
         type=int,
-        help="Trait ID to process (e.g. '3'). If not provided, all traits will be processed.",
+        help="""
+        Trait ID to process (e.g. '3'). If not provided, all traits will be processed.
+        """,
     )
     parser.add_argument(
         "-f",
         "--fd-metric",
         type=str,
-        help="FD metric to process (e.g. 'f_ric'). If not provided, all FD metrics will be processed.",
+        help="""
+        FD metric to process (e.g. 'f_ric'). If not provided, all FD metrics will be
+        processed.
+        """,
     )
     return parser.parse_args()
 
@@ -73,7 +78,8 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
 
     if args.fd_metric and args.fd_metric not in fd_metrics:
         raise ValueError(
-            f"Invalid FD metric: {args.fd_metric}. Valid metrics are: {', '.join(fd_metrics)}"
+            f"Invalid FD metric: {args.fd_metric}. "
+            f"Valid metrics are: {', '.join(fd_metrics)}"
         )
 
     if args.fd_metric and not fd_mode:
@@ -119,7 +125,9 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
         )
         traits = load_try_traits(sys_cfg.npartitions, traits_to_process)
         pfts = _load_pfts(cfg.PFT)
-        vegetation = _load_splot_vegetation(sys_cfg.npartitions, splot_dir)
+        vegetation, abund_col = _load_splot_vegetation(
+            sys_cfg.npartitions, splot_dir, cfg.splot_open
+        )
         veg_and_traits = _filter_by_pft_and_merge_with_traits(
             pfts=pfts, traits=traits, vegetation=vegetation
         )
@@ -140,6 +148,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
                 traits_to_process=traits_to_process,
                 veg_and_traits=veg_and_traits,
                 header=header,
+                abund_col=abund_col,
             )
 
 
@@ -174,7 +183,11 @@ def _load_splot_header(
     to_crs: str, npartitions: int, splot_dir: Path, splot_open: bool
 ) -> dd.DataFrame:
     """Load header and set plot IDs as index for later joining with vegetation data."""
-    log.info("Loading sPlot header data...")
+    if splot_open:
+        log.info("Loading sPlot Open header data...")
+    else:
+        log.info("Loading sPlot Full header data...")
+
     givd_col = "GIVD_ID" if splot_open else "GIVD_NU"
 
     header = (
@@ -189,7 +202,7 @@ def _load_splot_header(
             }
         )
         .pipe(repartition_if_set, npartitions)
-        .pipe(filter_certain_plots, "00-RU-008")
+        .pipe(filter_certain_plots, givd_col, "00-RU-008")
         .drop(columns=[givd_col])
         .astype({"Longitude": np.float64, "Latitude": np.float64})
         .set_index("PlotObservationID")
@@ -202,7 +215,7 @@ def _load_splot_header(
 
 def _load_splot_vegetation(
     npartitions: int, splot_dir: Path, splot_open: bool
-) -> dd.DataFrame:
+) -> tuple[dd.DataFrame, str]:
     """Load sPlot vegetation data, clean species names, and set them as index for later
     joining with trait data."""
 
@@ -227,13 +240,13 @@ def _load_splot_vegetation(
             }
         )
         .pipe(repartition_if_set, npartitions)
-        .dropna(subset=["Species"])
+        .dropna(subset=["Species", abund_col])
         .pipe(clean_species_name, "Species", "speciesname")
         .drop(columns=["Species"])
         .set_index("speciesname")
     )
 
-    return veg
+    return veg, abund_col
 
 
 def _filter_by_pft_and_merge_with_traits(
@@ -276,7 +289,7 @@ def _generate_fd_maps(
     fd_stats_to_process: list[str],
     veg_and_traits: dd.DataFrame,
     header: dd.DataFrame,
-    group_cols,
+    abund_col: str,
 ) -> None:
     log.info("Functional diversity mode detected.")
 
@@ -292,7 +305,7 @@ def _generate_fd_maps(
             veg_and_traits[
                 [
                     "PlotObservationID",
-                    "Rel_Abund_Plot",
+                    abund_col,
                     "speciesname",
                     *traits_to_process,
                 ]
@@ -305,6 +318,7 @@ def _generate_fd_maps(
                 stats=[stat],
                 use_ses=True,
                 random_seed=cfg.random_seed,
+                abund_col=abund_col,
                 meta={stat: "f8" for stat in [stat]},
             )
             .pipe(pipe_log, "Joining with header...")
@@ -351,6 +365,7 @@ def _plot_level_fd_metrics(
     stats: list[str],
     use_ses: bool,
     random_seed: int,
+    abund_col: str,
 ) -> pd.Series:
     """Calculate FD metrics at the plot level."""
     # Filter out plots with insufficient observations and relative abundance
@@ -363,7 +378,7 @@ def _plot_level_fd_metrics(
         trait_cols=traits_to_process,
         stats=stats,
         species_col="speciesname",
-        abundance_col="Rel_Abund_Plot",
+        abundance_col=abund_col,
         use_ses=use_ses,
         random_seed=random_seed,
     )
@@ -375,6 +390,7 @@ def _generate_trait_maps(
     traits_to_process: list[str],
     veg_and_traits: dd.DataFrame,
     header: dd.DataFrame,
+    abund_col: str,
 ) -> None:
     log.info("Trait mode detected.")
 
@@ -384,12 +400,13 @@ def _generate_trait_maps(
         # plot lat/lons, and grid at the configured resolution.
         log.info("Calculating community-weighted statistics...")
         df = (
-            veg_and_traits[["PlotObservationID", "Rel_Abund_Plot", col]]
+            veg_and_traits[["PlotObservationID", abund_col, col]]
             .set_index("PlotObservationID")
             .groupby("PlotObservationID")
             .apply(
                 cw_stats,
                 col,
+                abund_col,
                 meta={
                     "cwm": "f8",
                     "cw_std": "f8",

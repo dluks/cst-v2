@@ -34,11 +34,11 @@ def _cw_quantile(data: np.ndarray, weights: np.ndarray, quantile: float) -> floa
     return quantile_value
 
 
-def cw_stats(g: pd.DataFrame, col: str) -> pd.Series:
+def cw_stats(g: pd.DataFrame, col: str, abund_col: str) -> pd.Series:
     """Calculate all community-weighted stats per plot."""
     # Normalize the abundances to sum to 1. Important when not all species in a plot are
     # present in the trait data.
-    normalized_abund = g["Rel_Abund_Plot"] / g["Rel_Abund_Plot"].sum()
+    normalized_abund = g[abund_col] / g[abund_col].sum()
     if g.empty:
         log.warning("Empty group detected, returning NaNs...")
         return pd.Series(

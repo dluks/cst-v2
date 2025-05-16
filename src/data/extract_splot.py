@@ -29,6 +29,7 @@ def main(cfg: ConfigBox = get_config()) -> None:
 
 
 def extract_splot_open(splot_raw_dir: Path, splot_prep_dir: Path) -> None:
+    """Extracts and converts the sPlot Open data to pandas DataFrames."""
     header_df = pd.read_csv(splot_raw_dir / "sPlotOpen_header(3).txt", sep="\t")
     vegetation_df = pd.read_csv(
         splot_raw_dir / "sPlotOpen_DT(2).txt", sep="\t", encoding="utf-8"
