@@ -887,10 +887,10 @@ trydb:
   interim:
     dir: try
     quantile_range: null  # Use [0.005, 0.995] for TRY5. No filtering needed for TRY6
-    transform: power # "log", "power" (yeo-johnson), null (no transformation)
+    transform: null # "log", "power" (yeo-johnson), null (no transformation)
     already_norm: null
     filtered: traits.parquet
-    transformer_fn: power_transformer.pkl
+    transformer_fn: no_transform.pkl
     perform_pca: false # This will reduce the number of traits by projecting them onto the principal components
     pca_n_components: 4 # Fraction of variance to keep. If integer, this is the number of components.
     pca_fn: no_pca.pkl # Set to no_pca.pkl if perform_pca is false
