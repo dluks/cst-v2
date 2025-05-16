@@ -644,9 +644,10 @@ geos:
       n_workers: 50
       threads_per_worker: 5
     build_splot_maps:
-      npartitions: 80
+      npartitions: 60  
       dask:
-        n_workers: 80
+        n_workers: 40
+        threads_per_worker: 5
         memory_limit: 40GB
     featurize_train:
       n_chunks: 1
