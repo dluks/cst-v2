@@ -23,7 +23,7 @@ dask_dashboard: ":39143"
 trait_mapping: "reference/trait_mapping.json"
 trait_stat_mapping: "reference/trait_stat_mapping.json"
 try_version: 6
-splot_open: false
+splot_open: true
 
 pylos:
   "1km":
@@ -790,7 +790,7 @@ datasets:
     vodca: vodca_mean-p5-p95_1km
     worldclim: wc2-1_30s_bio
   Y:
-    splot: splot4-0
+    splot: sPlotOpen_v76
     gbif: all_tracheophyta_non-cult_2024-04-10
     fd_mode: false
     trait_stats: ["mean", "std", "median", "q05", "q95", "count"]  # non-FD metrics
@@ -867,7 +867,7 @@ gbif:
 
 splot:
   raw:
-    dir: splot4-0
+    dir: sPlotOpen_v76
   interim:
     dir: splot
     extracted: extracted
