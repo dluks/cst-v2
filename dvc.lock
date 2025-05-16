@@ -57,6 +57,41 @@ stages:
       md5: 2168f356be5b96afb1549bb3bec41a15
       size: 20662411264
       isexec: true
+  get_TRY_mean_traits:
+    cmd: python src/data/build_try_traits.py
+    deps:
+    - path: data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
+      hash: md5
+      md5: f2cc4a7dd419bed117f42e62780b16e8
+      size: 307941318
+    - path: src/data/build_try_traits.py
+      hash: md5
+      md5: c918e38e1c0d49fbac88a6308042cdc2
+      size: 5918
+    params:
+      params.yaml:
+        trydb:
+          raw:
+            dir: TRY_6_gapfilled_for_distribution
+            zip: TRY6_gapfilled_for_distribution.zip
+            zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+            pfts: try_pft_v2.parquet
+          interim:
+            dir: try
+            quantile_range:
+            transform:
+            already_norm:
+            filtered: traits.parquet
+            transformer_fn: no_transform.pkl
+    outs:
+    - path: data/interim/try/no_transform.pkl
+      hash: md5
+      md5: 7d1e55650014e21b4568ed3e3d1fc531
+      size: 4
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: 2aef32b0d5ab309c849c5f88de2a3ce6
+      size: 10422220
   extract_splot:
     cmd: stages/extract_splot.sh singularity cit-sci-traits latest cit-sci-traits.sif
       "poetry run python src/data/extract_splot.py"
