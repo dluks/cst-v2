@@ -800,7 +800,7 @@ datasets:
       # - 4 # Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density
       # - 6 # Root rooting depth
       # - 13 # Leaf carbon (C) content per leaf dry mass
-      # - 14 # Leaf nitrogen (N) content per leaf dry mass
+      - 14 # Leaf nitrogen (N) content per leaf dry mass
       # - 15 # Leaf phosphorus (P) content per leaf dry mass
       # - 21 # Stem diameter
       # - 26 # Seed dry mass
@@ -830,7 +830,7 @@ datasets:
       - 3106 # Plant height vegetative
       # # - 3107 # Plant height generative
       # # - 3112 # Leaf area (in case of compound leaves: leaf, undefined if petiole in- or excluded)
-      # - 3113 # Leaf area (in case of compound leaves: leaflet, undefined if petiole is in- or excluded)
+      - 3113 # Leaf area (in case of compound leaves: leaflet, undefined if petiole is in- or excluded)
       # # - 3114 # Leaf area (in case of compound leaves undefined if leaf or leaflet, undefined if petiole is in- or e
       - 3117 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is in- or exclu
       # - 3120 # Leaf water content per leaf dry mass (not saturated)
