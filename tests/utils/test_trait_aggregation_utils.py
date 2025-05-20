@@ -18,33 +18,32 @@ from src.utils.trait_aggregation_utils import (
 
 # Fixtures for test data
 @pytest.fixture
-def sample_trait_data():
+def sample_trait_data_single_plot():
     """Create a sample DataFrame with species traits and abundances."""
     np.random.seed(42)
     species = [f"sp_{i}" for i in range(10)]
     trait1 = np.random.normal(size=10)
     trait2 = np.random.normal(size=10)
     abundances = np.random.uniform(size=10)
-    abundances = abundances / np.sum(abundances)  # Normalize to sum to 1
+    norm_abundances = abundances / np.sum(abundances)
 
     df = pd.DataFrame(
         {
             "species": species,
             "trait1": trait1,
             "trait2": trait2,
-            "abundance": abundances,
-            "Rel_Abund_Plot": abundances,
+            "abundance": norm_abundances,
         }
     )
     return df
 
 
 @pytest.fixture
-def sample_plot_data():
+def sample_trait_data_multiplot():
     """Create a sample DataFrame representing data from multiple plots."""
     np.random.seed(42)
     plot_ids = np.repeat(["plot1", "plot2", "plot3"], [5, 4, 6])
-    species = [f"sp_{i}" for i in range(15)]
+    species = [f"sp_{np.random.randint(0, 10)}" for _ in range(15)]
     trait1 = np.random.normal(size=15)
     trait2 = np.random.normal(size=15)
     abundances = np.random.uniform(size=15)
@@ -123,10 +122,10 @@ def test_cw_quantile():
     assert result_75 == 3.0
 
 
-def test_cw_stats(sample_trait_data):
+def test_cw_stats(sample_trait_data_single_plot):
     """Test community-weighted stats function with sample data."""
     # Calculate stats for trait1
-    result = cw_stats(sample_trait_data, "trait1")
+    result = cw_stats(sample_trait_data_single_plot, "trait1", "abundance")
 
     # Check output structure
     assert isinstance(result, pd.Series)
@@ -139,8 +138,8 @@ def test_cw_stats(sample_trait_data):
 
 def test_cw_stats_empty_data():
     """Test cw_stats with empty data."""
-    empty_df = pd.DataFrame(columns=["trait1", "Rel_Abund_Plot"])
-    result = cw_stats(empty_df, "trait1")
+    empty_df = pd.DataFrame(columns=["trait1", "abundance"])
+    result = cw_stats(empty_df, "trait1", "abundance")
 
     # Check that all values are NaN
     assert all(np.isnan(val) for val in result)
@@ -275,14 +274,14 @@ def test_calculate_fric():
     assert np.isnan(result_more_traits_than_obs)
 
 
-def test_fd_metrics(sample_trait_data, mock_convex_hull):
+def test_fd_metrics(sample_trait_data_single_plot):
     """Test fd_metrics function with different stats combinations."""
     trait_cols = ["trait1", "trait2"]
 
     # Test with all metrics
     all_stats = ["sp_ric", "f_ric", "f_eve", "f_div", "f_red"]
     result_all = fd_metrics(
-        sample_trait_data,
+        sample_trait_data_single_plot,
         trait_cols=trait_cols,
         stats=all_stats,
         species_col="species",
@@ -296,7 +295,7 @@ def test_fd_metrics(sample_trait_data, mock_convex_hull):
     # Test with specific metrics
     specific_stats = ["sp_ric", "f_div"]
     result_specific = fd_metrics(
-        sample_trait_data,
+        sample_trait_data_single_plot,
         trait_cols=trait_cols,
         stats=specific_stats,
         species_col="species",
@@ -317,7 +316,7 @@ def test_fd_metrics(sample_trait_data, mock_convex_hull):
 
     # Test without abundance column
     result_no_abund = fd_metrics(
-        sample_trait_data,
+        sample_trait_data_single_plot,
         trait_cols=trait_cols,
         stats=all_stats,
         species_col="species",
@@ -333,13 +332,13 @@ def test_fd_metrics(sample_trait_data, mock_convex_hull):
 
 
 # TODO: Use actual sample data instead of overly simple dataframe for testing
-def test_trait_aggregation_workflow(sample_plot_data):
+def test_trait_aggregation_workflow(sample_trait_data_multiplot):
     """Test an end-to-end workflow with the trait aggregation utilities."""
     trait_cols = ["trait1", "trait2"]
 
     # Group by plot and apply fd_metrics to each group
     results = []
-    for plot_id, group in sample_plot_data.groupby("plot_id"):
+    for plot_id, group in sample_trait_data_multiplot.groupby("plot_id"):
         metrics = fd_metrics(
             group,
             trait_cols=trait_cols,

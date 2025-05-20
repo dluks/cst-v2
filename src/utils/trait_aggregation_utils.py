@@ -132,13 +132,7 @@ def fd_metrics(
         calculated_stats["sp_ric"] = len(df)
     if "f_ric" in stats:
         # Calculate functional richness
-        f_ric = _calculate_fric(
-            trait_matrix,
-            plot_id=group_name,
-            S=len(df),
-            ses=use_ses,
-            random_seed=random_seed,
-        )
+        f_ric = _calculate_fric(trait_matrix)
         calculated_stats["f_ric"] = f_ric
     if "f_eve" in stats:
         # Calculate functional evenness

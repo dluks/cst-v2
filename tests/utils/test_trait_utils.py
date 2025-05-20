@@ -394,7 +394,7 @@ class TestFilterCertainPlots:
         )
 
         # Filter out AF-00-001 plots
-        result = filter_certain_plots(df, "AF-00-001")
+        result = filter_certain_plots(df, givd_col="GIVD_NU", givd="AF-00-001")
 
         # Verify only the non-AF-00-001 plots remain
         assert len(result) == 2
@@ -409,7 +409,7 @@ class TestFilterCertainPlots:
         )
 
         # Filter out AF-00-001 plots (none exist)
-        result = filter_certain_plots(df, "AF-00-001")
+        result = filter_certain_plots(df, givd_col="GIVD_NU", givd="AF-00-001")
 
         # Verify all plots remain
         assert len(result) == 3
@@ -418,7 +418,7 @@ class TestFilterCertainPlots:
     def test_empty_dataframe(self):
         """Test with an empty DataFrame."""
         df = pd.DataFrame({"GIVD_NU": [], "value": []})
-        result = filter_certain_plots(df, "AF-00-001")
+        result = filter_certain_plots(df, givd_col="GIVD_NU", givd="AF-00-001")
         assert len(result) == 0
 
 

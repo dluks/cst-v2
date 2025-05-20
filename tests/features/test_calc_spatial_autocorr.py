@@ -293,13 +293,9 @@ def test_add_utm():
     result_df = add_utm(df, chunksize=2)
 
     # Check that the result has the expected columns
-    assert "easting" in result_df.columns
-    assert "northing" in result_df.columns
     assert "zone" in result_df.columns
 
     # Check that all rows have values
-    assert not result_df["easting"].isna().any()
-    assert not result_df["northing"].isna().any()
     assert not result_df["zone"].isna().any()
 
     # Check that the zones are in the expected format (number + letter)

@@ -18,7 +18,7 @@ def test_create_sample_raster():
     Test case 2: Test with custom extent and resolution
     Test case 3: Test with negative extent and non-integer resolution
 
-    The function asserts that the result is an instance of xr.DataArray and has the
+    The function asserts that the result is an instance of xr.Dataset and has the
     expected shape.
 
     Additionally, it checks that the CRS (Coordinate Reference System) of the result is
@@ -28,20 +28,20 @@ def test_create_sample_raster():
         None
     """
     result = create_sample_raster()
-    assert isinstance(result, xr.DataArray)
-    assert result.shape == (180, 360)  # Assuming resolution of 1
+    assert isinstance(result, xr.Dataset)
+    assert result.rio.shape == (180, 360)  # Assuming resolution of 1
 
     extent = [-10, -10, 10, 10]
     resolution = 0.1
     result = create_sample_raster(extent=extent, resolution=resolution)
-    assert isinstance(result, xr.DataArray)
-    assert result.shape == (200, 200)  # Assuming resolution of 0.1
+    assert isinstance(result, xr.Dataset)
+    assert result.rio.shape == (200, 200)  # Assuming resolution of 0.1
 
     extent = [-180, -90, -170, -80]
     resolution = 0.05
     result = create_sample_raster(extent=extent, resolution=resolution)
-    assert isinstance(result, xr.DataArray)
-    assert result.shape == (200, 200)  # Assuming resolution of 0.05
+    assert isinstance(result, xr.Dataset)
+    assert result.rio.shape == (200, 200)  # Assuming resolution of 0.05
 
     assert result.rio.crs.to_epsg() == 4326
 
