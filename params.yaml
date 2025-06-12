@@ -796,6 +796,7 @@ datasets:
     trait_stats: ["mean", "std", "median", "q05", "q95", "count"]  # non-FD metrics
     # trait_stats: ["f_ric", "f_eve", "f_div", "sp_ric"]  # FD metrics
     trait_stat: 1 # (bands start at 1, FD metrics contain only (metric, 'count')
+    correlation_fn: splot_gbif_correlation.csv
     traits:
       - 4 # Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density
       - 6 # Root rooting depth
