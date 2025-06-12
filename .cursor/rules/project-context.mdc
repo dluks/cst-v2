@@ -1,0 +1,28 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Context: Remote Sensing and Ecology Research
+
+This project combines Earth observation data with citizen science observations and trait data from the tri-trait database, using AutoGluon and LightGBM models for analysis.
+
+## Key Technical Requirements
+- Python-based data science project
+- Data version control (DVC) for managing data pipelines
+- Spatial block cross-validation using H3 hexagons
+- AutoGluon models with light-GBM
+- Support for both local and HPC environments
+
+## Project Structure
+- Project parameters are defined in [params.yaml](mdc:params.yaml)
+- DVC.lock files are unique per branch to avoid cache pollution
+- Separate treatments (resolutions, input combinations) managed via git branches
+- Spatial analysis using spherical variograms and H3 hexagons
+- Spatial cross-validation
+- Final model trained on complete dataset
+
+## Project Design Patterns
+- Use Python classes sparingly, but when appropriate.
+- Prefer to follow the strategy pattern, utilizing interfaces when implementing potentially modular processing.
+- Examples of modular processing are: model training (i.e. which ML approach/framework is used), data inputs and outputs of each stage, etc.

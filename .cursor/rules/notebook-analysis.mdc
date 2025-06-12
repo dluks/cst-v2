@@ -1,0 +1,52 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Notebook Documentation Requirements
+
+## Scientific Reproducibility
+- All new functionality must be documented in the `notebooks` directory
+- Each major feature or analysis must have a corresponding Jupyter notebook
+- Notebooks must be executable from start to finish
+- Include clear explanations of methodology and assumptions
+
+## Notebook Structure
+- See the current `notebooks` directory for examples.
+- Start with a clear title and description
+- Include a "Background" section explaining the scientific context
+- Document all data sources and preprocessing steps
+- Show intermediate results and visualizations
+- Include error analysis and validation steps
+- End with conclusions and next steps
+
+## Code Quality in Notebooks
+- Follow the same code quality standards as the main codebase
+- Include type annotations in function definitions
+- Use markdown cells for clear documentation
+- Keep code cells focused and well-commented
+- Include error handling and validation
+
+## Data and Results
+- Document all input data sources
+- Show data validation steps
+- Include visualizations of results
+- Document any data transformations
+- Show model performance metrics
+- Include statistical analysis where relevant
+
+## Version Control
+- Notebooks must be version controlled
+- Include clear cell execution order
+- Document any external dependencies
+- Note the version of key packages used
+- Include timestamps for reproducibility
+
+## Best Practices
+- Use consistent formatting
+- Include clear section headers
+- Document any assumptions made
+- Show intermediate results
+- Include error analysis
+- Document any limitations
+- Link to relevant scientific literature

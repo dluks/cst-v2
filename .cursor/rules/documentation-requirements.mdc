@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Documentation Requirements
+
+## Function Documentation
+- Clear and concise descriptions
+- Type annotations
+- Parameter descriptions
+- Return value descriptions
+- Example usage where helpful
+
+## Pipeline Architecture
+- Document data flow
+- Describe pipeline stages
+- Explain DVC structure
+- Document dependencies
+- Include architecture diagrams
+
+## Data Flow
+- Document data sources
+- Describe data transformations
+- Explain data validation
+- Document data storage
+- Include data flow diagrams
+
+## Environment Setup
+- Installation instructions
+- Dependencies list
+- Configuration guide
+- Environment variables
+- Troubleshooting guide
+
+## HPC Deployment
+- HPC-specific setup
+- Resource requirements
+- Job submission scripts
+- Performance optimization
+- Monitoring guidelines

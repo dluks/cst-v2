@@ -1,0 +1,35 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Development Guidelines
+
+## Environment Compatibility
+- Ensure code works in both local and HPC environments
+- Use environment variables for configuration
+- Support both CPU and GPU operations
+
+## Data Integrity
+- Implement data validation checks
+- Use checksums for data verification
+- Maintain data lineage
+- Document data transformations
+
+## Scientific Computing
+- Follow scientific computing best practices
+- Use appropriate numerical precision
+- Implement proper error propagation
+- Document assumptions and limitations
+
+## Error Handling
+- Implement robust error handling
+- Log errors appropriately
+- Provide meaningful error messages
+- Handle edge cases gracefully
+
+## Documentation
+- Document all data processing steps
+- Include code comments for complex logic
+- Maintain up-to-date README files
+- Document environment setup

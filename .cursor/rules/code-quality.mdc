@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Code Quality Standards
+
+## Type Annotations
+- All functions must include type annotations
+- Use Python's typing module for complex types
+- Include return type annotations
+
+## Code Formatting
+- Follow RUFF/black formatting guidelines
+- Maximum line length: 88 characters
+- Use double quotes for strings
+- Follow PEP 8 naming conventions
+
+## Documentation
+- Functions < 15 lines: Single sentence docstring
+- Functions >= 15 lines: Full docstring with:
+  * Description
+  * Parameters
+  * Returns
+  * Raises (if applicable)
+  * Examples (if helpful)
+
+## Error Handling
+- Use appropriate exception types
+- Include meaningful error messages
+- Handle edge cases explicitly
+- Log errors appropriately

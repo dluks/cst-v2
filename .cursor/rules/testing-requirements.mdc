@@ -1,0 +1,39 @@
+---
+description: 
+globs: tests/**/*.py,tests/*.py
+alwaysApply: false
+---
+# Testing Requirements
+
+## Unit Testing
+- All functions must have corresponding unit tests
+- Use PyTest for all testing
+- Test both success and failure cases
+- Prefer to write tests in a way that avoids mocking
+- Mock external dependencies ONLY when necessary.
+- Prioritize key behavioral testing.
+- Aim for high test coverage if possible.
+
+## Integration Testing
+- Test complete data pipeline workflows
+- Verify data transformations
+- Test DVC pipeline stages
+- Validate data integrity
+
+## Performance Testing
+- Test HPC compatibility
+- Benchmark critical operations
+- Monitor memory usage
+- Test scalability
+
+## Data Validation
+- Validate input data formats
+- Check data consistency
+- Verify spatial data integrity
+- Test cross-validation splits
+
+## Cross-validation Testing
+- Verify fold assignments
+- Test model performance consistency
+- Validate spatial block structure
+- Check for data leakage
