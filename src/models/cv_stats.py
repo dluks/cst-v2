@@ -25,7 +25,7 @@ from src.utils.dataset_utils import (
     get_y_fn,
 )
 from src.utils.spatial_utils import lat_weights, weighted_pearson_r
-from src.utils.trait_utils import get_trait_number_from_id
+from src.utils.trait_utils import get_active_traits, get_trait_number_from_id
 
 TMP_DIR = Path("tmp")
 
@@ -74,6 +74,52 @@ def get_stats(
         "mean_absolute_error": mean_absolute_error,
         "median_absolute_error": median_absolute_error,
     }
+
+
+def get_fold_wise_stats(
+    fold_results: list[pd.DataFrame],
+    resolution: int | float | None = None,
+    wt_pearson: bool = False,
+) -> dict[str, Any]:
+    """
+    Calculate statistics for each fold and return means and standard deviations.
+
+    Parameters
+    ----------
+    fold_results : list[pd.DataFrame]
+        List of DataFrames, one per fold, each containing obs/pred columns.
+    resolution : int | float | None
+        Resolution for weighted Pearson correlation calculation.
+    wt_pearson : bool
+        Whether to calculate weighted Pearson correlation.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing mean and std for each metric across folds.
+    """
+    fold_stats = []
+
+    for fold_df in fold_results:
+        stats = get_stats(fold_df, resolution=resolution, wt_pearson=wt_pearson)
+        fold_stats.append(stats)
+
+    # Convert to DataFrame for easier calculation
+    fold_stats_df = pd.DataFrame(fold_stats)
+
+    # Calculate means and standard deviations across folds
+    result = {}
+    for metric in fold_stats_df.columns:
+        # Skip None values (e.g., pearsonr_wt when not calculated)
+        values = fold_stats_df[metric].dropna()
+        if len(values) > 0:
+            result[f"{metric}_mean"] = float(values.mean())
+            result[f"{metric}_std"] = float(values.std())
+        else:
+            result[f"{metric}_mean"] = None
+            result[f"{metric}_std"] = None
+
+    return result
 
 
 def load_x() -> pd.DataFrame:
@@ -137,6 +183,9 @@ def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("-d", "--debug", action="store_true", help="Run in debug mode.")
     parser.add_argument(
+        "-f", "--fold-results", action="store_true", help="Include fold results."
+    )
+    parser.add_argument(
         "-r", "--recompute", action="store_true", help="Recompute stats."
     )
     parser.add_argument(
@@ -145,17 +194,27 @@ def cli() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> None:
+def main(args: argparse.Namespace | None = None, cfg: ConfigBox | None = None) -> None:
     """
     Main function for generating spatial CV trait statistics.
     """
+    if args is None:
+        args = cli()
+    if cfg is None:
+        cfg = get_config()
+
     models_dir = get_models_dir() / "debug" if args.debug else get_models_dir()
     trait_sets = ["splot", "splot_gbif", "gbif"]
+    valid_traits = get_active_traits(cfg)
 
     log.info("Loading X data...")
     x = load_x()
     for trait_dir in models_dir.iterdir():
         if not trait_dir.is_dir():
+            continue
+
+        if trait_dir.stem not in valid_traits:
+            log.info("Skipping trait: %s", trait_dir.stem)
             continue
 
         trait_id = trait_dir.stem
@@ -201,11 +260,14 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
                 generate_fold_obs_vs_pred(fold_dir, fold_df)
                 for fold_dir, fold_df in zip(fold_dirs, fold_dfs)
             ]
-            log.info("Computing delayed results...")
+            log.info("Computing CV predictions...")
             coll = compute(*delayed_results)
 
-            log.info("Concatenating results...")
+            log.info("Concatenating predictions...")
             cv_obs_vs_pred = pd.concat(coll, ignore_index=True)
+
+            # Keep individual fold results for fold-wise statistics
+            fold_results = list(coll) if args.fold_results else None
 
             log.info("Writing results to disk...")
             cv_obs_vs_pred_path = Path(ts_dir, "cv_obs_vs_pred.parquet")
@@ -217,6 +279,7 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
             all_stats = pd.DataFrame()
             pearsonr_wt = cfg.crs == "EPSG:4326"
             cv_obs_vs_pred_trans = None
+            fold_results_trans = None
 
             # Back-transform if training data was log-transformed
             if cfg.trydb.interim.transform == "log":
@@ -226,10 +289,22 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
                         "stats calculation..."
                     )
                     cv_obs_vs_pred_trans = cv_obs_vs_pred.copy()
+
+                    if args.fold_results:
+                        fold_results_trans = [fold.copy() for fold in fold_results]
+
                     cv_obs_vs_pred = cv_obs_vs_pred.assign(
                         obs=np.expm1(cv_obs_vs_pred.obs),
                         pred=np.expm1(cv_obs_vs_pred.pred),
                     )
+                    if args.fold_results:
+                        fold_results = [
+                            fold.assign(
+                                obs=np.expm1(fold.obs),
+                                pred=np.expm1(fold.pred),
+                            )
+                            for fold in fold_results
+                        ]
             # Back-transform if training data was power-transformed
             elif cfg.trydb.interim.transform == "power":
                 with open(get_power_transformer_fn(cfg), "rb") as f:
@@ -237,12 +312,16 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
 
                 log.info("Inverse transforming Y data...")
                 cv_obs_vs_pred_trans = cv_obs_vs_pred.copy()
+                if args.fold_results:
+                    fold_results_trans = [fold.copy() for fold in fold_results]
 
                 trait_num = get_trait_number_from_id(trait_id)
                 feature_nums = np.array(
                     [get_trait_number_from_id(f) for f in pt.feature_names_in_]
                 )
                 ft_id = np.where(feature_nums == trait_num)[0][0]
+
+                # Transform overall results
                 inv_obs = pt.inverse_transform(
                     pd.DataFrame(columns=pt.feature_names_in_)
                     .assign(**{f"X{trait_num}": cv_obs_vs_pred.obs})
@@ -255,21 +334,76 @@ def main(args: argparse.Namespace = cli(), cfg: ConfigBox = get_config()) -> Non
                     .fillna(0)
                 )[:, ft_id]
 
-                cv_obs_vs_pred = cv_obs_vs_pred.assign(obs=inv_obs, pred=inv_pred)
+                cv_obs_vs_pred = cv_obs_vs_pred.assign(
+                    obs=inv_obs, pred=inv_pred
+                ).dropna()
 
-            # Get the stats on the non-transformed data
-            stats = get_stats(
-                cv_obs_vs_pred,
-                cfg.target_resolution,
-                wt_pearson=pearsonr_wt,
-            )
+                if args.fold_results:
+                    # Transform fold results
+                    transformed_folds = []
+                    for fold in fold_results:
+                        fold_inv_obs = pt.inverse_transform(
+                            pd.DataFrame(columns=pt.feature_names_in_)
+                            .assign(**{f"X{trait_num}": fold.obs})
+                            .fillna(0)
+                        )[:, ft_id]
 
+                        fold_inv_pred = pt.inverse_transform(
+                            pd.DataFrame(columns=pt.feature_names_in_)
+                            .assign(**{f"X{trait_num}": fold.pred})
+                            .fillna(0)
+                        )[:, ft_id]
+
+                        transformed_folds.append(
+                            fold.assign(obs=fold_inv_obs, pred=fold_inv_pred).dropna()
+                        )
+
+                    fold_results = transformed_folds
+
+            log.info("Calculating overall stats on non-transformed data...")
+            try:
+                stats_overall = get_stats(
+                    cv_obs_vs_pred,
+                    cfg.target_resolution,
+                    wt_pearson=pearsonr_wt,
+                )
+            except ValueError as e:
+                log.error("Error calculating stats on non-transformed data: %s", e)
+                log.error(
+                    "NaNs present in obs or pred: %s", cv_obs_vs_pred.isna().sum()
+                )
+                raise e
+
+            if args.fold_results:
+                log.info("Calculating fold-wise stats on non-transformed data...")
+                stats_foldwise = get_fold_wise_stats(
+                    fold_results,
+                    cfg.target_resolution,
+                    wt_pearson=pearsonr_wt,
+                )
+                log.info("Combining overall and fold-wise statistics...")
+                stats = {**stats_overall, **stats_foldwise}
+            else:
+                stats = stats_overall
+
+            log.info("Calculating overall stats on transformed data...")
             if cv_obs_vs_pred_trans is not None:
-                stats_tr = get_stats(
+                stats_tr_overall = get_stats(
                     cv_obs_vs_pred_trans,
                     cfg.target_resolution,
                     wt_pearson=pearsonr_wt,
                 )
+
+                if args.fold_results:
+                    log.info("Calculating fold-wise stats on transformed data...")
+                    stats_tr_foldwise = get_fold_wise_stats(
+                        fold_results_trans,
+                        cfg.target_resolution,
+                        wt_pearson=pearsonr_wt,
+                    )
+                    stats_tr = {**stats_tr_overall, **stats_tr_foldwise}
+                else:
+                    stats_tr = stats_tr_overall
 
                 all_stats = pd.concat(
                     [

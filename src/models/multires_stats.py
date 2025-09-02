@@ -1,12 +1,17 @@
-"""Updates (or creates) model performance and feature importance data for all trait models."""
+"""
+Updates (or creates) model performance and feature importance data for all
+trait models.
+"""
 
 import argparse
 import collections
+import contextlib
 import shutil
+from collections.abc import Iterable
 from functools import partial
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 
 import pandas as pd
 from box import ConfigBox
@@ -27,7 +32,9 @@ from src.utils.dataset_utils import (
 def cli() -> argparse.Namespace:
     """Simple CLI"""
     parser = argparse.ArgumentParser(
-        description="Update model performance and feature importance data for all trait models."
+        description=(
+            "Update model performance and feature importance data for all trait models."
+        )
     )
     parser.add_argument(
         "-m", "--model-perf", action="store_true", help="Update model performance data."
@@ -87,8 +94,8 @@ def map_to_trait_dfs(
     fx: Callable, df: pd.DataFrame, cfg: ConfigBox, out: Path | None = None
 ) -> pd.DataFrame:
     """
-    Applies a given function to all trait model paths and concatenates the results into a
-    single DataFrame.
+    Applies a given function to all trait model paths and concatenates the results
+    into a single DataFrame.
 
     Parameters:
     fx (Callable): The function to apply to each trait model.
@@ -113,31 +120,71 @@ def map_to_trait_dfs(
     return df
 
 
-def get_all_model_perf_df(debug: bool = False) -> pd.DataFrame:
+def get_all_model_perf_df(
+    debug: bool = False, fold_results: bool = False
+) -> pd.DataFrame:
     """Get the model performance results DataFrame. If none exists yet, create it."""
     results = get_all_model_perf(debug=debug)
+    # Base schema
+    results_cols = {
+        "pft": str,
+        "resolution": str,
+        "trait_id": str,
+        "trait_set": str,
+        "automl": bool,
+        "model_arch": str,
+        "run_id": str,
+        "r2": float,
+        "pearsonr": float,
+        "pearsonr_wt": float,
+        "root_mean_squared_error": float,
+        "norm_root_mean_squared_error": float,
+        "mean_squared_error": float,
+        "mean_absolute_error": float,
+        "median_absolute_error": float,
+        "transform": str,
+    }
+
+    # Optional fold-wise schema
+    if fold_results:
+        results_cols.update(
+            {
+                "r2_mean_fold": float,
+                "pearsonr_mean_fold": float,
+                "pearsonr_wt_mean_fold": float,
+                "root_mean_squared_error_mean_fold": float,
+                "norm_root_mean_squared_error_mean_fold": float,
+                "mean_squared_error_mean_fold": float,
+                "mean_absolute_error_mean_fold": float,
+                "median_absolute_error_mean_fold": float,
+                "r2_std_fold": float,
+                "pearsonr_std_fold": float,
+                "pearsonr_wt_std_fold": float,
+                "root_mean_squared_error_std_fold": float,
+                "norm_root_mean_squared_error_std_fold": float,
+                "mean_squared_error_std_fold": float,
+                "mean_absolute_error_std_fold": float,
+                "median_absolute_error_std_fold": float,
+            }
+        )
+
     if results.empty:
-        results_cols = {
-            "pft": str,
-            "resolution": str,
-            "trait_id": str,
-            "trait_set": str,
-            "automl": bool,
-            "model_arch": str,
-            "run_id": str,
-            "r2": float,
-            "pearsonr": float,
-            "pearsonr_wt": float,
-            "root_mean_squared_error": float,
-            "norm_root_mean_squared_error": float,
-            "mean_squared_error": float,
-            "mean_absolute_error": float,
-            "median_absolute_error": float,
-            "transform": str,
-        }
         results = pd.DataFrame(columns=[str(k) for k in results_cols]).astype(
             results_cols
         )
+    else:
+        # Ensure required columns exist with correct dtypes
+        for col, dtype in results_cols.items():
+            if col not in results.columns:
+                results[col] = pd.Series(dtype=dtype)
+            else:
+                # Best-effort cast to expected dtype
+                with contextlib.suppress(Exception):
+                    results[col] = results[col].astype(dtype)
+
+        # Reorder columns to match schema order (optional but tidy)
+        results = results[[str(k) for k in results_cols if k in results.columns]]
+
     return results
 
 
@@ -206,7 +253,7 @@ def update_model_perf(
         if col not in trait_df.columns:
             trait_df[col] = None
 
-    trait_df = trait_df[df.columns]
+    # trait_df = trait_df[df.columns]
 
     return pd.concat([df, trait_df], ignore_index=True).drop_duplicates(
         subset=["pft", "resolution", "run_id", "trait_set", "transform"], keep="last"
@@ -244,8 +291,8 @@ def update_fi(model_dir: Path, df: pd.DataFrame, config: ConfigBox) -> pd.DataFr
 
     def _add_dataset(_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Adds a column to the feature importance DataFrame indicating the dataset the feature
-        belongs to.
+        Adds a column to the feature importance DataFrame indicating the dataset
+        the feature belongs to.
         """
         _df = _df.copy()
 
