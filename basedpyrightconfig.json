@@ -1,0 +1,19 @@
+{
+    "include": [
+        "src",
+        "tests"
+    ],
+    "exclude": [
+        "data",
+        "models"
+    ],
+    "reportPrivateImportUsage": "information",
+    "autoImportCompletions": true,
+    "diagnosticSeverityOverrides": {
+        "reportGeneralTypeIssues": "warning",
+        "reportAttributeAccessIssue": "information",
+        "reportCallIssue": "none",
+        "reportPrivateImportUsage": "none"
+    },
+    "typeCheckingMode": "basic"
+}
