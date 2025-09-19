@@ -1,0 +1,6 @@
+outs:
+- md5: 9ca241437610da308a9b5dca3ac8b77e.dir
+  size: 15366130
+  nfiles: 3
+  hash: md5
+  path: hydraulic_traits_knighton
