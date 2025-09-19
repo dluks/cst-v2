@@ -5,7 +5,6 @@ import argparse
 import gc
 import os
 from pathlib import Path
-from typing import List
 
 import numpy as np
 import xarray as xr
@@ -156,7 +155,7 @@ def modis_ndvi(out_dir: Path, dry_run: bool = False) -> None:
         gc.collect()
 
 
-def prune_worldclim(out_dir: Path, bio_vars: List[str], dry_run: bool = False) -> None:
+def prune_worldclim(out_dir: Path, bio_vars: list[str], dry_run: bool = False) -> None:
     """
     Prunes WorldClim data files based on the specified bio_vars.
 
@@ -201,6 +200,23 @@ def cli() -> argparse.Namespace:
     parser.add_argument(
         "-o", "--overwrite", action="store_true", help="Overwrite files."
     )
+    parser.add_argument(
+        "-p",
+        "--params",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to a params.yaml whose values should be layered as the "
+            "final override (equivalent to setting PRODUCT_PARAMS)."
+        ),
+    )
+    parser.add_argument(
+        "-s",
+        "--sys_params",
+        type=str,
+        default=None,
+        help="Path to a params.yaml that contains system-specific parameters.",
+    )
     args = parser.parse_args()
 
     return args
@@ -208,16 +224,21 @@ def cli() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     """Main function."""
-    cfg = get_config()
-    syscfg = cfg[detect_system()][cfg.model_res].harmonize_eo_data
+    print(os.getcwd())
+    print(Path(args.params).resolve())
+    cfg = get_config(args.params)
+    syscfg = get_config(args.sys_params)[detect_system()][
+        cfg.model_res
+    ].harmonize_eo_data
 
+    log.info("Config: %s", cfg)
     if syscfg.n_workers == -1:
         syscfg.n_workers = os.cpu_count()
 
     log.info("Collecting files...")
     filenames = get_eo_fns_dict(stage="raw")
 
-    out_dir = Path(cfg.interim_dir) / cfg.eo_data.interim.dir / cfg.model_res
+    out_dir = Path(cfg.interim_eo_dir)
 
     if not filenames:
         log.error("No files to process.")
@@ -229,7 +250,12 @@ def main(args: argparse.Namespace) -> None:
     )
 
     log.info("Building landcover mask...")
-    mask = get_mask(cfg.mask.path, cfg.mask.keep_classes, cfg.base_resolution, cfg.crs)
+    mask = get_mask(
+        cfg.landcover_mask.path,
+        cfg.landcover_mask.keep_classes,
+        cfg.base_resolution,
+        cfg.crs,
+    )
 
     if not args.dry_run:
         out_dir.mkdir(parents=True, exist_ok=True)

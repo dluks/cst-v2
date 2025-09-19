@@ -1,0 +1,35 @@
+params:
+  - params.yaml
+
+stages:
+  harmonize_eo_data:
+    cmd: python ${project_root}/src/data/harmonize_eo_data.py --params pipeline/eo_data/${id}/params.yaml --sys_params params.yaml
+    deps:
+      - ${project_root}/src/data/harmonize_eo_data.py
+    params:
+      - model_res
+      - landcover_mask
+      - datasets.X
+      - base_resolution
+      - target_resolution
+      - worldclim.bio_vars
+    outs:
+      - ${interim_eo_dir}:
+          persist: false
+
+  build_predict:
+    cmd: python ${project_root}/src/features/featurize_predict.py
+    deps:
+      - ${project_root}/src/features/featurize_predict.py
+      - ${interim_eo_dir}
+    params:
+      - model_res
+      - features_X_dir
+      - interim_eo_dir
+      - X_mask_fn
+      - X_imputed_fn
+    outs:
+      - ${features_X_dir}/${X_mask_fn}:
+          persist: false
+      - ${features_X_dir}/${X_imputed_fn}:
+          persist: false
