@@ -41,6 +41,7 @@ rio-cogeo = "^5.3.6"
 ease-grid = "^0.2"
 verstack = "^4.1.4"
 
+openpyxl = "^3.1.5"
 [tool.poetry.group.cuda.dependencies]
 cudf-cu11 = { version = "24.10.*", source = "nvidia" }
 cuml-cu11 = { version = "24.10.*", source = "nvidia" }
