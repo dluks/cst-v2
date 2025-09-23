@@ -1,0 +1,992 @@
+version: "1.1.0"
+
+# Container configuration
+container:
+  type: "singularity"  # "singularity" or "docker"
+  name: "cit-sci-traits"
+  docker_tag: "latest"
+  def: "cit-sci-traits.def"
+  image: "cit-sci-traits.sif"
+
+model_res: "1km"
+PFT: "Shrub_Tree_Grass"
+random_seed: 42
+base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
+target_resolution: 1000 # Target resolution for model training
+extent: [-180, -60, 180, 90] # Extent of the final dataset
+crs: "EPSG:6933" # Equal Area Cylindrical projection
+tmp_dir: tmp
+raw_dir: data/raw
+interim_dir: data/interim
+processed_dir: data/processed
+dask_dashboard: ":39143"
+trait_mapping: "reference/trait_mapping.json"
+trait_stat_mapping: "reference/trait_stat_mapping.json"
+try_version: 6
+splot_open: false
+
+pylos:
+  "1km":
+    harmonize_eo_data:
+      n_workers: 12
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 20
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 20
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 6
+      n_workers: 30
+      memory_limit: null
+      threads_per_worker: 2
+    build_predict:
+      n_chunks: 5
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 3
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 0.5
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "001":
+    harmonize_eo_data:
+      n_workers: 12
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 40
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 6
+      n_workers: 30
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 5
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 3
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 0.5
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 3
+      threads_per_worker: 1
+  "22km":
+    harmonize_eo_data:
+      n_workers: 20
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 60
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 60
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "02":
+    harmonize_eo_data:
+      n_workers: 20
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 60
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 60
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "05":
+    harmonize_eo_data:
+      n_workers: 18
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 60
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 60
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 60
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "1":
+    harmonize_eo_data:
+      n_workers: 48
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 60
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 30
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 60
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 60
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "2":
+    harmonize_eo_data:
+      n_workers: 30
+    match_gbif_pfts:
+      n_workers: 80
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 30
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 30
+      memory_limit: null
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: null
+      memory_limit: 100GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 20
+      n_workers_variogram: 5
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 30
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+geos:
+  "1km":
+    harmonize_eo_data:
+      n_workers: 48
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 60 # 80 was throwing too many files open error...
+      threads_per_worker: 5
+      memory_limit: 15GB
+    build_splot_maps:
+      npartitions: 60  
+      dask:
+        n_workers: 40
+        threads_per_worker: 5
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 4
+      n_workers: 8
+      memory_limit: 100GB
+      threads_per_worker: 2
+    build_predict:
+      n_chunks: 3
+      n_workers: 80
+      memory_limit: 400GB
+      impute_chunks: 2
+    calc_spatial_autocorr:
+      n_workers: 1
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 12 # x direction only
+      gpu_ids: [0, 1]
+    skcv_splits:
+      n_workers: 50
+      threads_per_worker: 1
+    aoa:
+      device_ids: [0, 1]
+      predict_sample: 0.5
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "001":
+    harmonize_eo_data:
+      n_workers: 48
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60
+      dask:
+        n_workers: 60
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 2
+      n_workers: 100
+      memory_limit: 150GB
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 3
+      n_workers: 100
+      memory_limit: 500GB
+      impute_chunks: 2
+    calc_spatial_autocorr:
+      n_workers: 100
+      n_workers_variogram: 20
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 80
+    aoa:
+      device_ids: [0, 1, 2, 3]
+      predict_sample: 0.5
+      splot:
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "22km":
+    harmonize_eo_data:
+      n_workers: 20
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_partitions: null
+      n_workers: 40 # 80 was throwing too many files open error...
+      threads_per_worker: 4
+      memory_limit: 40GB
+    build_splot_maps:
+      npartitions: 40
+      dask:
+        n_workers: 40
+        threads_per_worker: 4
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 10
+      n_workers: 8
+      memory_limit: 150GB
+      threads_per_worker: 1
+    build_predict:
+      n_chunks: 3
+      n_workers: 80
+      memory_limit: 400GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 3
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
+    skcv_splits:
+      n_workers: 50
+      threads_per_worker: 1
+    aoa:
+      device_ids: [1, 2, 3]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 1
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "02":
+    harmonize_eo_data:
+      n_workers: 48
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 80
+      dask:
+        n_workers: 80
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 150GB
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 500GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 100
+      n_workers_variogram: 20
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 80
+    aoa:
+      device_ids: [0, 1, 2, 3]
+      predict_sample: 0.5
+      splot:
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "55km":
+    harmonize_eo_data:
+      n_workers: 20
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_partitions: null
+      n_workers: 40 # 80 was throwing too many files open error...
+      threads_per_worker: 4
+      memory_limit: 40GB
+    build_splot_maps:
+      npartitions: 40
+      dask:
+        n_workers: 40
+        threads_per_worker: 4
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 10
+      n_workers: 8
+      memory_limit: 150GB
+      threads_per_worker: 1
+    build_predict:
+      n_chunks: 3
+      n_workers: 80
+      memory_limit: 400GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 3
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
+    skcv_splits:
+      n_workers: 50
+      threads_per_worker: 1
+    aoa:
+      device_ids: [1, 2, 3]
+      predict_sample: 1
+      splot:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 1
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "05":
+    harmonize_eo_data:
+      n_workers: 48
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 80
+      dask:
+        n_workers: 80
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 150GB
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 500GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 100
+      n_workers_variogram: 20
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 80
+    aoa:
+      device_ids: [0, 1, 2, 3]
+      predict_sample: 0.5
+      splot:
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "1":
+    harmonize_eo_data:
+      n_workers: 80
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 60  
+      dask:
+        n_workers: 40
+        threads_per_worker: 5
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 150GB
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 500GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 100
+      n_workers_variogram: 40
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 80
+    aoa:
+      device_ids: [0, 1, 2, 3]
+      predict_sample: 0.5
+      splot:
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+  "2":
+    harmonize_eo_data:
+      n_workers: 80
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_workers: 50
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 80
+      dask:
+        n_workers: 80
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 150GB
+      threads_per_worker: 5
+    build_predict:
+      n_chunks: 1
+      n_workers: 100
+      memory_limit: 500GB
+      impute_chunks: 1
+    calc_spatial_autocorr:
+      n_workers: 100
+      n_workers_variogram: 40
+      n_chunks: 4
+    skcv_splits:
+      n_workers: 80
+    aoa:
+      device_ids: [0, 1, 2, 3]
+      predict_sample: 0.5
+      splot:
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+      splot_gbif:
+        chunked_dist: false
+        train_sample: 1
+        avg_dist_batch_size: 10000
+        predict_partitions: null
+    build_final_product:
+      n_workers: 5
+      threads_per_worker: 1
+nemo2:
+  "1km":
+    match_gbif_pfts:
+      n_workers: 60
+    build_gbif_maps:
+      n_workers: 32
+      threads_per_worker: 5
+    build_splot_maps:
+      npartitions: 80  
+      dask:
+        n_workers: 80
+        threads_per_worker: 5
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 4
+      n_workers: 8
+      memory_limit: 100GB
+      threads_per_worker: 2
+    calc_spatial_autocorr:
+      n_workers: 1
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
+      gpu_ids: [0, 1, 2, 3]
+  "55km":
+    match_gbif_pfts:
+      n_workers: 60
+      n_partitions: 80
+    build_gbif_maps:
+      n_partitions: null
+      n_workers: 40 # 80 was throwing too many files open error...
+      threads_per_worker: 4
+      memory_limit: 40GB
+    build_splot_maps:
+      npartitions: 40
+      dask:
+        n_workers: 40
+        threads_per_worker: 4
+        memory_limit: 40GB
+    featurize_train:
+      n_chunks: 10
+      n_workers: 8
+      memory_limit: 150GB
+      threads_per_worker: 1
+
+mask:
+  path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+  keep_classes:
+    - 10 # Tree cover
+    - 20 # Shrubland
+    - 30 # Grassland
+    - 40 # Cropland
+    - 60 # Bare/sparse vegetation
+    - 70 # Snow and ice
+    - 90 # Herbaceous wetland
+    - 95 # Mangroves
+    - 100 # Moss and lichen
+
+datasets:
+  X:
+    canopy_height: ETH_GlobalCanopyHeight_2020_v1_1km
+    modis: modis_sur_refl_monthly_avg_1km
+    soilgrids: soilgrids_v2-0_1km
+    vodca: vodca_mean-p5-p95_1km
+    worldclim: wc2-1_30s_bio
+  Y:
+    splot: splot4-0
+    gbif: all_tracheophyta_non-cult_2024-04-10
+    fd_mode: false
+    trait_stats: ["mean", "std", "median", "q05", "q95", "count"]  # non-FD metrics
+    # trait_stats: ["f_ric", "f_eve", "f_div", "sp_ric"]  # FD metrics
+    trait_stat: 1 # (bands start at 1, FD metrics contain only (metric, 'count')
+    correlation_fn: splot_gbif_correlation.csv
+    traits:
+      - 4 # Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density
+      - 6 # Root rooting depth
+      - 13 # Leaf carbon (C) content per leaf dry mass
+      - 14 # Leaf nitrogen (N) content per leaf dry mass
+      - 15 # Leaf phosphorus (P) content per leaf dry mass
+      - 21 # Stem diameter
+      - 26 # Seed dry mass
+      - 27 # Seed length
+      - 46 # Leaf thickness
+      - 47 # Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)
+      - 50 # Leaf nitrogen (N) content per leaf area
+      - 55 # Leaf dry mass (single leaf)
+      - 78 # Leaf nitrogen (N) isotope signature (delta 15N)
+      - 95 # Seed germination rate (germination efficiency)
+      - 138 # Seed number per reproducton unit
+      - 144 # Leaf length
+      - 145 # Leaf width
+      - 146 # Leaf carbon/nitrogen (C/N) ratio
+      - 163 # Leaf fresh mass
+      - 169 # Stem conduit density (vessels and tracheids)
+      # - 223 # Species genotype: chromosome number
+      # - 224 # Species genotype: chromosome cDNA content
+      - 237 # Dispersal unit length
+      - 281 # Stem conduit diameter (vessels, tracheids)
+      - 282 # Wood vessel element length; stem conduit (vessel and tracheids) element length
+      - 289 # Wood fiber lengths
+      - 297 # Wood rays per millimetre (wood ray density)
+      # - 351 # Seed number per dispersal unit
+      - 614 # Fine root length per fine root dry mass (specific fine root length, SRL)
+      - 1080 # Root length per root dry mass (specific root length, SRL)
+      - 3106 # Plant height vegetative
+      # - 3107 # Plant height generative
+      # - 3112 # Leaf area (in case of compound leaves: leaf, undefined if petiole in- or excluded)
+      - 3113 # Leaf area (in case of compound leaves: leaflet, undefined if petiole is in- or excluded)
+      # - 3114 # Leaf area (in case of compound leaves undefined if leaf or leaflet, undefined if petiole is in- or e
+      - 3117 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is in- or exclu
+      - 3120 # Leaf water content per leaf dry mass (not saturated)
+
+eo_data:
+  interim:
+    dir: eo_data
+  predict:
+    dir: predict
+    mask_fn: eo_predict_mask.parquet
+    imputed_fn: eo_predict_imputed.parquet
+
+worldclim:
+  bio_vars:
+    - "1" # Annual Mean Temperature
+    - "4" # Temperature Seasonality (standard deviation ×100)
+    - "7" # Temperature Annual Range (BIO5-BIO6)
+    - "12" # Annual Precipitation
+    - "13-14" # Annual precipitation range (BIO13-BIO14)
+    - "15" # Precipitation Seasonality (Coefficient of Variation)
+
+gbif:
+  raw:
+    dir: all_tracheophyta_non-cult_2024-04-10
+  interim:
+    dir: gbif
+    matched: gbif_pfts.parquet
+    subsampled: gbif_subsampled.parquet
+    subsample_binsize: 4
+    subsample_n_max: 10000
+    min_count: 10
+    max_count: 500
+    traits: trait_maps
+
+splot:
+  raw:
+    dir: splot4-0
+  interim:
+    dir: splot
+    extracted: extracted
+    traits: trait_maps
+
+trydb:
+  raw:
+    try6:
+      dir: TRY_6_gapfilled_for_distribution
+      zip: TRY6_gapfilled_for_distribution.zip
+      zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+    try5:
+      dir: TRY_5_GapFilledData_2020
+      zip: TRY_5_GapFilledData_2020.zip
+      zipfile_csv: TRY_50_2020_01/gapfilled_data/mean_gap_filled_back_transformed_incl_species_names.csv
+    pfts: try_pft_v2.parquet
+  interim:
+    dir: try
+    quantile_range: null  # Use [0.005, 0.995] for TRY5. No filtering needed for TRY6
+    transform: power # "log", "power" (yeo-johnson), null (no transformation)
+    already_norm: null
+    filtered: traits.parquet
+    transformer_fn: power_transformer.pkl
+    perform_pca: false # This will reduce the number of traits by projecting them onto the principal components
+    pca_n_components: 4 # Fraction of variance to keep. If integer, this is the number of components.
+    pca_fn: no_pca.pkl # Set to no_pca.pkl if perform_pca is false
+
+biomes: # Used for model analysis by biome
+  reclassification:
+    1: 1  # Tropical/Subtropical Forests
+    2: 1
+    3: 1
+    4: 2  # Temperate/Boreal Forests
+    5: 2
+    6: 2
+    7: 3  # Grasslands and Savannas
+    8: 3
+    12: 4 # Mediterranean
+    13: 5  # Deserts
+    9: 6  # Wetlands
+    14: 6  
+    98: 6
+    10: 7  # Alpine/Polar
+    11: 7
+    99: 7
+  raw_path: wwf_terr_biomes/wwf_terr_biomes.tif # Relative to raw_dir
+  interim_path: biomes/biomes.tif # Relative to interim_dir
+  
+calc_spatial_autocorr:
+  # Use existing spatial autocorrelation data from this model_res. To recompute, set to false.
+  use_existing: false
+
+train:
+  dir: data/features
+  Y:
+    fn: Y.parquet
+  missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values
+  trait_sets: ["splot", "gbif", "splot_gbif"]
+  spatial_autocorr: spatial_autocorr.parquet
+  cv_splits:
+    range_stat: "mean"
+    n_splits: 5
+    n_sims: 200
+    dir: skcv_splits
+  weights:
+    fn: feature_weights.parquet
+    method: auto # "auto", "manual" -- "manual" will use below weights
+    splot: 1.0
+    gbif: 0.08661
+  arch: "autogluon"
+  eval_results: evaluation_results.csv
+  feature_importance: feature_importance.csv
+
+processed:
+  dir: data/processed
+  predict_dir: predict
+  aoa_dir: aoa
+  cov_dir: cov
+  splot_corr: splot_correlation.csv
+
+autogluon:
+  included_model_types: ["GBM"]
+  presets: "high"
+  save_bag_folds: true
+  refit_full: false
+  set_best_to_refit_full: false
+  cv_fit_time_limit: 7200
+  full_fit_time_limit: 12600 # 3.5 hours per trait
+  num_gpus: 2
+  num_cpus: 74
+  feature_importance: true
+  FI_time_limit: 1800
+  FI_num_shuffle_sets: 10
+
+models:
+  dir: models
+
+aoa:
+  dir: aoa
+  
+predict:
+  dir: predict
+  geos:
+    n_workers: 1
+    batches: 8
+  pylos:
+    n_workers: 1
+    batches: 24
+
+cov:
+  dir: cov
+  
+public:
+  destination: "both"
+  local_dir: final
+  sftp_dir: PANOPS/cit-sci-traits/trait_maps
+
+analysis:
+  dir: results
+  multires_results_fn: all_results.parquet
+  multires_fi_fn: all_fi.parquet
