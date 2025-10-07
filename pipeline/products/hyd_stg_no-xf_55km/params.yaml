@@ -1,5 +1,6 @@
 version: "1.1.0"
-project_root: "../../"
+project_root: "../../.."
+product_dir: "pipeline/products/hyd_stg_no-xf_55km"
 
 # Container configuration
 container:
@@ -826,6 +827,9 @@ traits:
     - P88
     - rdmax
     - WUE
+  transform: null
+  pfts: data/raw/try_pft_v2.parquet
+  interim_out: data/interim/try/hydraulic_no-xf.parquet
 
 gbif:
   raw:

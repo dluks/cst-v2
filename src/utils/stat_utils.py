@@ -7,55 +7,6 @@ from src.utils.dataset_utils import get_power_transformer_fn
 from src.utils.trait_utils import get_trait_number_from_id
 
 
-def yeo_johnson_transform(x: np.ndarray, lmbda: int | float) -> np.ndarray:
-    """Return transformed input x following Yeo-Johnson transform with
-    parameter lambda.
-
-    Source: from sklearn.preprocessing._data.py
-    """
-
-    out = np.zeros_like(x)
-    pos = x >= 0  # binary mask
-
-    # when x >= 0
-    if abs(lmbda) < np.spacing(1.0):
-        out[pos] = np.log1p(x[pos])
-    else:  # lmbda != 0
-        out[pos] = (np.power(x[pos] + 1, lmbda) - 1) / lmbda
-
-    # when x < 0
-    if abs(lmbda - 2) > np.spacing(1.0):
-        out[~pos] = -(np.power(-x[~pos] + 1, 2 - lmbda) - 1) / (2 - lmbda)
-    else:  # lmbda == 2
-        out[~pos] = -np.log1p(-x[~pos])
-
-    return out
-
-
-def yeo_johnson_inverse_transform(x: np.ndarray, lmbda: int | float) -> np.ndarray:
-    """Return inverse-transformed input x following Yeo-Johnson inverse
-    transform with parameter lambda.
-
-    Source: from sklearn.preprocessing._data.py
-    """
-    x_inv = np.zeros_like(x)
-    pos = x >= 0
-
-    # when x >= 0
-    if abs(lmbda) < np.spacing(1.0):
-        x_inv[pos] = np.exp(x[pos]) - 1
-    else:  # lmbda != 0
-        x_inv[pos] = np.power(x[pos] * lmbda + 1, 1 / lmbda) - 1
-
-    # when x < 0
-    if abs(lmbda - 2) > np.spacing(1.0):
-        x_inv[~pos] = 1 - np.power(-(2 - lmbda) * x[~pos] + 1, 1 / (2 - lmbda))
-    else:  # lmbda == 2
-        x_inv[~pos] = 1 - np.exp(-x[~pos])
-
-    return x_inv
-
-
 def power_back_transform(data: np.ndarray, trait_num: str) -> np.ndarray:
     """Back-transform power-transformed data."""
     with open(get_power_transformer_fn(), "rb") as xf:
@@ -96,7 +47,8 @@ def power_transform(data: np.ndarray, trait_num: str) -> np.ndarray:
 
     Parameters:
         data (np.ndarray): The new trait data to transform.
-        trait_num (str): The trait number (as a string) to indicate which column to transform.
+        trait_num (str): The trait number (as a string) to indicate which column to
+            transform.
 
     Returns:
         np.ndarray: The power-transformed data.
@@ -118,7 +70,8 @@ def power_transform(data: np.ndarray, trait_num: str) -> np.ndarray:
         ft_id = np.where(feature_nums == trait_num)[0][0]
 
         # Create an empty DataFrame with the transformer's feature names as columns,
-        # assign the new trait data to the appropriate column, and fill missing values with 0.
+        # assign the new trait data to the appropriate column, and fill missing values
+        # with 0.
         df = (
             pd.DataFrame(columns=xfer.feature_names_in_)
             .assign(**{f"X{trait_num}": data})

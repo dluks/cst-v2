@@ -585,3 +585,19 @@ stages:
       hash: md5
       md5: c24832274df1c9615d161e87e6d82277
       size: 2969
+  build_traits:
+    cmd: python ../../../src/data/build_hydraulic_traits.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    deps:
+    - path: ../../../data/raw/hydraulic_traits_knighton/GlobalTrees_Traits_Median.xlsx
+      hash: md5
+      md5: 8680a8231329721e19d386d01bb31c30
+      size: 8939466
+    - path: ../../../src/data/build_hydraulic_traits.py
+      hash: md5
+      md5: 1597c78c6e7c0dbf5b8eb3f2a4b5695d
+      size: 8881
+    outs:
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
+      hash: md5
+      md5: c317a88a8cd9c8d141197bd7cbbeca37
+      size: 2037857

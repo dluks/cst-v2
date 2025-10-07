@@ -5,3 +5,4 @@
 /norm_scaler.pkl
 /trait_pca.pkl
 /no_pca.pkl
+/hydraulic_no-xf.parquet

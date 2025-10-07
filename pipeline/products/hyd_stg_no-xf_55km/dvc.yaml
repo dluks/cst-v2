@@ -6,25 +6,25 @@ stages:
   # CONTAINER BUILDING -----------------------------------------------------------------
   ######################################################################################
 
-  build_container:
-    cmd: >-
-      ${project_root}/stages/build_container.sh
-      ${container.type}
-      ${container.name}
-      ${container.docker_tag}
-      ${container.def}
-      ${container.image}
-    deps:
-      - ${container.def}
-      - pyproject.toml
-      - poetry.lock
-      - README.md
-      - ${project_root}/stages/build_container.sh
-    params:
-      - container
-    outs:
-      - ${project_root}/${container.image}:
-          persist: true
+  # build_container:
+  #   cmd: >-
+  #     ${project_root}/stages/build_container.sh
+  #     ${container.type}
+  #     ${container.name}
+  #     ${container.docker_tag}
+  #     ${container.def}
+  #     ${container.image}
+  #   deps:
+  #     - ${container.def}
+  #     - pyproject.toml
+  #     - poetry.lock
+  #     - README.md
+  #     - ${project_root}/stages/build_container.sh
+  #   params:
+  #     - container
+  #   outs:
+  #     - ${project_root}/${container.image}:
+  #         persist: true
 
   ######################################################################################
   # RES-IND., PFT-DEP. STAGES ----------------------------------------------------------
@@ -53,16 +53,14 @@ stages:
   #         persist: true
 
   build_traits:
-    cmd: ${project_root}/src/data/build_hydraulic_traits.py
+    cmd: python ${project_root}/src/data/build_hydraulic_traits.py --params ${product_dir}/params.yaml
     deps:
       - ${project_root}/src/data/build_hydraulic_traits.py
-    params:
-      - PFT
+      - ${project_root}/${traits.raw}
     outs:
-      - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.filtered}:
-          persist: true
-      - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.transformer_fn}:
-          persist: true
+      - ${project_root}/${traits.interim_out}
+      # Also outputs transformer pickle, but as it is a small, conditional output,
+      # it is OK not to track it with DVC.
 
   match_gbif_pfts:
     cmd: >-
