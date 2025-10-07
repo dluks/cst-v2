@@ -1,3 +1,6 @@
+params:
+  - params.yaml
+
 stages:
   ######################################################################################
   # CONTAINER BUILDING -----------------------------------------------------------------
@@ -5,7 +8,7 @@ stages:
 
   build_container:
     cmd: >-
-      stages/build_container.sh
+      ${project_root}/stages/build_container.sh
       ${container.type}
       ${container.name}
       ${container.docker_tag}
@@ -16,37 +19,49 @@ stages:
       - pyproject.toml
       - poetry.lock
       - README.md
-      - stages/build_container.sh
+      - ${project_root}/stages/build_container.sh
     params:
       - container
     outs:
-      - ${container.image}:
+      - ${project_root}/${container.image}:
           persist: true
 
   ######################################################################################
   # RES-IND., PFT-DEP. STAGES ----------------------------------------------------------
   ######################################################################################
 
-  get_TRY_mean_traits:
-    cmd: >-
-      stages/get_TRY_mean_traits.sh
-      ${container.type}
-      ${container.name}
-      ${container.docker_tag}
-      ${container.image}
-      "poetry run python src/data/build_try_traits.py"
+  # get_TRY_mean_traits:
+  #   cmd: >-
+  #     ${project_root}/stages/get_TRY_mean_traits.sh
+  #     ${container.type}
+  #     ${container.name}
+  #     ${container.docker_tag}
+  #     ${container.image}
+  #     "poetry run python src/data/build_try_traits.py"
+  #   deps:
+  #     - src/data/build_try_traits.py
+  #   params:
+  #     - try_version
+  #     - trydb
+  #     - PFT
+  #   outs:
+  #     - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.filtered}:
+  #         persist: true
+  #     - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.transformer_fn}:
+  #         persist: true
+  #     - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.pca_fn}:
+  #         persist: true
+
+  build_traits:
+    cmd: ${project_root}/src/data/build_hydraulic_traits.py
     deps:
-      - src/data/build_try_traits.py
+      - ${project_root}/src/data/build_hydraulic_traits.py
     params:
-      - try_version
-      - trydb
       - PFT
     outs:
       - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.filtered}:
           persist: true
       - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.transformer_fn}:
-          persist: true
-      - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.pca_fn}:
           persist: true
 
   match_gbif_pfts:
