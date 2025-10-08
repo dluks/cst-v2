@@ -594,10 +594,14 @@ stages:
       size: 8939466
     - path: ../../../src/data/build_hydraulic_traits.py
       hash: md5
-      md5: 1597c78c6e7c0dbf5b8eb3f2a4b5695d
-      size: 8881
+      md5: 664a311f255f4d785fc1d47ac24f5541
+      size: 5941
+    - path: ../../../src/utils/match_pfts.py
+      hash: md5
+      md5: 39e6ef0f74cd3ab106902db81fdc13cb
+      size: 5250
     outs:
     - path: ../../../data/interim/try/hydraulic_no-xf.parquet
       hash: md5
-      md5: c317a88a8cd9c8d141197bd7cbbeca37
-      size: 2037857
+      md5: 0f10822ba6dd7b212da451c0a1967b35
+      size: 2373949

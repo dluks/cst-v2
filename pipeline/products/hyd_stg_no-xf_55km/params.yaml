@@ -828,7 +828,9 @@ traits:
     - rdmax
     - WUE
   transform: null
-  pfts: data/raw/try_pft_v2.parquet
+  pfts: data/raw/try_pfts.parquet
+  pfts_threshold: 0.60
+  harmonization_fp: data/raw/hydraulic_traits_matching_results_2025-10-03.gz
   interim_out: data/interim/try/hydraulic_no-xf.parquet
 
 gbif:

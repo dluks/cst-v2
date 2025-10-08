@@ -57,6 +57,7 @@ stages:
     deps:
       - ${project_root}/src/data/build_hydraulic_traits.py
       - ${project_root}/${traits.raw}
+      - ${project_root}/src/utils/match_pfts.py
     outs:
       - ${project_root}/${traits.interim_out}
       # Also outputs transformer pickle, but as it is a small, conditional output,
@@ -84,23 +85,23 @@ stages:
       - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.matched}:
           persist: true
 
-  extract_splot:
-    cmd: >-
-      stages/extract_splot.sh
-      ${container.type}
-      ${container.name}
-      ${container.docker_tag}
-      ${container.image}
-      "poetry run python src/data/extract_splot.py"
-    deps:
-      - src/data/extract_splot.py
-      - ${raw_dir}/${datasets.Y.splot}
-    params:
-      - datasets.Y.splot
-      - splot.interim.dir
-    outs:
-      - ${interim_dir}/${splot.interim.dir}/${splot.interim.extracted}:
-          persist: true
+  # extract_splot:
+  #   cmd: >-
+  #     stages/extract_splot.sh
+  #     ${container.type}
+  #     ${container.name}
+  #     ${container.docker_tag}
+  #     ${container.image}
+  #     "poetry run python src/data/extract_splot.py"
+  #   deps:
+  #     - src/data/extract_splot.py
+  #     - ${raw_dir}/${datasets.Y.splot}
+  #   params:
+  #     - datasets.Y.splot
+  #     - splot.interim.dir
+  #   outs:
+  #     - ${project_root}/${interim_dir}/${splot.interim.dir}/${splot.interim.extracted}:
+  #         persist: true
 
   standardize_other_products:
     cmd: python src/data/standardize_other_products.py

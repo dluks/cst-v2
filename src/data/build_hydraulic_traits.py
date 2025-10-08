@@ -17,6 +17,7 @@ from sklearn.preprocessing import PowerTransformer
 
 from src.conf.conf import get_config
 from src.conf.environment import log
+from src.utils.match_pfts import match_pfts
 
 
 def cli() -> argparse.Namespace:
@@ -41,7 +42,9 @@ def main(args: argparse.Namespace) -> None:
     df = _clean_species_names(df)
 
     # Match with growth forms (coarse PFTs)
-    df = _match_with_pfts(df, cfg.traits.pfts)
+    df = match_pfts(
+        df, cfg.traits.pfts, cfg.traits.harmonization_fp, cfg.traits.pfts_threshold
+    )
 
     if cfg.traits.transform == "power":
         # Transform traits
@@ -119,89 +122,6 @@ def _clean_species_names(df: pd.DataFrame) -> pd.DataFrame:
         100 * after / max(1, before),
     )
     return df
-
-
-def _match_with_pfts(traits: pd.DataFrame, pfts_fp: Path) -> pd.DataFrame:
-    """Match with growth forms (coarse PFTs) using species, then genus fallback.
-
-    Strategy:
-    1) Left-merge on species to retain all hydraulic rows and capture species-level
-       PFTs where available.
-    2) For rows still missing PFT, derive the genus (first token of the species)
-       and fill using the most common PFT observed for that genus in the PFTs
-       table.
-
-    Returns the input DataFrame with a categorical ``pft`` column added. Species
-    without a species- or genus-level match remain with missing PFT.
-    """
-    # Load and normalize PFTs table
-    pfts = (
-        pd.read_parquet(pfts_fp, columns=["AccSpeciesName", "pft"])
-        .astype({"AccSpeciesName": "string[pyarrow]", "pft": "category"})
-        .assign(
-            speciesname=lambda d: d["AccSpeciesName"]
-            .str.lower()
-            .astype("string[pyarrow]")
-        )
-        .drop(columns=["AccSpeciesName"])
-        .drop_duplicates(subset=["speciesname"])
-    )
-
-    # Ensure dtype on hydraulic species column
-    traits = traits.astype({"speciesname": "string[pyarrow]"}).copy()
-
-    # 1) Species-level left merge
-    matched = traits.merge(pfts[["speciesname", "pft"]], on="speciesname", how="left")
-    matched = matched.rename(columns={"pft": "pft_species"})
-
-    n_total = matched.shape[0]
-    n_species = int(matched["pft_species"].notna().sum())
-    log.info(
-        "Matched PFTs at species level: %d/%d (%.1f%%)",
-        n_species,
-        n_total,
-        100.0 * n_species / max(1, n_total),
-    )
-
-    # 2) Genus-level fallback for remaining rows
-    # Build genus mode PFT mapping from PFTs table
-    pfts = pfts.assign(genus=lambda d: d["speciesname"].str.split().str[0])
-    genus_mode = (
-        pfts.dropna(subset=["genus", "pft"])
-        .groupby("genus")["pft"]
-        .agg(lambda s: s.value_counts().index[0])
-        .to_frame("pft_genus")
-        .reset_index()
-    )
-
-    # Derive genus in hydraulic table and merge genus-level PFT
-    matched = matched.assign(genus=lambda d: d["speciesname"].str.split().str[0])
-    matched = matched.merge(genus_mode, on="genus", how="left")
-
-    # Consolidate: prefer species-level, else genus-level
-    # Use strings for assignment then recast to category
-    matched["pft"] = matched["pft_species"].astype("string[pyarrow]")
-    missing_mask = matched["pft"].isna()
-    matched.loc[missing_mask, "pft"] = matched.loc[missing_mask, "pft_genus"].astype(
-        "string[pyarrow]"
-    )
-    n_final = int(matched["pft"].notna().sum())
-    n_genus_added = n_final - n_species
-    log.info(
-        "Added PFTs via genus fallback: %d (now %d/%d, %.1f%% total)",
-        n_genus_added,
-        n_final,
-        n_total,
-        100.0 * n_final / max(1, n_total),
-    )
-
-    # Cleanup helper columns and finalize dtype
-    matched = matched.drop(
-        columns=["pft_species", "pft_genus", "genus"], errors="ignore"
-    )
-    matched["pft"] = matched["pft"].astype("category")
-
-    return matched
 
 
 def _power_transform(
