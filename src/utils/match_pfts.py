@@ -22,28 +22,42 @@ def match_pfts(
     Returns the input DataFrame with a categorical ``pft`` column added. Species
     without a species- or genus-level match remain with missing PFT.
     """
+    # Ensure dtype on hydraulic species column
+    df = df.astype({"speciesname": "string[pyarrow]"}).copy()
+
     # Load initial species harmonization dataframe
-    harm_cols = {
-        # "hydNameIn": "string[pyarrow]",  # Hydraulic trait name
+    species_harmonization_cols = {
+        "hydNameIn": "string[pyarrow]",  # Hydraulic trait name
         "groNameIn": "string[pyarrow]",  # Growth form name
         "nameOutWFO": "string[pyarrow]",  # WFO name
-        # "GBIFKeyGBIF": pd.Int32Dtype(),  # GBIF key
-        # "nameOutWCVP": "string[pyarrow]",  # WCVP name
+        "GBIFKeyGBIF": pd.Int32Dtype(),  # GBIF key
+        "nameOutWCVP": "string[pyarrow]",  # WCVP name
     }
-    harm = (
+    species_harmonization_df = (
         pd.read_csv(
             harmonization_fp,
             compression="gzip",
-            usecols=harm_cols.keys(),  # pyright: ignore[reportArgumentType]
-            dtype=harm_cols,  # pyright: ignore[reportArgumentType]
+            usecols=species_harmonization_cols.keys(),  # pyright: ignore[reportArgumentType]
+            dtype=species_harmonization_cols,  # pyright: ignore[reportArgumentType]
         )
         .assign(
+            hydNameIn=lambda d: d["hydNameIn"].str.lower(),
             groNameIn=lambda d: d["groNameIn"].str.lower(),
             nameOutWFO=lambda d: d["nameOutWFO"].str.lower(),
+            nameOutWCVP=lambda d: d["nameOutWCVP"].str.lower(),
         )
         .drop_duplicates()
-        .dropna()
     )
+
+    # Add GBIF keys and WCVP + WFO names for downstream matching with GBIF and sPlot
+    df = df.merge(
+        species_harmonization_df[
+            ["hydNameIn", "GBIFKeyGBIF", "nameOutWCVP", "nameOutWFO"]
+        ],
+        left_on="speciesname",
+        right_on="hydNameIn",
+        how="left",
+    ).drop(columns=["hydNameIn"])
 
     # Load and normalize PFTs table
     # After normalizing, extract TRY growth form species that have matches with WFO (and
@@ -54,26 +68,31 @@ def match_pfts(
         .astype({"speciesname": "string[pyarrow]", "pft": "category"})
         .assign(speciesname=lambda d: d["speciesname"].str.lower())
         .drop_duplicates(subset=["speciesname"])
+        .merge(
+            (
+                species_harmonization_df[["groNameIn", "nameOutWFO"]]
+                # Filter out TRY growth form species that have no WFO match
+                # These had no valid
+                .query("groNameIn.notna()")
+                .drop_duplicates()
+                .dropna()
+            ),
+            left_on="speciesname",
+            right_on="groNameIn",
+            how="left",
+        )
+        .drop(columns=["groNameIn"])
     )
-
-    pfts = pfts.merge(
-        (
-            harm.query("groNameIn.notna() and nameOutWFO.notna()")
-            .drop_duplicates()
-            .dropna()
-        ),
-        left_on="speciesname",
-        right_on="groNameIn",
-        how="left",
-    )
-
-    # Ensure dtype on hydraulic species column
-    df = df.astype({"speciesname": "string[pyarrow]"}).copy()
 
     # 1) Species-level left merge
     matched = df.merge(
-        pfts[["nameOutWFO", "pft"]],
-        left_on="speciesname",
+        pfts[["nameOutWFO", "pft"]]
+        # There are quite a few TRY species that match to the same WFO species, so we
+        # need to deduplicate. This may drop a very small amount of duplicate WFO
+        # records that contain different PFT assignments.
+        .dropna()
+        .drop_duplicates(subset=["nameOutWFO"]),
+        left_on="nameOutWFO",
         right_on="nameOutWFO",
         how="left",
     )
@@ -116,7 +135,7 @@ def match_pfts(
 
     # Derive genus in hydraulic table and merge genus-level PFT
     matched = matched.assign(genus=lambda d: d["speciesname"].str.split().str[0])
-    matched = matched.merge(genus_mode, on="genus", how="left")
+    matched = matched.merge(genus_mode[["genus", "pft_genus"]], on="genus", how="left")
 
     # Consolidate: prefer species-level, else genus-level
     # Use strings for assignment then recast to category
