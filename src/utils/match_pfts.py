@@ -162,4 +162,7 @@ def match_pfts(
     )
     matched["pft"] = matched["pft"].astype("category")
 
+    # Drop rows with missing PFT
+    matched = matched.dropna(subset=["pft"])
+
     return matched
