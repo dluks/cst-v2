@@ -60,30 +60,39 @@ stages:
       - ${project_root}/src/utils/match_pfts.py
     outs:
       - ${project_root}/${traits.interim_out}
-      # Also outputs transformer pickle, but as it is a small, conditional output,
-      # it is OK not to track it with DVC.
+      # Also outputs transformer pickle IF transform is not None, but as it is a small,
+      # conditional output, it is OK not to track it with DVC.
 
-  match_gbif_pfts:
-    cmd: >-
-      stages/match_gbif_pfts.sh
-      ${container.type}
-      ${container.name}
-      ${container.docker_tag}
-      ${container.image}
-      "poetry run python src/data/match_gbif_pfts.py"
+  filter_gbif:
+    cmd: python ${project_root}/src/data/filter_gbif.py --params ${product_dir}/params.yaml
     deps:
-      - src/data/match_gbif_pfts.py
-      - ${raw_dir}/${gbif.raw.dir}
-      - ${raw_dir}/${trydb.raw.pfts}
-    params:
-      - datasets.Y.gbif
-      - gbif.raw.dir
-      - gbif.interim.dir
-      - gbif.interim.matched
-      - PFT
+      - ${project_root}/src/data/filter_gbif.py
+      - ${project_root}/${gbif.raw_fp}
+      - ${project_root}/${traits.interim_out}
     outs:
-      - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.matched}:
-          persist: true
+      - ${project_root}/${interim_dir}/${gbif.interim.dir}/${gbif.interim.filtered}
+
+  # match_gbif_pfts:
+  #   cmd: >-
+  #     stages/match_gbif_pfts.sh
+  #     ${container.type}
+  #     ${container.name}
+  #     ${container.docker_tag}
+  #     ${container.image}
+  #     "poetry run python src/data/match_gbif_pfts.py"
+  #   deps:
+  #     - src/data/match_gbif_pfts.py
+  #     - ${gbif.raw_fp}
+  #     - ${raw_dir}/${trydb.raw.pfts}
+  #   params:
+  #     - datasets.Y.gbif
+  #     - gbif.raw.dir
+  #     - gbif.interim.dir
+  #     - gbif.interim.matched
+  #     - PFT
+  #   outs:
+  #     - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.matched}:
+  #         persist: true
 
   # extract_splot:
   #   cmd: >-

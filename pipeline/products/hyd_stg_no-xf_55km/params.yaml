@@ -834,10 +834,10 @@ traits:
   interim_out: data/interim/try/hydraulic_no-xf.parquet
 
 gbif:
-  raw:
-    dir: all_tracheophyta_non-cult_2024-04-10
+  raw_fp: data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
   interim:
     dir: gbif
+    filtered: gbif_filtered.parquet
     matched: gbif_pfts.parquet
     subsampled: gbif_subsampled.parquet
     subsample_binsize: 4

@@ -605,3 +605,26 @@ stages:
       hash: md5
       md5: ce042213e6761661343b8a30a72599d4
       size: 2978137
+  filter_gbif:
+    cmd: python ../../../src/data/filter_gbif.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    deps:
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: 
+        ../../../data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
+      hash: md5
+      md5: 93b44988f61d1cac0a7b38b54aa4e7f8.dir
+      size: 30005037636
+      nfiles: 1583
+    - path: ../../../src/data/filter_gbif.py
+      hash: md5
+      md5: 0b67f01d7609d79554cd0880d855dd44
+      size: 6702
+    outs:
+    - path: ../../../data/interim/gbif/gbif_filtered.parquet
+      hash: md5
+      md5: 6b4706216653a590abb7fddab2a1b652.dir
+      size: 767513414
+      nfiles: 227
