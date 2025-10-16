@@ -852,6 +852,8 @@ splot:
   interim:
     dir: splot
     extracted: extracted
+    filtered: splot_filtered.parquet
+    report: filter_splot_report.md
     traits: trait_maps
 
 trydb:
