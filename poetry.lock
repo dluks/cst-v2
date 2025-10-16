@@ -6650,6 +6650,17 @@ files = [
 ]
 
 [[package]]
+name = "simple-slurm"
+version = "0.3.6"
+description = "A simple Python wrapper for Slurm with flexibility in mind."
+optional = false
+python-versions = ">=3.6"
+files = [
+    {file = "simple_slurm-0.3.6-py3-none-any.whl", hash = "sha256:d40bcca57cce034d7765a132c38c1c90ae6219f02e2ddae8d64b57c4e8256a1f"},
+    {file = "simple_slurm-0.3.6.tar.gz", hash = "sha256:0f88cac96b39d7d7e34c5a124919cebb41eb8a8ef2ff4fb65c363d940ff8551e"},
+]
+
+[[package]]
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
@@ -7952,4 +7963,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">3.11.0,<3.12"
-content-hash = "7146f18b704e775636e700fe41b0a101e7fe9660a9d6b3c8e77959028ae8b16c"
+content-hash = "004354ac4ca39122982b7a5e7882a5fcf21b659154177b2d3ce0499b512dfcfe"
