@@ -63,7 +63,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 02. Set up GBIF paths
     gbif_raw_fp = f"{cfg.gbif.raw_fp}/*"
-    gbif_prep_dir = Path(cfg.interim_dir, cfg.gbif.interim.dir)
+    gbif_prep_dir = Path(cfg.gbif.interim.out_dir, cfg.product_code)
     gbif_prep_dir.mkdir(parents=True, exist_ok=True)
 
     # Define columns to load

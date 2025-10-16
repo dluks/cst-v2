@@ -620,10 +620,10 @@ stages:
       nfiles: 1583
     - path: ../../../src/data/filter_gbif.py
       hash: md5
-      md5: 0b67f01d7609d79554cd0880d855dd44
-      size: 6702
+      md5: b39c6a02a94060f220ca139a4660cf81
+      size: 6707
     outs:
-    - path: ../../../data/interim/gbif/gbif_filtered.parquet
+    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/gbif_filtered.parquet
       hash: md5
       md5: 6b4706216653a590abb7fddab2a1b652.dir
       size: 767513414
