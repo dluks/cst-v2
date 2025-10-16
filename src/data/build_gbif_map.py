@@ -65,7 +65,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         # Load data
         log.info("Loading GBIF data...")
         gbif = _load_gbif(
-            Path(cfg.gbif.interim.out_dir, cfg.gbif.interim.filtered),
+            Path(cfg.gbif.interim.out_dir, cfg.product_code, cfg.gbif.interim.filtered),
             cfg.PFT,
             npartitions,
         )

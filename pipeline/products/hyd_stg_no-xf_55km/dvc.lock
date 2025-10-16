@@ -216,7 +216,7 @@ stages:
       md5: 1ad3cfece7a07456126cb939a4e088f4
       size: 229806
   build_gbif_maps:
-    cmd: ../../../stages/build_gbif_maps.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    cmd: python ../../../stages/build_gbif_maps.py --params params.yaml
     deps:
     - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/gbif_filtered.parquet
       hash: md5
@@ -229,13 +229,13 @@ stages:
       size: 2978137
     - path: ../../../src/data/build_gbif_map.py
       hash: md5
-      md5: 078a8d62498dd79de3f122821824a751
-      size: 4114
+      md5: 3769ddb485fd223b0bf71e02f4d6bece
+      size: 4132
     outs:
     - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/maps
       hash: md5
-      md5: 7884b394b1d8eea5f28f59aa8b54a2a9.dir
-      size: 5725862
+      md5: f35d0b29be51673cd8ee4d85f503a9d5.dir
+      size: 6727172
       nfiles: 6
   build_splot_maps:
     cmd: python src/data/build_splot_maps.py

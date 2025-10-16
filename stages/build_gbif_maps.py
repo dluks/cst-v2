@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """
 Entry point script to generate Slurm jobs for building GBIF trait maps.
 
@@ -175,7 +176,8 @@ def run_slurm(
 def main() -> None:
     """Main function to submit Slurm jobs or run locally for each trait."""
     args = cli()
-    cfg = get_config(params_path=args.params)
+    params_path = Path(args.params).absolute()
+    cfg = get_config(params_path=params_path)
 
     # Get traits from configuration
     trait_names = cfg.traits.names
@@ -192,14 +194,16 @@ def main() -> None:
         # Run locally in parallel
         mode = "local (--local flag)" if args.local else "local (USE_SLURM=false)"
         print(f"Execution mode: {mode}")
-        run_local(trait_names, args.params, args.overwrite, args.n_jobs)
+        run_local(trait_names, str(params_path), args.overwrite, args.n_jobs)
     else:
         # Submit to Slurm
         print("Execution mode: Slurm")
         log_dir = Path("logs/build_gbif_maps")
         log_dir.mkdir(parents=True, exist_ok=True)
         print(f"Logs will be written to: {log_dir.absolute()}")
-        run_slurm(trait_names, args.params, args.overwrite, args.partition, log_dir)
+        run_slurm(
+            trait_names, str(params_path), args.overwrite, args.partition, log_dir
+        )
 
 
 if __name__ == "__main__":

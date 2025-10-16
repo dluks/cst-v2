@@ -342,6 +342,8 @@ def agg_df(
             "median": "median",
             "q05": lambda x: x.quantile(0.05, interpolation="nearest"),
             "q95": lambda x: x.quantile(0.95, interpolation="nearest"),
+            "range": lambda x: x.quantile(0.98, interpolation="nearest")
+            - x.quantile(0.02, interpolation="nearest"),
             "count": "count",
         }
 

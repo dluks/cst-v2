@@ -175,7 +175,7 @@ stages:
   ######################################################################################
   
   build_gbif_maps:
-    cmd: ${project_root}/stages/build_gbif_maps.py --params ${product_dir}/params.yaml
+    cmd: python ${project_root}/stages/build_gbif_maps.py --params params.yaml
     deps:
       - ${project_root}/src/data/build_gbif_map.py
       - ${project_root}/${gbif.interim.out_dir}/${product_code}/${gbif.interim.filtered}
