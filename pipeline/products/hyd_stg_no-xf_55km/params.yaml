@@ -11,11 +11,11 @@ container:
   def: "cit-sci-traits.def"
   image: "cit-sci-traits.sif"
 
-model_res: "1km"
+model_res: "55km"
 PFT: "Shrub_Tree_Grass"
 random_seed: 42
 base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
-target_resolution: 1000 # Target resolution for model training
+target_resolution: 55000 # Target resolution for model training
 extent: [-180, -60, 180, 90] # Extent of the final dataset
 crs: "EPSG:6933" # Equal Area Cylindrical projection
 tmp_dir: tmp
@@ -550,9 +550,9 @@ geos:
       n_partitions: 80
     build_gbif_maps:
       n_partitions: null
-      n_workers: 40 # 80 was throwing too many files open error...
+      n_workers: 10 # 80 was throwing too many files open error...
       threads_per_worker: 4
-      memory_limit: 40GB
+      memory_limit: 30GB
     build_splot_maps:
       npartitions: 40
       dask:

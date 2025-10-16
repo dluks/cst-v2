@@ -175,23 +175,13 @@ stages:
   ######################################################################################
   
   build_gbif_maps:
-    cmd: >-
-      stages/build_gbif_maps_parallel.sh
+    cmd: ${project_root}/stages/build_gbif_maps.py --params ${product_dir}/params.yaml
     deps:
-      - src/data/build_gbif_maps.py
-      - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.matched}
-      - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.filtered}
-    params:
-      - gbif.interim.dir
-      - trydb.interim.dir
-      - trydb.interim.filtered
-      - datasets.Y.gbif
-      - datasets.Y.traits
-      - PFT
-      - model_res
-      - target_resolution
+      - ${project_root}/src/data/build_gbif_map.py
+      - ${project_root}/${gbif.interim.out_dir}/${product_code}/${gbif.interim.filtered}
+      - ${project_root}/${traits.interim_out}
     outs:
-      - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.traits}/${PFT}/${model_res}:
+      - ${project_root}/${gbif.interim.out_dir}/${product_code}/maps:
           persist: false 
 
   build_splot_maps:

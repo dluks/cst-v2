@@ -216,36 +216,27 @@ stages:
       md5: 1ad3cfece7a07456126cb939a4e088f4
       size: 229806
   build_gbif_maps:
-    cmd: python src/data/build_gbif_maps.py
+    cmd: ../../../stages/build_gbif_maps.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
     deps:
-    - path: data/interim/gbif/gbif_pfts.parquet
+    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/gbif_filtered.parquet
       hash: md5
-      md5: c63b69c030185b544c8b277b68884d78.dir
-      size: 4477821099
-      nfiles: 159
-    - path: data/interim/try/traits.parquet
+      md5: 6b4706216653a590abb7fddab2a1b652.dir
+      size: 767513414
+      nfiles: 227
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
       hash: md5
-      md5: b2b7f0703fc52483df2ab7c17c76a251
-      size: 18311878
-    - path: src/data/build_gbif_maps.py
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_gbif_map.py
       hash: md5
-      md5: 58efa57b08c69d098fdcb0207b7b4252
-      size: 4065
-    params:
-      params.yaml:
-        PFT: Shrub_Tree_Grass
-        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
-        gbif.interim.dir: gbif
-        model_res: 55km
-        target_resolution: 55000
-        trydb.interim.dir: try
-        trydb.interim.filtered: traits.parquet
+      md5: 078a8d62498dd79de3f122821824a751
+      size: 4114
     outs:
-    - path: data/interim/gbif/trait_maps/Shrub_Tree_Grass/55km
+    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/maps
       hash: md5
-      md5: c2cd6db588604fc1964e785d83f1f634.dir
-      size: 66315033
-      nfiles: 37
+      md5: 7884b394b1d8eea5f28f59aa8b54a2a9.dir
+      size: 5725862
+      nfiles: 6
   build_splot_maps:
     cmd: python src/data/build_splot_maps.py
     deps:
