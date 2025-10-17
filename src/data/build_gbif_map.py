@@ -1,6 +1,9 @@
 """
-Match subsampled GBIF data with filtered trait data, grid it, generate grid cell
-statistics, and write each trait's corresponding raster stack to GeoTIFF files.
+Match filtered GBIF data with trait data, grid it using weighted aggregation,
+and write each trait's corresponding raster stack to GeoTIFF files.
+
+Weights from resurvey calculations are applied during grid cell aggregation to
+ensure locations sampled across multiple years contribute equally.
 """
 
 import argparse
@@ -54,7 +57,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     npartitions = syscfg.get("npartitions", None)
 
-    out_dir = Path(cfg.gbif.interim.out_dir, cfg.product_code, "maps")
+    out_dir = Path(cfg.gbif.maps.out_dir, cfg.product_code)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with Client(
@@ -65,7 +68,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         # Load data
         log.info("Loading GBIF data...")
         gbif = _load_gbif(
-            Path(cfg.gbif.interim.out_dir, cfg.product_code, cfg.gbif.interim.filtered),
+            Path(cfg.gbif.filtered.out_dir, cfg.trait_type, cfg.gbif.filtered.fp),
             cfg.PFT,
             npartitions,
         )
@@ -90,13 +93,14 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         log.info("Processing trait %s...", args.trait)
         raster = rasterize_points(
-            gbif_traits[["x", "y", args.trait]],
+            gbif_traits[["x", "y", args.trait, "weight"]],
             data_cols=str(args.trait),
             res=cfg.target_resolution,
             crs=cfg.crs,
             agg=True,
-            n_min=cfg.gbif.interim.min_count,
-            n_max=cfg.gbif.interim.max_count,
+            n_min=cfg.gbif.maps.min_count,
+            n_max=cfg.gbif.maps.max_count,
+            weights="weight",
         )
 
         log.info("Writing to disk...")
@@ -107,6 +111,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
 
 def _load_gbif(fp: Path, pfts: list[str], npartitions: int = 1) -> dd.DataFrame:
+    """Load filtered GBIF data and filter by PFT, keeping weights."""
     gbif = (
         dd.read_parquet(fp)
         .pipe(repartition_if_set, npartitions)
@@ -120,6 +125,7 @@ def _load_gbif(fp: Path, pfts: list[str], npartitions: int = 1) -> dd.DataFrame:
 
 
 def _reproject(cfg, gbif_traits):
+    """Reproject coordinates if needed."""
     if cfg.crs != "EPSG:4326":
         if cfg.crs != "EPSG:6933":
             raise ValueError(f"Unsupported CRS: {cfg.crs}")
@@ -130,6 +136,11 @@ def _reproject(cfg, gbif_traits):
             x="decimallongitude",
             y="decimallatitude",
         ).drop(columns=["decimallatitude", "decimallongitude"])
+    else:
+        # Rename columns to x and y for consistency
+        gbif_traits = gbif_traits.rename(
+            columns={"decimallongitude": "x", "decimallatitude": "y"}
+        )
 
     return gbif_traits
 

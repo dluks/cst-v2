@@ -842,9 +842,10 @@ gbif:
     fp: gbif_filtered.parquet
     report_fp: filter_gbif_report.md
     density_plot_fp: gbif_filtering_density.png
+  maps:
+    out_dir: data/interim/gbif/maps
     min_count: 10
     max_count: 500
-    traits: trait_maps
 
 splot:
   raw:

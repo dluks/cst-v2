@@ -218,10 +218,10 @@ stages:
   build_gbif_maps:
     cmd: python ../../../stages/build_gbif_maps.py --params params.yaml
     deps:
-    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/gbif_filtered.parquet
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
       hash: md5
-      md5: 6b4706216653a590abb7fddab2a1b652.dir
-      size: 767513414
+      md5: 46f043d49446fe6820398a80ed66eb60.dir
+      size: 547187487
       nfiles: 227
     - path: ../../../data/interim/try/hydraulic_no-xf.parquet
       hash: md5
@@ -229,13 +229,13 @@ stages:
       size: 2978137
     - path: ../../../src/data/build_gbif_map.py
       hash: md5
-      md5: 3769ddb485fd223b0bf71e02f4d6bece
-      size: 4132
+      md5: 8154570f64f60148dbddf00577b43483
+      size: 4578
     outs:
-    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/maps
+    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_55km
       hash: md5
-      md5: f35d0b29be51673cd8ee4d85f503a9d5.dir
-      size: 6727172
+      md5: ea1ca9329e23cb38a58e4cc628dcafb3.dir
+      size: 9289702
       nfiles: 6
   build_splot_maps:
     cmd: python src/data/build_splot_maps.py

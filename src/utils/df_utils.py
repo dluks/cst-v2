@@ -301,6 +301,36 @@ def xy_to_rowcol_df(
     return df
 
 
+def _weighted_quantile(
+    values: np.ndarray, weights: np.ndarray, quantile: float
+) -> float:
+    """Calculate weighted quantile."""
+    if len(values) == 0:
+        return np.nan
+    # Sort values and weights together
+    sorted_indices = np.argsort(values)
+    sorted_values = values[sorted_indices]
+    sorted_weights = weights[sorted_indices]
+    # Calculate cumulative weights
+    cumsum = np.cumsum(sorted_weights)
+    total_weight = cumsum[-1]
+    # Find value at quantile
+    threshold = quantile * total_weight
+    idx = np.searchsorted(cumsum, threshold)
+    if idx >= len(sorted_values):
+        return float(sorted_values[-1])
+    return float(sorted_values[idx])
+
+
+def _weighted_std(values: np.ndarray, weights: np.ndarray) -> float:
+    """Calculate weighted standard deviation."""
+    if len(values) == 0:
+        return np.nan
+    weighted_mean = np.average(values, weights=weights)
+    variance = np.average((values - weighted_mean) ** 2, weights=weights)
+    return np.sqrt(variance)
+
+
 def agg_df(
     df: pd.DataFrame,
     by: str | list[str],
@@ -308,9 +338,14 @@ def agg_df(
     funcs: dict[str, Any] | None = None,
     n_min: int = 1,
     n_max: int | None = None,
+    weights: str | None = None,
 ) -> pd.DataFrame:
     """
     Aggregate a DataFrame by specified columns and apply aggregation functions.
+
+    When weights are provided, all statistics (mean, std, median, quantiles, range)
+    are calculated using weighted versions. Both count (unweighted) and count_weighted
+    (sum of weights) are included in the output.
 
     Parameters:
     -----------
@@ -329,6 +364,9 @@ def agg_df(
         Minimum count threshold to filter groups. Default is 1.
     n_max : int, optional
         Maximum count threshold to filter groups. Default is None.
+    weights : str, optional
+        Column name containing weights. When provided, weighted statistics are computed
+        automatically. Default is None.
 
     Returns:
     --------
@@ -336,14 +374,31 @@ def agg_df(
         The aggregated DataFrame with the specified aggregation functions applied.
     """
     if funcs is None:
+        # Create quantile functions with explicit quantile attributes
+        def make_quantile_func(q: float):
+            def quantile_func(x):
+                return x.quantile(q, interpolation="nearest")
+
+            quantile_func.quantile = q  # Store quantile value as attribute
+            return quantile_func
+
+        def make_range_func(q_low: float, q_high: float):
+            def range_func(x):
+                return x.quantile(q_high, interpolation="nearest") - x.quantile(
+                    q_low, interpolation="nearest"
+                )
+
+            range_func.q_low = q_low  # Store lower quantile
+            range_func.q_high = q_high  # Store upper quantile
+            return range_func
+
         funcs = {
             "mean": "mean",
             "std": "std",
-            "median": "median",
-            "q05": lambda x: x.quantile(0.05, interpolation="nearest"),
-            "q95": lambda x: x.quantile(0.95, interpolation="nearest"),
-            "range": lambda x: x.quantile(0.98, interpolation="nearest")
-            - x.quantile(0.02, interpolation="nearest"),
+            "median": make_quantile_func(0.5),
+            "q05": make_quantile_func(0.05),
+            "q95": make_quantile_func(0.95),
+            "range": make_range_func(0.02, 0.98),
             "count": "count",
         }
 
@@ -362,15 +417,69 @@ def agg_df(
         )
     if isinstance(data, str):
         data = [data]
-    df = df.groupby(by, observed=False)[data].agg(list(funcs.values()))
 
-    df.columns = list(funcs.keys())
+    # Handle weighted statistics if weights column is provided
+    if weights is not None and weights in df.columns:
+        # Use hardcoded approach with groupby().apply() for weighted statistics
+        def compute_weighted_stats(group):
+            """Compute all weighted statistics for a group."""
+            results = {}
 
-    if "count" in df.columns:
-        if n_min > 1:
-            df = df[df["count"] >= n_min]
+            for col in data:
+                values = group[col].values
+                w = group[weights].values
 
-    return df.reset_index()
+                # Count (unweighted)
+                results[f"{col}_count"] = len(values)
+
+                # Weighted mean
+                results[f"{col}_mean"] = np.average(values, weights=w)
+
+                # Weighted std
+                results[f"{col}_std"] = _weighted_std(values, w)
+
+                # Weighted median (q=0.5)
+                results[f"{col}_median"] = _weighted_quantile(values, w, 0.5)
+
+                # Weighted q05
+                results[f"{col}_q05"] = _weighted_quantile(values, w, 0.05)
+
+                # Weighted q95
+                results[f"{col}_q95"] = _weighted_quantile(values, w, 0.95)
+
+                # Weighted range (q98 - q02)
+                results[f"{col}_range"] = _weighted_quantile(
+                    values, w, 0.98
+                ) - _weighted_quantile(values, w, 0.02)
+
+                # Count weighted (sum of weights)
+                results[f"{col}_count_weighted"] = w.sum()
+
+            return pd.Series(results)
+
+        result_df = df.groupby(by, observed=False).apply(compute_weighted_stats)
+
+        # Rename columns to remove data prefix if only one data column
+        if len(data) == 1:
+            col_name = data[0]
+            result_df.columns = [
+                col.replace(f"{col_name}_", "") for col in result_df.columns
+            ]
+
+        # Filter by minimum count
+        if n_min > 1 and "count" in result_df.columns:
+            result_df = result_df[result_df["count"] >= n_min]
+
+        return result_df.reset_index()
+
+    # Original non-weighted path
+    result_df = df.groupby(by, observed=False)[data].agg(list(funcs.values()))
+    result_df.columns = list(funcs.keys())
+
+    if "count" in result_df.columns and n_min > 1:
+        result_df = result_df[result_df["count"] >= n_min]
+
+    return result_df.reset_index()
 
 
 def rasterize_points(
@@ -387,6 +496,7 @@ def rasterize_points(
     n_min: int = 1,
     n_max: int | None = None,
     already_row_col: bool = False,
+    weights: str | None = None,
 ) -> xr.Dataset:
     """
     Rasterizes point data from a DataFrame into a raster dataset.
@@ -417,6 +527,8 @@ def rasterize_points(
         Maximum number of points to aggregate, by default None.
     already_row_col : bool, optional
         Whether the data is already in row, column format, by default False.
+    weights : str, optional
+        Column name containing weights for weighted mean calculation, by default None.
 
     Returns:
     --------
@@ -473,6 +585,7 @@ def rasterize_points(
                 funcs=funcs,
                 n_min=n_min,
                 n_max=n_max,
+                weights=weights,
             )
 
     if dask.is_dask_collection(grid_df):

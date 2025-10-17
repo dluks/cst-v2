@@ -183,7 +183,7 @@ stages:
       - ${project_root}/${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.fp}
       - ${project_root}/${traits.interim_out}
     outs:
-      - ${project_root}/${gbif.interim.out_dir}/${product_code}/maps:
+      - ${project_root}/${gbif.maps.out_dir}/${product_code}:
           persist: false 
 
   build_splot_maps:
