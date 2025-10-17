@@ -1,6 +1,7 @@
 version: "1.1.0"
 project_root: "../../.."
 product_dir: "pipeline/products/hyd_stg_no-xf_55km"
+trait_type: "hydraulic"
 product_code: "hyd_stg_no-xf_55km"
 
 # Container configuration
@@ -836,14 +837,11 @@ traits:
 
 gbif:
   raw_fp: data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
-  interim:
-    out_dir: data/interim/gbif
-    dir: gbif
-    filtered: gbif_filtered.parquet
-    matched: gbif_pfts.parquet
-    subsampled: gbif_subsampled.parquet
-    subsample_binsize: 4
-    subsample_n_max: 10000
+  filtered:
+    out_dir: data/interim/gbif/filtered_occurrences
+    fp: gbif_filtered.parquet
+    report_fp: filter_gbif_report.md
+    density_plot_fp: gbif_filtering_density.png
     min_count: 10
     max_count: 500
     traits: trait_maps

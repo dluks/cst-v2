@@ -611,14 +611,23 @@ stages:
       nfiles: 1583
     - path: ../../../src/data/filter_gbif.py
       hash: md5
-      md5: b39c6a02a94060f220ca139a4660cf81
-      size: 6707
+      md5: 3a878a89d4576c87eb7f3f6364eb6fa3
+      size: 15078
     outs:
-    - path: ../../../data/interim/gbif/hyd_stg_no-xf_55km/gbif_filtered.parquet
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/filter_gbif_report.md
       hash: md5
-      md5: 6b4706216653a590abb7fddab2a1b652.dir
-      size: 767513414
+      md5: 18ca57d03bf0c47fcf2c65f2ce686e73
+      size: 1929
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
+      hash: md5
+      md5: 46f043d49446fe6820398a80ed66eb60.dir
+      size: 547187487
       nfiles: 227
+    - path: 
+        ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtering_density.png
+      hash: md5
+      md5: 9d7c02c32d7ae5e13394b6cd9031bd6e
+      size: 288341
   filter_splot:
     cmd: python ../../../src/data/filter_splot.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
     deps:
