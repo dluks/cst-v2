@@ -850,12 +850,12 @@ gbif:
 splot:
   raw:
     dir: splot4-0
-  interim:
-    dir: splot
-    extracted: extracted
-    filtered: splot_filtered.parquet
-    report: filter_splot_report.md
-    traits: trait_maps
+  filtered:
+    out_dir: data/interim/splot/filtered_surveys
+    fp: splot_filtered.parquet
+    report_fp: filter_splot_report.md
+  maps:
+    out_dir: data/interim/splot/maps
 
 trydb:
   raw:

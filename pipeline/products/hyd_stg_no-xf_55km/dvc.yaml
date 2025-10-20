@@ -81,8 +81,8 @@ stages:
       - ${project_root}/data/raw/${splot.raw.dir}
       - ${project_root}/${traits.interim_out}
     outs:
-      - ${project_root}/${interim_dir}/${splot.interim.dir}/${splot.interim.filtered}
-      - ${project_root}/${interim_dir}/${splot.interim.dir}/${splot.interim.report}
+      - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.fp}
+      - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.report_fp}
 
   # match_gbif_pfts:
   #   cmd: >-
