@@ -187,21 +187,13 @@ stages:
           persist: false 
 
   build_splot_maps:
-    cmd: >-
-      stages/build_splot_maps_parallel.sh
+    cmd: python ${project_root}/stages/build_splot_maps.py --params params.yaml
     deps:
-      - src/data/build_splot_maps.py
-      - ${interim_dir}/${splot.interim.dir}/${splot.interim.extracted}
-      - ${raw_dir}/${trydb.raw.pfts}
-      - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.filtered}
-    params:
-      - splot.interim
-      - model_res
-      - PFT
-      - target_resolution
-      - datasets.Y.traits
+      - ${project_root}/src/data/build_splot_map.py
+      - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.fp}
+      - ${project_root}/${traits.interim_out}
     outs:
-      - ${interim_dir}/${splot.interim.dir}/${splot.interim.traits}/${PFT}/${model_res}:
+      - ${project_root}/${splot.maps.out_dir}/${product_code}:
           persist: false
 
   build_y:

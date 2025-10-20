@@ -238,40 +238,26 @@ stages:
       size: 9289702
       nfiles: 6
   build_splot_maps:
-    cmd: python src/data/build_splot_maps.py
+    cmd: python ../../../stages/build_splot_maps.py --params params.yaml
     deps:
-    - path: data/interim/splot/extracted
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
       hash: md5
-      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
-      size: 508142149
-      nfiles: 3
-    - path: data/interim/try/traits.parquet
+      md5: de5acba32f6c6e14a61d179e655abb16
+      size: 41764151
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
       hash: md5
-      md5: b2b7f0703fc52483df2ab7c17c76a251
-      size: 18311878
-    - path: data/raw/try_pft_v2.parquet
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_splot_map.py
       hash: md5
-      md5: d49a4b1611eebbd529c9e9aba6aa5f69
-      size: 2232209
-    - path: src/data/build_splot_maps.py
-      hash: md5
-      md5: 609ddfc2299ec8e4be2d53e602a3fe91
-      size: 8800
-    params:
-      params.yaml:
-        PFT: Shrub_Tree_Grass
-        model_res: 55km
-        splot.interim:
-          dir: splot
-          extracted: extracted
-          traits: trait_maps
-        target_resolution: 55000
+      md5: 5d72c4358c8445846e0297fa33ad6952
+      size: 5662
     outs:
-    - path: data/interim/splot/trait_maps/Shrub_Tree_Grass/55km
+    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_55km
       hash: md5
-      md5: b81960cc9bc3237f383a906ec206f3c6.dir
-      size: 25398453
-      nfiles: 37
+      md5: 945516dfef6eb053c258ac46587f3ad5.dir
+      size: 3501548
+      nfiles: 6
   build_y:
     cmd: python src/features/build_y.py
     deps:

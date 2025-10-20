@@ -335,7 +335,7 @@ def agg_df(
     df: pd.DataFrame,
     by: str | list[str],
     data: str | list[str],
-    funcs: dict[str, Any] | None = None,
+    funcs: dict[str, Any] | list[str] | None = None,
     n_min: int = 1,
     n_max: int | None = None,
     weights: str | None = None,
@@ -355,11 +355,13 @@ def agg_df(
         Column(s) to group by.
     data : str
         The column to aggregate.
-    funcs : dict of str to Any, optional
-        A dictionary where keys are the names of the resulting columns and values are
-        the aggregation functions.
-        If None, the default aggregation functions are used: mean, std, median, q05, q95,
-        count.
+    funcs : dict of str to Any, list of str, or None, optional
+        When weights are provided: a list of function names to compute
+        (e.g., ["mean", "std", "count"]). Supported: "mean", "std", "median",
+        "q05", "q95", "range", "count", "count_weighted".
+        When weights are not provided: a dict where keys are result column names
+        and values are aggregation functions, or a list of function names.
+        If None, all default functions are computed.
     n_min : int, optional
         Minimum count threshold to filter groups. Default is 1.
     n_max : int, optional
@@ -373,6 +375,111 @@ def agg_df(
     pd.DataFrame
         The aggregated DataFrame with the specified aggregation functions applied.
     """
+    # Define all supported weighted statistics
+    SUPPORTED_WEIGHTED_FUNCS = {
+        "mean",
+        "std",
+        "median",
+        "q05",
+        "q95",
+        "range",
+        "count",
+        "count_weighted",
+    }
+
+    if n_max is not None:
+        # Randomly subsample a maximum of n_max points from each group
+        seed = get_config().random_seed
+        df = df.groupby(by, observed=False, group_keys=False).apply(
+            lambda x: x.sample(n=min(n_max, len(x)), random_state=seed)
+        )
+
+    if isinstance(data, str):
+        data = [data]
+
+    # Handle weighted statistics if weights column is provided
+    if weights is not None and weights in df.columns:
+        # Determine which functions to compute
+        if funcs is None:
+            # Default: compute all weighted statistics
+            requested_funcs = list(SUPPORTED_WEIGHTED_FUNCS)
+        elif isinstance(funcs, list):
+            # User provided a list of function names
+            requested_funcs = funcs
+            # Validate that all requested functions are supported
+            invalid = set(requested_funcs) - SUPPORTED_WEIGHTED_FUNCS
+            if invalid:
+                raise ValueError(
+                    f"Unsupported weighted functions: {invalid}. "
+                    f"Supported functions: {SUPPORTED_WEIGHTED_FUNCS}"
+                )
+        elif isinstance(funcs, dict):
+            # Legacy support: extract keys from dict
+            requested_funcs = list(funcs.keys())
+            # Validate
+            invalid = set(requested_funcs) - SUPPORTED_WEIGHTED_FUNCS
+            if invalid:
+                raise ValueError(
+                    f"When weights are provided, funcs must contain only supported "
+                    f"function names: {SUPPORTED_WEIGHTED_FUNCS}. Got: {invalid}"
+                )
+        else:
+            raise TypeError(f"funcs must be a list or dict, got {type(funcs)}")
+
+        # Use hardcoded approach with groupby().apply() for weighted statistics
+        def compute_weighted_stats(group):
+            """Compute requested weighted statistics for a group."""
+            results = {}
+
+            for col in data:
+                values = group[col].values
+                w = group[weights].values
+
+                # Only compute requested statistics
+                if "count" in requested_funcs:
+                    results[f"{col}_count"] = len(values)
+
+                if "count_weighted" in requested_funcs:
+                    results[f"{col}_count_weighted"] = w.sum()
+
+                if "mean" in requested_funcs:
+                    results[f"{col}_mean"] = np.average(values, weights=w)
+
+                if "std" in requested_funcs:
+                    results[f"{col}_std"] = _weighted_std(values, w)
+
+                if "median" in requested_funcs:
+                    results[f"{col}_median"] = _weighted_quantile(values, w, 0.5)
+
+                if "q05" in requested_funcs:
+                    results[f"{col}_q05"] = _weighted_quantile(values, w, 0.05)
+
+                if "q95" in requested_funcs:
+                    results[f"{col}_q95"] = _weighted_quantile(values, w, 0.95)
+
+                if "range" in requested_funcs:
+                    results[f"{col}_range"] = _weighted_quantile(
+                        values, w, 0.98
+                    ) - _weighted_quantile(values, w, 0.02)
+
+            return pd.Series(results)
+
+        result_df = df.groupby(by, observed=False).apply(compute_weighted_stats)
+
+        # Rename columns to remove data prefix if only one data column
+        if len(data) == 1:
+            col_name = data[0]
+            result_df.columns = [
+                col.replace(f"{col_name}_", "") for col in result_df.columns
+            ]
+
+        # Filter by minimum count
+        if n_min > 1 and "count" in result_df.columns:
+            result_df = result_df[result_df["count"] >= n_min]
+
+        return result_df.reset_index()
+
+    # Original non-weighted path
     if funcs is None:
         # Create quantile functions with explicit quantile attributes
         def make_quantile_func(q: float):
@@ -409,70 +516,20 @@ def agg_df(
             species_col = [col for col in df.columns if "species" in col][0]
             funcs["species_count"] = lambda x: x[species_col].nunique()
 
-    if n_max is not None:
-        # Randomly subsample a maximum of n_max points from each group
-        seed = get_config().random_seed
-        df = df.groupby(by, observed=False, group_keys=False).apply(
-            lambda x: x.sample(n=min(n_max, len(x)), random_state=seed)
-        )
-    if isinstance(data, str):
-        data = [data]
+    elif isinstance(funcs, list):
+        # Convert list of function names to dict
+        func_map = {
+            "mean": "mean",
+            "std": "std",
+            "median": lambda x: x.quantile(0.5, interpolation="nearest"),
+            "q05": lambda x: x.quantile(0.05, interpolation="nearest"),
+            "q95": lambda x: x.quantile(0.95, interpolation="nearest"),
+            "range": lambda x: x.quantile(0.98, interpolation="nearest")
+            - x.quantile(0.02, interpolation="nearest"),
+            "count": "count",
+        }
+        funcs = {name: func_map[name] for name in funcs if name in func_map}
 
-    # Handle weighted statistics if weights column is provided
-    if weights is not None and weights in df.columns:
-        # Use hardcoded approach with groupby().apply() for weighted statistics
-        def compute_weighted_stats(group):
-            """Compute all weighted statistics for a group."""
-            results = {}
-
-            for col in data:
-                values = group[col].values
-                w = group[weights].values
-
-                # Count (unweighted)
-                results[f"{col}_count"] = len(values)
-
-                # Weighted mean
-                results[f"{col}_mean"] = np.average(values, weights=w)
-
-                # Weighted std
-                results[f"{col}_std"] = _weighted_std(values, w)
-
-                # Weighted median (q=0.5)
-                results[f"{col}_median"] = _weighted_quantile(values, w, 0.5)
-
-                # Weighted q05
-                results[f"{col}_q05"] = _weighted_quantile(values, w, 0.05)
-
-                # Weighted q95
-                results[f"{col}_q95"] = _weighted_quantile(values, w, 0.95)
-
-                # Weighted range (q98 - q02)
-                results[f"{col}_range"] = _weighted_quantile(
-                    values, w, 0.98
-                ) - _weighted_quantile(values, w, 0.02)
-
-                # Count weighted (sum of weights)
-                results[f"{col}_count_weighted"] = w.sum()
-
-            return pd.Series(results)
-
-        result_df = df.groupby(by, observed=False).apply(compute_weighted_stats)
-
-        # Rename columns to remove data prefix if only one data column
-        if len(data) == 1:
-            col_name = data[0]
-            result_df.columns = [
-                col.replace(f"{col_name}_", "") for col in result_df.columns
-            ]
-
-        # Filter by minimum count
-        if n_min > 1 and "count" in result_df.columns:
-            result_df = result_df[result_df["count"] >= n_min]
-
-        return result_df.reset_index()
-
-    # Original non-weighted path
     result_df = df.groupby(by, observed=False)[data].agg(list(funcs.values()))
     result_df.columns = list(funcs.keys())
 
@@ -492,7 +549,7 @@ def rasterize_points(
     crs: str | None = None,
     nodata: int | float = np.nan,
     agg: bool = False,
-    funcs: dict[str, Any] | None = None,
+    funcs: dict[str, Any] | list[str] | None = None,
     n_min: int = 1,
     n_max: int | None = None,
     already_row_col: bool = False,
@@ -519,8 +576,10 @@ def rasterize_points(
         Coordinate reference system of the new raster if `raster` is None.
     nodata : int or float, optional
         Value to use for no-data cells, by default np.nan.
-    funcs : dict[str, Any], optional
-        Aggregation functions to apply to the data, by default None.
+    funcs : dict[str, Any] or list[str], optional
+        Aggregation functions to apply to the data. Can be a dict (for non-weighted
+        aggregation) or a list of function names (for weighted aggregation).
+        By default None.
     n_min : int, optional
         Minimum number of points required to aggregate, by default 1.
     n_max : int, optional

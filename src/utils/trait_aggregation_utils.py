@@ -42,8 +42,8 @@ def cw_stats(g: pd.DataFrame, col: str, abund_col: str) -> pd.Series:
     if g.empty:
         log.warning("Empty group detected, returning NaNs...")
         return pd.Series(
-            [np.nan, np.nan, np.nan, np.nan, np.nan],
-            index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95"],
+            [np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
+            index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95", "cw_range"],
         )
     return pd.Series(
         [
@@ -52,8 +52,9 @@ def cw_stats(g: pd.DataFrame, col: str, abund_col: str) -> pd.Series:
             _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.5),
             _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.05),
             _cw_quantile(g[col].to_numpy(), normalized_abund.to_numpy(), 0.95),
+            g[col].max() - g[col].min(),
         ],
-        index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95"],
+        index=["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95", "cw_range"],
     )
 
 
