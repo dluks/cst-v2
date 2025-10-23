@@ -628,14 +628,14 @@ stages:
       nfiles: 3
     - path: ../../../src/data/filter_splot.py
       hash: md5
-      md5: a0ea51add59ead4d8a24bf2284ee82c4
-      size: 14427
+      md5: 7cc68c9429af825d8395e9ed589b991b
+      size: 16066
     outs:
     - path: ../../../data/interim/splot/filtered_surveys/hydraulic/filter_splot_report.md
       hash: md5
-      md5: 2d49c8a18cdcadeea9634fa52261ea83
-      size: 1774
+      md5: df090eacd5bb8611064479123d73354c
+      size: 2001
     - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
       hash: md5
-      md5: de5acba32f6c6e14a61d179e655abb16
-      size: 41764151
+      md5: b76e2d5175fc03a97e7f8efe03425789
+      size: 22616220

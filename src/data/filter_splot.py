@@ -33,8 +33,9 @@ def main(args: argparse.Namespace | None = None) -> None:
     1. Extracts sPlot data from RData file
     2. Loads the traits DataFrame with nameOutWCVP and PFTs
     3. Matches sPlot observations to species with trait data
-    4. Calculates weights for resurvey groups
-    5. Outputs filtered DataFrame with observations, PFTs, and weights
+    4. Filters out plots with combined relative abundance < 0.5
+    5. Calculates weights for resurvey groups
+    6. Outputs filtered DataFrame with observations, PFTs, and weights
 
     Resurvey groups are defined by GIVD_NU, Longitude, Latitude, and the RESURVEY
     boolean flag. Each observation in a resurvey group gets a weight of 1/n where n
@@ -141,20 +142,50 @@ def main(args: argparse.Namespace | None = None) -> None:
         100 * n_species / n_trait_species,
     )
 
-    total_cov = vegetation_matched[abundance_col].sum()
+    # 05. Filter plots by combined relative abundance
+    log.info("Filtering plots with combined relative abundance < 0.5...")
+    before_plots = vegetation_matched["PlotObservationID"].nunique()
+    vegetation_filtered_abundance = (
+        vegetation_matched.groupby("PlotObservationID")
+        .filter(lambda x: x[abundance_col].sum() >= 0.5)
+        .reset_index()
+    )
+
+    after_plots = vegetation_filtered_abundance["PlotObservationID"].nunique()
+
+    stats["plots_before_abundance_filter"] = before_plots
+    stats["plots_after_abundance_filter"] = after_plots
+    stats["plots_dropped_abundance"] = before_plots - after_plots
+    stats["plots_dropped_abundance_pct"] = (
+        (before_plots - after_plots) / before_plots * 100 if before_plots > 0 else 0
+    )
+
+    log.info(
+        "Dropped %d / %d plots (%.2f%%) with combined abundance < 0.5",
+        before_plots - after_plots,
+        before_plots,
+        (before_plots - after_plots) / before_plots * 100,
+    )
+
+    total_cov = vegetation_filtered_abundance[abundance_col].sum()
     stats["retained_abundance"] = total_cov
     stats["retained_abundance_pct"] = (
         (total_cov / len(header_df)) * 100 if len(header_df) > 0 else 0
+    )
+
+    # Calculate total abundance across retained plots for reporting
+    stats["retained_abundance_filtered_pct"] = (
+        (total_cov / after_plots) * 100 if after_plots > 0 else 0
     )
 
     log.info(
         "Retained %.2f / %d abundance (%.2f%%).",
         total_cov,
         len(header_df),  # Number of original plots
-        (total_cov / len(header_df)) * 100,
+        stats["retained_abundance_pct"],
     )
 
-    # 05. Calculate resurvey weights at header level
+    # 06. Calculate resurvey weights at header level
     log.info("Calculating resurvey weights...")
     resurvey_group_cols = ["GIVD_NU", "Longitude", "Latitude"]
 
@@ -191,15 +222,15 @@ def main(args: argparse.Namespace | None = None) -> None:
         (resurvey_counts["n_resurveys"] > 0).sum(),
     )
 
-    # 06. Merge weights and coordinates into vegetation data
+    # 07. Merge weights and coordinates into vegetation data
     log.info("Merging weights and coordinates into vegetation data...")
-    vegetation_final = vegetation_matched.merge(
+    vegetation_final = vegetation_filtered_abundance.merge(
         header_with_weights[["PlotObservationID", "Latitude", "Longitude", "weight"]],
         on="PlotObservationID",
         how="left",
     )
 
-    # 07. Select final columns and save
+    # 08. Select final columns and save
     output_columns = [
         "PlotObservationID",
         "speciesname",
@@ -291,9 +322,20 @@ Data Version: {"sPlot Open" if splot_open else "sPlot Full"}
 - **Dropped species:** \
 {stats["input_species"] - stats["matched_species"]:,}
 
+---
+
+## Abundance Filtering
+
+### Plot-Level Filtering
+- **Plots before abundance filter:** {stats["plots_before_abundance_filter"]:,}
+- **Plots after abundance filter:** {stats["plots_after_abundance_filter"]:,}
+- **Plots dropped (abundance < 0.5):** {stats["plots_dropped_abundance"]:,} \
+({stats["plots_dropped_abundance_pct"]:.2f}%)
+
 ### Abundance Retention
-- **Total abundance retained:** {stats["retained_abundance"]:.2f}
-- **Retention rate:** {stats["retained_abundance_pct"]:.2f}%
+
+- **Retention rate across all plots:** {stats["retained_abundance_pct"]:.2f}%
+- **Retention rate across filtered plots:** {stats["retained_abundance_filtered_pct"]:.2f}%
 
 ---
 
