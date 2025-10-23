@@ -197,44 +197,21 @@ stages:
           persist: false
 
   build_y:
-    cmd: >-
-      stages/build_y.sh
-      ${container.type}
-      ${container.name}
-      ${container.docker_tag}
-      ${container.image}
-      "poetry run python src/features/build_y.py"
+    cmd: python ${project_root}/stages/build_y.py --params params.yaml
     deps:
-      - src/features/build_y.py
-      - ${interim_dir}/${gbif.interim.dir}/${gbif.interim.traits}/${PFT}/${model_res}
-      - ${interim_dir}/${splot.interim.dir}/${splot.interim.traits}/${PFT}/${model_res}
+      - ${project_root}/stages/build_y.py
+      - ${project_root}/src/features/build_y_trait.py
+      - ${project_root}/src/features/merge_y_traits.py
+      - ${project_root}/${gbif.maps.out_dir}/${product_code}
+      - ${project_root}/${splot.maps.out_dir}/${product_code}
     params:
+      - traits.names
       - datasets.Y.trait_stat
-      - datasets.Y.traits
+      - train.dir
+      - train.Y.fn
+      - product_code
     outs:
-      - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
-
-  calculate_spatial_autocorr:
-    cmd: python src/features/calc_spatial_autocorr_gpu.py
-    deps:
-      - src/features/calc_spatial_autocorr.py
-      - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
-    params:
-      - train.spatial_autocorr
-      - calc_spatial_autocorr
-    outs:
-      - ${train.dir}/${PFT}/${model_res}/${train.spatial_autocorr}
-
-  build_cv_splits:
-    cmd: python src/features/skcv_splits.py -o
-    deps:
-      - src/features/skcv_splits.py
-      - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
-      - ${train.dir}/${PFT}/${model_res}/${train.spatial_autocorr}
-    params:
-      - train.cv_splits
-    outs:
-      - ${train.dir}/${PFT}/${model_res}/${train.cv_splits.dir}:
+      - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}:
           persist: false
 
   train_models:

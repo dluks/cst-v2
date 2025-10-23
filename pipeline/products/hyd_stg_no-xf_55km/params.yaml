@@ -834,6 +834,9 @@ traits:
   pfts_threshold: 0.60
   harmonization_fp: data/raw/hydraulic_traits_matching_results_2025-10-03.gz
   interim_out: data/interim/try/hydraulic_no-xf.parquet
+  trait_map_layers: ["mean", "std", "median", "q05", "q95", "count", "count_weighted"]
+  target_trait_stat: "mean"
+
 
 gbif:
   raw_fp: data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
