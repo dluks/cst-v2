@@ -234,8 +234,8 @@ stages:
     outs:
     - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_55km
       hash: md5
-      md5: ea1ca9329e23cb38a58e4cc628dcafb3.dir
-      size: 9289702
+      md5: f6ebc3954206660498708fd0ac0da035.dir
+      size: 9228470
       nfiles: 6
   build_splot_maps:
     cmd: python ../../../stages/build_splot_maps.py --params params.yaml
