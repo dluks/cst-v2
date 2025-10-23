@@ -102,38 +102,25 @@ stages:
   # RES-DEP., PFT-IND. -----------------------------------------------------------------
   ######################################################################################
 
-  harmonize_eo_data:
-    cmd: python src/data/harmonize_eo_data.py
+  build_eo_features:
+    cmd: python stages/build_eo_features.py --params pipeline/eo_data/${id}/params.yaml
     deps:
-      - src/data/harmonize_eo_data.py
+      - stages/build_eo_features.py
+      - src/data/harmonize_eo_to_parquet.py
+      - src/data/calculate_derived_eo_features.py
+      - src/features/merge_eo_parquets.py
     params:
       - model_res
-      - mask
+      - landcover_mask
       - datasets.X
       - base_resolution
       - target_resolution
-      - eo_data.interim.dir
       - worldclim.bio_vars
+      - features_X_dir
+      - X_imputed_fn
+      - train.missing_val_thresh
     outs:
-      - ${interim_dir}/${eo_data.interim.dir}/${model_res}:
-          persist: false
-
-  build_predict:
-    cmd: python src/features/featurize_predict.py
-    deps:
-      - src/features/featurize_predict.py
-      - ${interim_dir}/${eo_data.interim.dir}/${model_res}
-    params:
-      - model_res
-      - train.dir
-      - eo_data.interim.dir
-      - eo_data.predict.dir
-      - eo_data.predict.mask_fn
-      - eo_data.predict.imputed_fn
-    outs:
-      - ${train.dir}/${eo_data.predict.dir}/${model_res}/${eo_data.predict.mask_fn}:
-          persist: false
-      - ${train.dir}/${eo_data.predict.dir}/${model_res}/${eo_data.predict.imputed_fn}:
+      - ${features_X_dir}/${X_imputed_fn}:
           persist: false
 
 
