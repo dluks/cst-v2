@@ -12,6 +12,7 @@ from typing import Any, Optional
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
 import rasterio
 import rioxarray as riox
 import xarray as xr
@@ -356,10 +357,22 @@ def generate_epsg6933_grid(
     return x_coords, y_coords
 
 
+def reproject_extent(
+    extent: list[int | float], extent_crs: str, target_crs: str
+) -> list[int | float]:
+    """Reproject the extent to the given CRS."""
+    transformer = pyproj.Transformer.from_crs(extent_crs, target_crs, always_xy=True)
+    xmin, ymin, xmax, ymax = extent
+    xmin, ymin = transformer.transform(xmin, ymin)
+    xmax, ymax = transformer.transform(xmax, ymax)
+    return [xmin, ymin, xmax, ymax]
+
+
 def create_sample_raster(
     extent: list[int | float] | None = None,
     resolution: int | float = 1,
     crs: str = "EPSG:4326",
+    extent_crs: str = "EPSG:4326",
 ) -> xr.Dataset:
     """
     Generate a sample raster at a given resolution and CRS.
@@ -377,6 +390,9 @@ def create_sample_raster(
     Raises:
     ValueError: If the CRS is not "EPSG:4326" or "EPSG:6933" and extent is not provided.
     """
+
+    if extent is not None and extent_crs != crs:
+        extent = reproject_extent(extent, extent_crs, crs)
 
     if crs == "EPSG:4326":
         x_coords, y_coords = generate_epsg4326_grid(resolution, extent)
