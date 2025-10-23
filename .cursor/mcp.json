@@ -12,8 +12,7 @@
                 "ide-assistant",
                 "--enable-web-dashboard",
                 "false"
-            ],
-            "env": {}
+            ]
         }
     }
 }
