@@ -436,12 +436,6 @@ def agg_df(
                 w = group[weights].values
 
                 # Only compute requested statistics
-                if "count" in requested_funcs:
-                    results[f"{col}_count"] = len(values)
-
-                if "count_weighted" in requested_funcs:
-                    results[f"{col}_count_weighted"] = w.sum()
-
                 if "mean" in requested_funcs:
                     results[f"{col}_mean"] = np.average(values, weights=w)
 
@@ -461,6 +455,12 @@ def agg_df(
                     results[f"{col}_range"] = _weighted_quantile(
                         values, w, 0.98
                     ) - _weighted_quantile(values, w, 0.02)
+                
+                if "count" in requested_funcs:
+                    results[f"{col}_count"] = len(values)
+
+                if "count_weighted" in requested_funcs:
+                    results[f"{col}_count_weighted"] = w.sum()
 
             return pd.Series(results)
 

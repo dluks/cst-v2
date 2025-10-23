@@ -61,7 +61,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # Load filtered sPlot data
     log.info("Loading filtered sPlot data...")
-    splot = _load_splot(
+    splot_obs = _load_splot(
         Path(cfg.splot.filtered.out_dir, cfg.trait_type, cfg.splot.filtered.fp),
         cfg.PFT,
     )
@@ -70,7 +70,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     trait_df = _load_trait(Path(cfg.traits.interim_out), args.trait)
 
     log.info("Joining sPlot and trait data...")
-    splot_traits = splot.merge(
+    splot_traits = splot_obs.merge(
         trait_df, left_on="speciesname", right_on="nameOutWCVP", how="inner"
     ).drop(columns=["nameOutWCVP"])
 
@@ -98,7 +98,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     )
 
     log.info("Reprojecting coordinates...")
-    plot_stats = _reproject(cfg, plot_stats)
+    plot_stats = _reproject(cfg.crs, plot_stats)
 
     log.info("Processing trait %s...", args.trait)
 
@@ -117,6 +117,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         # Add count on the last statistic
         if stat_col == "cw_range":
             requested_funcs.append("count")
+            requested_funcs.append("count_weighted")
 
         # Select columns for rasterization
         raster_df = pd.DataFrame(plot_stats[["x", "y", stat_col, "weight"]])
@@ -162,15 +163,15 @@ def _load_trait(fp: Path, trait_name: str) -> pd.DataFrame:
     return trait_df
 
 
-def _reproject(cfg, splot_traits):
+def _reproject(crs: str, splot_traits: pd.DataFrame) -> pd.DataFrame:
     """Reproject coordinates if necessary."""
-    if cfg.crs != "EPSG:4326":
-        if cfg.crs != "EPSG:6933":
-            raise ValueError(f"Unsupported CRS: {cfg.crs}")
+    if crs != "EPSG:4326":
+        if crs != "EPSG:6933":
+            raise ValueError(f"Unsupported CRS: {crs}")
 
         splot_traits = reproject_geo_to_xy(
             splot_traits,
-            to_crs=cfg.crs,
+            to_crs=crs,
             x="Longitude",
             y="Latitude",
         ).drop(columns=["Latitude", "Longitude"])

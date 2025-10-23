@@ -242,21 +242,21 @@ stages:
     deps:
     - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
       hash: md5
-      md5: de5acba32f6c6e14a61d179e655abb16
-      size: 41764151
+      md5: b76e2d5175fc03a97e7f8efe03425789
+      size: 22616220
     - path: ../../../data/interim/try/hydraulic_no-xf.parquet
       hash: md5
       md5: ce042213e6761661343b8a30a72599d4
       size: 2978137
     - path: ../../../src/data/build_splot_map.py
       hash: md5
-      md5: 5d72c4358c8445846e0297fa33ad6952
-      size: 5662
+      md5: 7ebaf7b6b6adf782e2c02df0dba8c4bd
+      size: 5746
     outs:
     - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_55km
       hash: md5
-      md5: 945516dfef6eb053c258ac46587f3ad5.dir
-      size: 3501548
+      md5: 7bcdcb9f6c7cc80e5c7aa7394480004a.dir
+      size: 2986458
       nfiles: 6
   build_y:
     cmd: python src/features/build_y.py
