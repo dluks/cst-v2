@@ -26,7 +26,7 @@ def parse_params(params_path: str | Path | None = None) -> dict:
 
 
 def get_config(
-    subset: str | None = None, params_path: str | Path | None = None
+    params_path: str | Path | None = None, subset: str | None = None
 ) -> ConfigBox:
     """
     Get a ConfigBox object from a dictionary.

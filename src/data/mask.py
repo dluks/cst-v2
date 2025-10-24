@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import xarray as xr
 
 from src.utils.raster_utils import create_sample_raster, open_raster
@@ -22,7 +24,7 @@ def mask_raster(rast: xr.DataArray, mask: xr.DataArray) -> xr.DataArray:
 
 
 def get_mask(
-    mask_path: str,
+    mask_path: str | Path,
     keep_classes: list[int],
     resolution: int | float,
     crs: str,
