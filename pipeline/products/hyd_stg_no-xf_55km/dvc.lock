@@ -273,8 +273,8 @@ stages:
       nfiles: 6
     - path: ../../../src/features/build_y_trait.py
       hash: md5
-      md5: 6a37328690475415a1eb2607b7285caf
-      size: 4850
+      md5: c057b54bd7270af40af44e16fc8f9f3e
+      size: 4649
     - path: ../../../src/features/merge_y_traits.py
       hash: md5
       md5: 1ae2d7919523487fbaa5edeb867dea9d
