@@ -37,7 +37,7 @@ def close_dask(client: Client) -> None:
     try:
         # First attempt: Graceful close with timeout
         client.close(timeout=30)
-    except (TimeoutError, Exception) as e:
+    except Exception as e:
         log.warning(f"Initial close attempt failed: {e}. Attempting shutdown...")
         try:
             # Second attempt: Force shutdown

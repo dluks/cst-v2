@@ -45,3 +45,33 @@ stages:
       md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
       size: 14279660
       nfiles: 150
+  build_predict:
+    cmd: python ../../../stages/build_predict.py --params params.yaml
+    deps:
+    - path: ../../../data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
+    - path: ../../../src/features/build_predict.py
+      hash: md5
+      md5: e15cc377415887d6e0569866a18ff6c4
+      size: 9514
+    params:
+      params.yaml:
+        datasets:
+          canopy_height: data/raw/ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: data/raw/modis_sur_refl_monthly_avg_1km
+          soilgrids: data/raw/soilgrids_v2-0_1km
+          vodca: data/raw/vodca_mean-p5-p95_1km
+          worldclim: data/raw/wc2-1_30s_bio
+          alos: data/raw/ALOS_CHILI_constant
+        interim.out_dir: data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
+        x_dir: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km
+        x_fn: X.parquet
+    outs:
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km
+      hash: md5
+      md5: e113d31fb2a04a033cc613c164289ac1.dir
+      size: 19966878
+      nfiles: 3

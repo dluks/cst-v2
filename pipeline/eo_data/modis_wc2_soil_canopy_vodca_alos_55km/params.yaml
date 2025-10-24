@@ -8,11 +8,11 @@ extent: [-180, -60, 180, 90] # Extent of the final dataset
 crs: "EPSG:6933" # Equal Area Cylindrical projection
 tmp_dir: tmp/eo_data
 raw_dir: data/raw
+dask_dashboard: ":39143"
 
 geos:
   harmonize_eo_data:
-    n_workers: 2
-  
+    n_workers: 70
   build_predict:
     n_chunks: 3
     n_workers: 80
@@ -42,8 +42,9 @@ datasets:
 interim:
   out_dir: data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
 
-x_dir: data/features/X/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
+x_dir: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km
 x_fn: X.parquet
+missing_val_thresh: 0.4
 
 worldclim:
   bio_vars:

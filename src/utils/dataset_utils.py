@@ -1,8 +1,9 @@
 """Get the filenames of datasets based on the specified stage of processing."""
 
 import json
+import os
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
 
 import dask.dataframe as dd
 import numpy as np
@@ -17,7 +18,8 @@ from src.conf.conf import get_config
 from src.conf.environment import log
 from src.utils.raster_utils import open_raster
 
-cfg = get_config()
+cfg_path = os.getenv("CONFIG_PATH")
+cfg = get_config(Path(cfg_path).absolute()) if cfg_path else get_config()
 
 
 def get_eo_fns_dict(
