@@ -1,6 +1,4 @@
 ---
-description: 
-globs: tests/**/*.py,tests/*.py
 alwaysApply: false
 ---
 # Testing Requirements
