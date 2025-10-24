@@ -29,6 +29,14 @@ pylos:
   "1km":
     harmonize_eo_data:
       n_workers: 12
+    build_eo_features:
+      n_workers: 12  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -75,6 +83,14 @@ pylos:
   "001":
     harmonize_eo_data:
       n_workers: 12
+    build_eo_features:
+      n_workers: 12  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -167,6 +183,14 @@ pylos:
   "02":
     harmonize_eo_data:
       n_workers: 20
+    build_eo_features:
+      n_workers: 20  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -213,6 +237,14 @@ pylos:
   "05":
     harmonize_eo_data:
       n_workers: 18
+    build_eo_features:
+      n_workers: 18  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -259,6 +291,14 @@ pylos:
   "1":
     harmonize_eo_data:
       n_workers: 48
+    build_eo_features:
+      n_workers: 48  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -305,6 +345,14 @@ pylos:
   "2":
     harmonize_eo_data:
       n_workers: 30
+    build_eo_features:
+      n_workers: 30  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 80
       n_partitions: 80
@@ -352,6 +400,14 @@ geos:
   "1km":
     harmonize_eo_data:
       n_workers: 48
+    build_eo_features:
+      n_workers: 48  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -402,6 +458,14 @@ geos:
   "001":
     harmonize_eo_data:
       n_workers: 48
+    build_eo_features:
+      n_workers: 48  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -447,6 +511,14 @@ geos:
   "22km":
     harmonize_eo_data:
       n_workers: 20
+    build_eo_features:
+      n_workers: 20  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -497,6 +569,14 @@ geos:
   "02":
     harmonize_eo_data:
       n_workers: 48
+    build_eo_features:
+      n_workers: 48  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -542,6 +622,14 @@ geos:
   "55km":
     harmonize_eo_data:
       n_workers: 20
+    build_eo_features:
+      n_workers: 20  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -592,6 +680,14 @@ geos:
   "05":
     harmonize_eo_data:
       n_workers: 48
+    build_eo_features:
+      n_workers: 48  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -637,6 +733,14 @@ geos:
   "1":
     harmonize_eo_data:
       n_workers: 80
+    build_eo_features:
+      n_workers: 80  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
@@ -683,6 +787,14 @@ geos:
   "2":
     harmonize_eo_data:
       n_workers: 80
+    build_eo_features:
+      n_workers: 80  # For local mode or Slurm parallelism
+      partition: "main"  # Slurm partition
+      time: "00:30:00"  # Per-file job time limit
+      mem: "8GB"  # Per-file memory
+      merge:
+        n_workers: 20
+        memory_limit: 80GB
     match_gbif_pfts:
       n_workers: 60
       n_partitions: 80
