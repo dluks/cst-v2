@@ -14,7 +14,6 @@ from tqdm import tqdm
 from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
 from src.data.mask import get_mask, mask_raster
-from src.utils.dataset_utils import get_eo_fns_dict
 from src.utils.raster_utils import (
     create_sample_raster,
     open_raster,
@@ -24,11 +23,97 @@ from src.utils.raster_utils import (
 )
 
 
+def cli() -> argparse.Namespace:
+    """Command line interface."""
+    parser = argparse.ArgumentParser(description="Reproject EO data to a DataFrame.")
+    parser.add_argument("-d", "--dry-run", action="store_true", help="Dry run.")
+    parser.add_argument(
+        "-o", "--overwrite", action="store_true", help="Overwrite files."
+    )
+    parser.add_argument(
+        "-p",
+        "--params",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to a params.yaml whose values should be layered as the "
+            "final override (equivalent to setting PRODUCT_PARAMS)."
+        ),
+    )
+    args = parser.parse_args()
+
+    return args
+
+
+def main(args: argparse.Namespace) -> None:
+    """Main function."""
+    log.info("Current working directory: %s", os.getcwd())
+    params_path = Path(args.params).resolve()
+    log.info("Params path: %s", str(params_path))
+    cfg = get_config(params_path)
+    syscfg = cfg[detect_system()]["harmonize_eo_data"]
+
+    if syscfg.n_workers == -1:
+        syscfg.n_workers = os.cpu_count()
+
+    log.info("Collecting files...")
+    filenames = {}
+    for dataset, path in cfg.datasets.items():
+        filenames[dataset] = list(Path(path).glob("*.tif"))
+
+    out_dir = Path(cfg.interim.out_dir).resolve()
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+    if not filenames:
+        log.error("No files to process.")
+        return
+
+    log.info("Building reference raster...")
+    target_sample_raster = create_sample_raster(
+        resolution=cfg.target_resolution, crs=cfg.crs
+    )
+
+    log.info("Building landcover mask...")
+    mask = get_mask(
+        Path(cfg.landcover_mask.path).resolve(),
+        cfg.landcover_mask.keep_classes,
+        cfg.base_resolution,
+        cfg.crs,
+    )
+
+    log.info("Harmonizing rasters...")
+    tasks = [
+        delayed(process_file)(
+            Path(filename).resolve(),
+            dataset,
+            mask,
+            out_dir,
+            target_sample_raster,
+            args.dry_run,
+            args.overwrite,
+        )
+        for dataset, ds_fns in filenames.items()
+        for filename in ds_fns
+    ]
+    Parallel(n_jobs=syscfg.n_workers)(tqdm(tasks, total=len(tasks)))
+
+    if "modis" in cfg.datasets:
+        log.info("Calculating MODIS NDVI...")
+        modis_ndvi(out_dir)
+
+    if "worldclim" in cfg.datasets:
+        log.info("Calculating WorldClim bioclimatic variables...")
+        prune_worldclim(out_dir, cfg.worldclim.bio_vars)
+
+    log.info("Done. ✅")
+
+
 def process_file(
-    filename: str | os.PathLike,
+    filename: Path,
     dataset: str,
     mask: xr.DataArray,
-    out_dir: str | Path,
+    out_dir: Path,
     target_raster: xr.DataArray,
     dry_run: bool = False,
     overwrite: bool = False,
@@ -40,21 +125,23 @@ def process_file(
         filename (str or os.PathLike): The path to the input raster file.
         dataset (str): The dataset to which the raster belongs.
         mask (xr.DataArray): The mask to apply to the raster.
-        out_dir (str or Path): The directory where the output Parquet file will be saved.
+        out_dir (str or Path): The directory where the output Parquet file will be
+            saved.
         target_raster (xr.DataArray): The target raster to match the resolution of the
             masked raster.
         dry_run (bool, optional): If True, the function will only perform a dry run
             without writing the output file. Defaults to False.
-        overwrite (bool, optional): If True, the function will overwrite the output file.
+        overwrite (bool, optional): If True, the function will overwrite the output
+            file.
     """
-    filename = Path(filename)
-    out_path = Path(out_dir) / dataset / f"{Path(filename).stem}.tif"
+    out_path = out_dir / dataset / filename.with_suffix(".tif").name
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if out_path.exists() and not overwrite:
-        log.info("Skipping %s...", filename)
+        log.info("Skipping %s...", str(filename))
         return
 
+    log.info("Processing %s", str(filename))
     rast = open_raster(filename).sel(band=1)
 
     if rast.rio.nodata is None:
@@ -75,8 +162,8 @@ def process_file(
     dtype = rast_masked.dtype
 
     if dataset == "modis":
-        # Values outside this range usually represent errors in the atmospheric correction
-        # algorithm
+        # Values outside this range usually represent errors in the atmospheric
+        # correction algorithm
         rast_masked = rast_masked.clip(0, 10000)
         dtype = "int16"
 
@@ -126,7 +213,8 @@ def process_file(
 
 def modis_ndvi(out_dir: Path, dry_run: bool = False) -> None:
     """
-    Calculate the Normalized Difference Vegetation Index (NDVI) from MODIS satellite data.
+    Calculate the Normalized Difference Vegetation Index (NDVI) from MODIS satellite
+    data.
 
     Parameters:
     - out_dir (Path): The output directory where the NDVI raster will be saved.
@@ -191,100 +279,6 @@ def prune_worldclim(out_dir: Path, bio_vars: list[str], dry_run: bool = False) -
     for fn in fns:
         if not any(f"bio_{var}.tif" in fn.name for var in bio_vars) and not dry_run:
             fn.unlink()
-
-
-def cli() -> argparse.Namespace:
-    """Command line interface."""
-    parser = argparse.ArgumentParser(description="Reproject EO data to a DataFrame.")
-    parser.add_argument("-d", "--dry-run", action="store_true", help="Dry run.")
-    parser.add_argument(
-        "-o", "--overwrite", action="store_true", help="Overwrite files."
-    )
-    parser.add_argument(
-        "-p",
-        "--params",
-        type=str,
-        default=None,
-        help=(
-            "Optional path to a params.yaml whose values should be layered as the "
-            "final override (equivalent to setting PRODUCT_PARAMS)."
-        ),
-    )
-    parser.add_argument(
-        "-s",
-        "--sys_params",
-        type=str,
-        default=None,
-        help="Path to a params.yaml that contains system-specific parameters.",
-    )
-    args = parser.parse_args()
-
-    return args
-
-
-def main(args: argparse.Namespace) -> None:
-    """Main function."""
-    print(os.getcwd())
-    print(Path(args.params).resolve())
-    cfg = get_config(args.params)
-    syscfg = get_config(args.sys_params)[detect_system()][
-        cfg.model_res
-    ].harmonize_eo_data
-
-    log.info("Config: %s", cfg)
-    if syscfg.n_workers == -1:
-        syscfg.n_workers = os.cpu_count()
-
-    log.info("Collecting files...")
-    filenames = get_eo_fns_dict(stage="raw")
-
-    out_dir = Path(cfg.interim_eo_dir)
-
-    if not filenames:
-        log.error("No files to process.")
-        return
-
-    log.info("Building reference rasters...")
-    target_sample_raster = create_sample_raster(
-        resolution=cfg.target_resolution, crs=cfg.crs
-    )
-
-    log.info("Building landcover mask...")
-    mask = get_mask(
-        cfg.landcover_mask.path,
-        cfg.landcover_mask.keep_classes,
-        cfg.base_resolution,
-        cfg.crs,
-    )
-
-    if not args.dry_run:
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-    log.info("Harmonizing rasters...")
-    tasks = [
-        delayed(process_file)(
-            filename,
-            dataset,
-            mask,
-            out_dir,
-            target_sample_raster,
-            args.dry_run,
-            args.overwrite,
-        )
-        for dataset, ds_fns in filenames.items()
-        for filename in ds_fns
-    ]
-    Parallel(n_jobs=syscfg.n_workers)(tqdm(tasks, total=len(tasks)))
-
-    if "modis" in cfg.datasets.X:
-        log.info("Calculating MODIS NDVI...")
-        modis_ndvi(out_dir)
-
-    if "worldclim" in cfg.datasets.X:
-        log.info("Calculating WorldClim bioclimatic variables...")
-        prune_worldclim(out_dir, cfg.worldclim.bio_vars)
-
-    log.info("Done. ✅")
 
 
 if __name__ == "__main__":

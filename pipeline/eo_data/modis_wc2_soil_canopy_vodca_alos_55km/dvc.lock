@@ -1,0 +1,47 @@
+schema: '2.0'
+stages:
+  harmonize_eo_data:
+    cmd: python ../../../stages/harmonize_eo_data.py --params params.yaml
+    deps:
+    - path: ../../../src/data/harmonize_eo_data.py
+      hash: md5
+      md5: 07947461470dc92318db8feba55385b2
+      size: 8578
+    params:
+      params.yaml:
+        base_resolution: 1000
+        datasets:
+          canopy_height: data/raw/ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: data/raw/modis_sur_refl_monthly_avg_1km
+          soilgrids: data/raw/soilgrids_v2-0_1km
+          vodca: data/raw/vodca_mean-p5-p95_1km
+          worldclim: data/raw/wc2-1_30s_bio
+          alos: data/raw/ALOS_CHILI_constant
+        interim.out_dir: data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
+        landcover_mask:
+          path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+          keep_classes:
+          - 10
+          - 20
+          - 30
+          - 40
+          - 60
+          - 70
+          - 90
+          - 95
+          - 100
+        model_res: 55km
+        target_resolution: 55000
+        worldclim.bio_vars:
+        - '1'
+        - '4'
+        - '7'
+        - '12'
+        - 13-14
+        - '15'
+    outs:
+    - path: ../../../data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
