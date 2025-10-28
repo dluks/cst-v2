@@ -1,0 +1,45 @@
+version: "2"
+project_root: "../../.."
+product_dir: "pipeline/products/hyd_stg_no-xf_55km"
+trait_type: "hydraulic"
+product_code: "hyd_stg_no-xf_55km"
+
+
+geos:
+  calc_spatial_autocorr:
+      n_workers: 3
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
+      gpu_ids: [0, 1]
+nemo:
+  calc_spatial_autocorr:
+      n_workers: 3
+      n_workers_variogram: 20  # For WGS84 coords only
+      n_chunks: 16 # x direction only
+      gpu_ids: [0, 1]
+
+
+spatial_autocorr:
+  ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+
+train:
+  dir: data/features
+  Y:
+    fn: Y.parquet
+  missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values
+  trait_sets: ["splot", "gbif", "splot_gbif"]
+  spatial_autocorr: spatial_autocorr.parquet
+  cv_splits:
+    range_stat: "mean"
+    n_splits: 5
+    n_sims: 200
+    dir: skcv_splits
+  weights:
+    fn: feature_weights.parquet
+    method: auto # "auto", "manual" -- "manual" will use below weights
+    splot: 1.0
+    gbif: 0.08661
+  arch: "autogluon"
+  eval_results: evaluation_results.csv
+  feature_importance: feature_importance.csv
+

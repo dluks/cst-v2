@@ -304,27 +304,25 @@ stages:
       size: 1894184
       nfiles: 1
   calculate_spatial_autocorr:
-    cmd: python src/features/calc_spatial_autocorr.py
+    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml
     deps:
-    - path: data/features/Shrub_Tree_Grass/55km/Y.parquet
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
       hash: md5
-      md5: 9cb9b74c89b51d45f3fa4fa6d811f600.dir
-      size: 22743420
-      nfiles: 260
-    - path: src/features/calc_spatial_autocorr.py
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+    - path: ../../../src/features/calc_spatial_autocorr_gpu.py
       hash: md5
-      md5: d21e31831c335333a383652c4cfbb8ee
-      size: 10650
+      md5: ece1f9966281477ccd9b5cacf078ee61
+      size: 35173
     params:
       params.yaml:
-        calc_spatial_autocorr:
-          use_existing: 1km
-        train.spatial_autocorr: spatial_autocorr.parquet
+        spatial_autocorr.ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
     outs:
-    - path: data/features/Shrub_Tree_Grass/55km/spatial_autocorr.parquet
+    - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
       hash: md5
-      md5: 441bd83e2018563b7f0a7458209b3c44
-      size: 8060
+      md5: 0f53a4c21abba93044cea3617abea6b7
+      size: 7530
   build_cv_splits:
     cmd: python src/features/skcv_splits.py -o
     deps:

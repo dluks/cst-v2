@@ -132,15 +132,14 @@ stages:
           persist: false
 
   calculate_spatial_autocorr:
-    cmd: python ${project_root}/src/features/calc_spatial_autocorr_gpu.py
+    cmd: python ${project_root}/stages/calc_spatial_autocorr.py --params params.yaml
     deps:
-      - ${project_root}/src/features/calc_spatial_autocorr.py
+      - ${project_root}/src/features/calc_spatial_autocorr_gpu.py
       - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}
     params:
-      - train.spatial_autocorr
-      - calc_spatial_autocorr
+      - spatial_autocorr.ranges_fp
     outs:
-      - ${project_root}/${train.dir}/${product_code}/${train.spatial_autocorr}
+      - ${project_root}/${spatial_autocorr.ranges_fp}
 
   # build_cv_splits:
   #   cmd: python src/features/skcv_splits.py -o

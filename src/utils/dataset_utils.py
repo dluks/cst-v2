@@ -358,7 +358,18 @@ def get_train_dir(config: ConfigBox = cfg) -> Path:
 
 def get_y_fn(config: ConfigBox = cfg) -> Path:
     """Get the path to the train file for a specific configuration."""
-    return get_train_dir(config) / config.train.Y.fn
+    if cfg.version == "2":
+        y_fn = (
+            Path(config.train.dir).resolve() / config.product_code / config.train.Y.fn
+        )
+    else:
+        y_fn = get_train_dir(config) / config.train.Y.fn
+
+    if not y_fn.exists():
+        raise FileNotFoundError(
+            f"Y file not found: {y_fn}. Perhaps you selected the wrong config version?"
+        )
+    return y_fn
 
 
 def get_autocorr_ranges_fn(config: ConfigBox = cfg) -> Path:

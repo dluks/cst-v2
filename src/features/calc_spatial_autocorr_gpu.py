@@ -1,31 +1,192 @@
 """
-Calculates spatial autocorrelation for each trait in a feature set using GPU
-acceleration.
+Calculates spatial autocorrelation for a single trait using GPU acceleration.
+
+This module computes variograms using great-circle (Haversine) distances on
+lat/lon coordinates, providing scientifically accurate pairwise distances for
+global data. Key features:
+
+- Great-circle distances for accurate global spatial analysis
+- Self-pair exclusion and upper-triangular-only computation (no double-counting)
+- H3 hierarchical spatial blocking tuned to sample density
+- Adaptive log-binning based on nearest-neighbor distances
+- Constrained range parameter fitting to prevent unrealistic extrapolation
+- Pair-weighted combination of chunk estimates
+
+Coordinates are expected in (lon, lat) degrees (EPSG:4326) or will be
+transformed to lat/lon if in a different CRS.
 """
 
+import argparse
 import logging
-import shutil
 from pathlib import Path
 
 import dask.dataframe as dd
+import h3
 import numpy as np
 import pandas as pd
 import torch
 import utm
 from box import ConfigBox
-from dask import compute, delayed
+from dask import compute
 from pyproj import Transformer
 from torch.optim.adam import Adam
 
 from src.conf.conf import get_config
 from src.conf.environment import detect_system, log
 from src.utils.dask_utils import close_dask, init_dask
-from src.utils.dataset_utils import get_autocorr_ranges_fn, get_y_fn
-from src.utils.trait_utils import get_active_traits
+
+
+def cli() -> argparse.Namespace:
+    """Command line interface for calculating spatial autocorrelation."""
+    parser = argparse.ArgumentParser(
+        description="Calculate spatial autocorrelation for a single trait using GPU "
+        "acceleration."
+    )
+    parser.add_argument("-d", "--debug", action="store_true", help="Enable debug mode.")
+    parser.add_argument(
+        "-p",
+        "--params",
+        type=str,
+        help="Path to a params.yaml.",
+    )
+    parser.add_argument(
+        "-o", "--overwrite", action="store_true", help="Overwrite existing files."
+    )
+    parser.add_argument(
+        "-t",
+        "--trait",
+        type=str,
+        required=True,
+        help="Trait name to process.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="Output directory for trait result.",
+    )
+    return parser.parse_args()
+
 
 # Available GPUs
 GPU_DEVICES = []  # Will be populated from syscfg
 CURRENT_GPU_IDX = 0
+
+
+def main(args: argparse.Namespace) -> None:
+    """Main function for calculating spatial autocorrelation for a single trait."""
+    # Import locally to avoid module-level config loading
+    from src.utils.dataset_utils import get_y_fn
+
+    # Load config with params if provided
+    params_path = Path(args.params).resolve() if args.params else None
+    log.info("Loading config from %s", params_path or "default")
+    cfg = get_config(params_path)
+
+    syscfg = cfg[detect_system()]["calc_spatial_autocorr"]
+
+    if args.debug:
+        log.info("Running in debug mode...")
+        log.setLevel(logging.DEBUG)
+
+    # Set up output path
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_fp = output_dir / f"spatial_autocorr_{args.trait}.parquet"
+
+    # Check if output already exists
+    if output_fp.exists() and not args.overwrite:
+        log.warning("Output file already exists: %s", output_fp)
+        log.warning("Use --overwrite flag to overwrite existing files.")
+        return
+
+    # Set GPU devices from configuration
+    if hasattr(syscfg, "gpu_ids"):
+        set_gpu_devices(syscfg.gpu_ids)
+        log.info(f"Set GPU devices from config: {GPU_DEVICES}")
+    else:
+        log.warning("No GPU IDs specified in config, defaulting to [0]")
+        set_gpu_devices([0])
+
+    # Check GPU availability
+    using_gpu = check_gpu_availability()
+    if not using_gpu:
+        log.warning("Falling back to CPU calculations")
+
+    y_fn = get_y_fn(cfg)
+
+    log.info("Initializing Dask...")
+    client, _ = init_dask(
+        dashboard_address=cfg.dask_dashboard,
+        n_workers=syscfg.n_workers,
+        threads_per_worker=1,
+    )
+
+    # Use only sPlot data to calculate spatial autocorrelation
+    log.info("Reading sPlot features from %s...", y_fn)
+    valid_cols = (
+        dd.read_parquet(y_fn).columns.difference(["x", "y", "source"]).to_list()
+    )
+
+    # Validate trait exists
+    if args.trait not in valid_cols:
+        log.error(f"Trait '{args.trait}' not found in active traits: {valid_cols}")
+        close_dask(client)
+        return
+
+    log.info(f"Processing trait: {args.trait}")
+
+    # Read only the specified trait (including x and y coordinates)
+    y_df = (
+        dd.read_parquet(y_fn, columns=["x", "y", "source", args.trait])
+        .query("source == 's'")
+        .drop(columns=["source"])
+        .dropna(subset=[args.trait])
+        .reset_index(drop=True)
+        .astype(np.float32)
+        .compute()
+    )
+
+    log.info(
+        "Using coordinates in %s (will compute great-circle distances)...",
+        cfg.crs,
+    )
+    # Keep original coordinates in lat/lon for great-circle distance calculation
+    # Note: Assuming cfg.crs is in lat/lon format (e.g., EPSG:4326)
+    # If not, we need to transform to lat/lon first
+    if cfg.crs != "EPSG:4326":
+        log.info("Transforming coordinates from %s to EPSG:4326 (lat/lon)...", cfg.crs)
+        transformer = Transformer.from_crs(cfg.crs, "EPSG:4326", always_xy=True)
+        orig_x = y_df["x"].copy()
+        orig_y = y_df["y"].copy()
+        index = y_df.index
+
+        # Transform to lat/lon
+        x, y = transformer.transform(orig_x, orig_y)
+
+        y_df = y_df.assign(
+            x=pd.Series(x, index=index),
+            y=pd.Series(y, index=index),
+        )
+    else:
+        log.info(
+            "Coordinates already in EPSG:4326 (lat/lon), no transformation needed."
+        )
+
+    vgram_kwargs = {"n_max": 18000, "nlags": 50, "log_binning": True}
+
+    # Compute directly without Dask delayed overhead
+    log.info(f"Computing range statistics for trait: {args.trait}...")
+
+    # Call the function directly (it's not decorated with @delayed)
+    ranges_df = _single_trait_ranges(y_df, args.trait, cfg, syscfg, vgram_kwargs)
+
+    close_dask(client)
+
+    # Save results
+    log.info("Saving trait result to %s...", output_fp)
+    ranges_df.to_parquet(output_fp)
+    log.info(f"Successfully saved result for trait: {args.trait}")
 
 
 def set_gpu_devices(gpu_ids):
@@ -47,7 +208,6 @@ def get_next_gpu() -> int:
     return gpu_id
 
 
-@delayed
 def get_utm_zones(x: np.ndarray, y: np.ndarray) -> tuple[list, list, list]:
     """
     Converts latitude and longitude coordinates to UTM zones.
@@ -131,33 +291,50 @@ def spherical_model(
     return result
 
 
-def _transform_coords_to_wgs84(
-    coords_tensor: torch.Tensor, crs: str, device: torch.device
+def _calculate_haversine_distance(
+    coords1: torch.Tensor, coords2: torch.Tensor, R: float = 6371000.0
 ) -> torch.Tensor:
     """
-    Transform coordinates from the given CRS to WGS84 (lat/lon).
+    Calculate great-circle distances using Haversine formula.
 
     Args:
-        coords_tensor (torch.Tensor): Coordinates tensor
-        crs (str): Source coordinate reference system
-        device (torch.device): PyTorch device
+        coords1 (torch.Tensor): First set of coordinates [n, 2] in
+            (lon, lat) degrees
+        coords2 (torch.Tensor): Second set of coordinates [m, 2] in
+            (lon, lat) degrees
+        R (float): Earth radius in meters (default: 6371 km)
 
     Returns:
-        torch.Tensor: Transformed coordinates in WGS84
+        torch.Tensor: Great-circle distances in meters [n, m]
     """
+    # coords1: [n, 2], coords2: [m, 2] in (lon, lat) degrees
+    # Convert to radians
+    coords1_rad = coords1 * (torch.pi / 180.0)
+    coords2_rad = coords2 * (torch.pi / 180.0)
 
-    if crs == "EPSG:4326":
-        return coords_tensor
+    # Extract lon, lat
+    lon1 = coords1_rad[:, 0].unsqueeze(1)  # [n, 1]
+    lat1 = coords1_rad[:, 1].unsqueeze(1)  # [n, 1]
+    lon2 = coords2_rad[:, 0].unsqueeze(0)  # [1, m]
+    lat2 = coords2_rad[:, 1].unsqueeze(0)  # [1, m]
 
-    # Create transformer on CPU
-    transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+    # Haversine formula:
+    # d = R * arccos(sin(lat1)*sin(lat2) + cos(lat1)*cos(lat2)*cos(dlon))
+    # Using the numerically stable haversine formulation:
+    # a = sin²(Δlat/2) + cos(lat1)*cos(lat2)*sin²(Δlon/2)
+    # c = 2*atan2(√a, √(1-a))
+    # d = R * c
 
-    # Convert to numpy, transform, then back to tensor
-    coords_np = coords_tensor.cpu().numpy()
-    lon, lat = transformer.transform(coords_np[:, 0], coords_np[:, 1])
+    dlat = lat2 - lat1  # [n, m]
+    dlon = lon2 - lon1  # [n, m]
 
-    # Replace coords_tensor with lat/lon coordinates
-    return torch.tensor(np.column_stack([lon, lat]), dtype=torch.float32, device=device)
+    a = (
+        torch.sin(dlat / 2) ** 2
+        + torch.cos(lat1) * torch.cos(lat2) * torch.sin(dlon / 2) ** 2
+    )
+    c = 2 * torch.atan2(torch.sqrt(a), torch.sqrt(1 - a))
+
+    return R * c  # [n, m]
 
 
 def _estimate_max_distance(coords_tensor: torch.Tensor, n_samples: int) -> float:
@@ -165,7 +342,7 @@ def _estimate_max_distance(coords_tensor: torch.Tensor, n_samples: int) -> float
     Estimate maximum distance from a subset of data points.
 
     Args:
-        coords_tensor (torch.Tensor): Coordinates tensor
+        coords_tensor (torch.Tensor): Coordinates tensor in (lon, lat) degrees
         n_samples (int): Total number of samples
 
     Returns:
@@ -174,48 +351,68 @@ def _estimate_max_distance(coords_tensor: torch.Tensor, n_samples: int) -> float
     with torch.no_grad():
         # Estimate max distance from a subset of data
         subset_size = min(1000, n_samples)
-        indices = torch.randperm(n_samples)[:subset_size]
+        indices = torch.randperm(n_samples, device=coords_tensor.device)[:subset_size]
         subset_coords = coords_tensor[indices]
 
-        # Calculate haversine distances for the subset
-        lons1 = subset_coords[:, 0].unsqueeze(1)  # [subset_size, 1]
-        lats1 = subset_coords[:, 1].unsqueeze(1)  # [subset_size, 1]
-        lons2 = subset_coords[:, 0].unsqueeze(0)  # [1, subset_size]
-        lats2 = subset_coords[:, 1].unsqueeze(0)  # [1, subset_size]
+        # Calculate great-circle distances for the subset
+        subset_dists = _calculate_haversine_distance(subset_coords, subset_coords)
 
-        # Use the existing haversine distance function
-        subset_dists = _calculate_haversine_distance(lons1, lats1, lons2, lats2)
+        max_dist = float(subset_dists.max().item() * 0.7)  # Use 70% of max distance
+        log.debug(
+            f"Estimated max_dist: {max_dist:.2f}m from {subset_size} points, "
+            f"raw_max={subset_dists.max().item():.2f}"
+        )
+        return max_dist
 
-        return float(subset_dists.max().item() * 0.7)  # Use 70% of max distance
 
-
-def _calculate_haversine_distance(
-    lons1: torch.Tensor, lats1: torch.Tensor, lons2: torch.Tensor, lats2: torch.Tensor
-) -> torch.Tensor:
+def _estimate_min_distance(
+    coords_tensor: torch.Tensor, n_samples: int, percentile: float = 0.01
+) -> float:
     """
-    Calculate haversine distances between two sets of coordinates.
+    Estimate minimum distance for log-binning using nearest-neighbor distances.
+
+    Uses a percentile of nearest-neighbor distances to ensure short lags are
+    captured for nugget estimation.
 
     Args:
-        lons1 (torch.Tensor): First set of longitudes
-        lats1 (torch.Tensor): First set of latitudes
-        lons2 (torch.Tensor): Second set of longitudes
-        lats2 (torch.Tensor): Second set of latitudes
+        coords_tensor (torch.Tensor): Coordinates tensor in (lon, lat) degrees
+        n_samples (int): Total number of samples
+        percentile (float): Percentile of nearest-neighbor distances to use
+            (default: 0.01 = 1st percentile)
 
     Returns:
-        torch.Tensor: Haversine distances in kilometers
+        float: Estimated minimum distance in meters
     """
-    # Convert to radians
-    lons1, lats1 = torch.deg2rad(lons1), torch.deg2rad(lats1)
-    lons2, lats2 = torch.deg2rad(lons2), torch.deg2rad(lats2)
+    with torch.no_grad():
+        # Sample a subset for efficiency
+        subset_size = min(2000, n_samples)
+        indices = torch.randperm(n_samples, device=coords_tensor.device)[:subset_size]
+        subset_coords = coords_tensor[indices]
 
-    # Haversine formula
-    dlon = lons2 - lons1
-    dlat = lats2 - lats1
-    a = (
-        torch.sin(dlat / 2) ** 2
-        + torch.cos(lats1) * torch.cos(lats2) * torch.sin(dlon / 2) ** 2
-    )
-    return 2 * 6371000 * torch.asin(torch.sqrt(a))  # Earth radius in m
+        # Calculate pairwise distances
+        dists = _calculate_haversine_distance(subset_coords, subset_coords)
+
+        # For each point, find nearest neighbor (exclude self by masking diagonal)
+        diagonal_mask = torch.eye(
+            subset_size, device=coords_tensor.device, dtype=torch.bool
+        )
+        dists_masked = dists.masked_fill(diagonal_mask, float("inf"))
+
+        # Get minimum distance for each point (nearest neighbor)
+        nearest_neighbor_dists = dists_masked.min(dim=1).values
+
+        # Use a percentile of these distances as minimum bin edge
+        min_dist = float(torch.quantile(nearest_neighbor_dists, percentile).item())
+
+        # Ensure a reasonable lower bound (500m) to avoid numerical issues
+        # but don't force it higher than necessary
+        min_dist = max(500.0, min_dist)
+
+        log.debug(
+            f"Estimated min_dist: {min_dist:.2f}m "
+            f"(p{percentile * 100:.1f} of nearest-neighbor distances)"
+        )
+        return min_dist
 
 
 def _compute_experimental_variogram(
@@ -229,8 +426,11 @@ def _compute_experimental_variogram(
     """
     Compute the experimental variogram from coordinates and values.
 
+    Excludes self-pairs and avoids double-counting by only processing
+    upper-triangular pairs (j >= i).
+
     Args:
-        coords_tensor (torch.Tensor): Coordinates tensor
+        coords_tensor (torch.Tensor): Coordinates tensor in (lon, lat) degrees
         values_tensor (torch.Tensor): Values tensor
         bin_edges (torch.Tensor): Bin edges for distance binning
         nlags (int): Number of lags
@@ -246,28 +446,34 @@ def _compute_experimental_variogram(
     gamma_sum = torch.zeros(nlags, device=device)
     gamma_counts = torch.zeros(nlags, device=device)
 
-    # Process data in chunks
+    # Process data in chunks, only upper-triangular to avoid double-counting
     for i in range(0, n_samples, chunk_size):
         i_end = min(i + chunk_size, n_samples)
         chunk_coords = coords_tensor[i:i_end]
         chunk_values = values_tensor[i:i_end]
 
-        for j in range(0, n_samples, chunk_size):
+        # Start j from i to process only upper-triangular pairs
+        for j in range(i, n_samples, chunk_size):
             j_end = min(j + chunk_size, n_samples)
 
-            # Get coordinates for both chunks
-            lons1 = chunk_coords[:, 0].unsqueeze(1)  # [chunk_size, 1]
-            lats1 = chunk_coords[:, 1].unsqueeze(1)  # [chunk_size, 1]
-            lons2 = coords_tensor[j:j_end, 0].unsqueeze(0)  # [1, chunk_size]
-            lats2 = coords_tensor[j:j_end, 1].unsqueeze(0)  # [1, chunk_size]
-
-            # Calculate haversine distances
-            dists = _calculate_haversine_distance(lons1, lats1, lons2, lats2)
+            # Calculate great-circle distances
+            dists = _calculate_haversine_distance(chunk_coords, coords_tensor[j:j_end])
 
             # Calculate pairwise semivariances
             v1 = chunk_values.unsqueeze(1)
             v2 = values_tensor[j:j_end].unsqueeze(0)
             sv = 0.5 * (v1 - v2) ** 2
+
+            # When i == j block, exclude diagonal (self-pairs)
+            if i == j:
+                # Create mask to exclude diagonal elements
+                chunk_size_i = i_end - i
+                chunk_size_j = j_end - j
+                diagonal_mask = torch.eye(
+                    chunk_size_i, chunk_size_j, device=device, dtype=torch.bool
+                )
+                # Zero out diagonal in distances and semivariances
+                dists = dists.masked_fill(diagonal_mask, float("inf"))
 
             # Bin the semivariances by distance
             for lag in range(nlags):
@@ -283,36 +489,66 @@ def _fit_variogram_model(
     gamma: torch.Tensor,
     valid_lags: torch.Tensor,
     device: torch.device,
+    min_range: float | None = None,
+    max_range: float | None = None,
 ) -> tuple[float, float, float, float]:
     """
     Fit a spherical variogram model to the experimental variogram.
+
+    Constrains the range parameter to be within [min_range, max_range] using
+    a sigmoid transformation to prevent unrealistic range estimates.
 
     Args:
         bin_centers (torch.Tensor): Centers of distance bins
         gamma (torch.Tensor): Experimental variogram values
         valid_lags (torch.Tensor): Mask of valid lags
         device (torch.device): PyTorch device
+        min_range (float | None): Minimum allowed range (default: first bin center)
+        max_range (float | None): Maximum allowed range (default: last bin edge)
 
     Returns:
         tuple[float, float, float, float]: Range, nugget, sill, and MSE
     """
+    bin_centers_valid = bin_centers[valid_lags]
+    gamma_valid = gamma[valid_lags]
+
+    # Check if we have any valid lags
+    if bin_centers_valid.shape[0] == 0:
+        raise ValueError(
+            "No valid distance bins found for variogram fitting. "
+            "This may indicate that all distances fall outside the bin range, "
+            "or that there are insufficient pairs at any distance lag."
+        )
+
     with torch.no_grad():
         # Initial parameter estimates
-        nugget_init = (
-            gamma[valid_lags][0].item() if gamma[valid_lags].shape[0] > 0 else 0.0
-        )
-        sill_init = gamma[valid_lags][-5:].mean().item() - nugget_init
-        range_init = bin_centers[valid_lags][-1].item() * 0.6
+        nugget_init = gamma_valid[0].item() if gamma_valid.shape[0] > 0 else 0.0
+        sill_init = gamma_valid[-5:].mean().item() - nugget_init
+        range_init = bin_centers_valid[-1].item() * 0.6
+
+        # Set range bounds if not provided
+        if min_range is None:
+            min_range = bin_centers_valid[0].item()
+        if max_range is None:
+            max_range = bin_centers_valid[-1].item()
+
+        # Transform initial range to unconstrained space
+        # range = min_range + (max_range - min_range) * sigmoid(range_param)
+        # Inverse: range_param = logit((range - min_range) / (max_range - min_range))
+        range_normalized = (range_init - min_range) / (max_range - min_range)
+        range_normalized = max(0.01, min(0.99, range_normalized))  # Clip to valid range
+        range_param_init = torch.logit(torch.tensor(range_normalized)).item()
 
     # Fit parameters using optimization
+    # nugget and sill use softplus, range uses sigmoid with bounds
     params = torch.tensor(
-        [nugget_init, sill_init, range_init], device=device, requires_grad=True
+        [nugget_init, sill_init, range_param_init], device=device, requires_grad=True
     )
 
     optimizer = Adam([params], lr=0.01)
 
-    bin_centers_valid = bin_centers[valid_lags]
-    gamma_valid = gamma[valid_lags]
+    min_range_tensor = torch.tensor(min_range, device=device)
+    max_range_tensor = torch.tensor(max_range, device=device)
 
     for _ in range(500):
         optimizer.zero_grad()
@@ -321,13 +557,25 @@ def _fit_variogram_model(
         # Ensure parameters are positive
         nugget_pos = torch.nn.functional.softplus(nugget)
         sill_pos = torch.nn.functional.softplus(sill)
-        range_pos = torch.nn.functional.softplus(range_param)
+
+        # Constrain range to [min_range, max_range] using sigmoid
+        range_pos = min_range_tensor + (
+            max_range_tensor - min_range_tensor
+        ) * torch.sigmoid(range_param)
 
         # Calculate predicted values using spherical model
         pred = spherical_model(bin_centers_valid, nugget_pos, sill_pos, range_pos)
 
-        # Calculate loss (MSE)
-        loss = torch.mean((pred - gamma_valid) ** 2)
+        # Calculate loss (MSE) with optional weak L2 penalty on range
+        mse_loss = torch.mean((pred - gamma_valid) ** 2)
+
+        # Add weak L2 penalty to prefer ranges toward the middle of the allowed range
+        # This helps prevent fitting to extreme values
+        range_penalty_weight = 0.0001
+        range_mid = (min_range_tensor + max_range_tensor) / 2
+        range_penalty = range_penalty_weight * ((range_pos - range_mid) ** 2)
+
+        loss = mse_loss + range_penalty
         loss.backward()
         optimizer.step()
 
@@ -336,9 +584,11 @@ def _fit_variogram_model(
         nugget, sill, range_param = params
         nugget = torch.nn.functional.softplus(nugget).item()
         sill = torch.nn.functional.softplus(sill).item()
-        range_val = torch.nn.functional.softplus(range_param).item()
+        range_val = (
+            min_range + (max_range - min_range) * torch.sigmoid(range_param)
+        ).item()
 
-        # Calculate final MSE
+        # Calculate final MSE (without penalty)
         pred = spherical_model(bin_centers_valid, nugget, sill, range_val)
         mse = torch.mean((pred - gamma_valid) ** 2).item()
 
@@ -355,19 +605,22 @@ def fit_variogram_gpu(
     log_binning: bool = False,
 ) -> tuple[float, float, float, float]:
     """
-    Fit a spherical variogram model using GPU acceleration with haversine distances.
+    Fit spherical variogram model using GPU with great-circle distances.
 
     Args:
-        coords (np.ndarray): Coordinates array of shape (n_samples, 2)
+        coords (np.ndarray): Coordinates array of shape (n_samples, 2) in
+            (lon, lat) degrees
         values (np.ndarray): Values array of shape (n_samples,)
         nlags (int): Number of distance lags
-        max_dist (float | None): Maximum distance to consider
+        max_dist (float | None): Maximum distance to consider (in meters)
         gpu_id (int): GPU device ID to use
         crs (str): Coordinate reference system of input coordinates
+            (unused, for API compatibility)
         log_binning (bool): Whether to use logarithmic binning
 
     Returns:
-        Tuple[float, float, float, float]: Estimated range, nugget, sill, and MSE
+        Tuple[float, float, float, float]: Estimated range, nugget,
+            sill, and MSE
     """
     # Set the GPU device
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
@@ -376,10 +629,17 @@ def fit_variogram_gpu(
     coords_tensor = torch.tensor(coords, dtype=torch.float32, device=device)
     values_tensor = torch.tensor(values, dtype=torch.float32, device=device)
 
-    # Transform coordinates to WGS84 (lat/lon) if needed
-    coords_tensor = _transform_coords_to_wgs84(coords_tensor, crs, device)
+    # Check for NaN or inf in coordinates
+    if torch.isnan(coords_tensor).any() or torch.isinf(coords_tensor).any():
+        n_nan = torch.isnan(coords_tensor).sum().item()
+        n_inf = torch.isinf(coords_tensor).sum().item()
+        raise ValueError(
+            f"Coordinates contain {n_nan} NaN and {n_inf} inf values! "
+            f"coords range: [{coords_tensor.min().item()}, "
+            f"{coords_tensor.max().item()}]"
+        )
 
-    # Calculate pairwise distances
+    # Calculate pairwise distances (coordinates are already in equidistant projection)
     n_samples = coords_tensor.shape[0]
 
     # Process in chunks to handle large datasets
@@ -390,12 +650,19 @@ def fit_variogram_gpu(
         max_dist = _estimate_max_distance(coords_tensor, n_samples)
 
     # Create distance bins - either linear or logarithmic
+    # Start at small epsilon to ensure zero distance never falls in any bin
+    epsilon = 1e-6  # 1 micrometer - effectively excludes self-pairs
+
     if log_binning:
         # Use logarithmic binning for adaptive bin sizes
-        # Add a small value to avoid log(0)
-        min_dist = max(
-            1000.0, max_dist * 0.001
-        )  # Minimum distance (1km or 0.1% of max)
+        # Estimate minimum distance from nearest-neighbor distribution
+        # to capture short lags crucial for nugget estimation
+        min_dist = _estimate_min_distance(coords_tensor, n_samples, percentile=0.01)
+
+        log.info(
+            f"Log-binning from {min_dist:.0f}m to {max_dist:.0f}m with {nlags} bins"
+        )
+
         bin_edges = torch.logspace(
             torch.log10(torch.tensor(min_dist)),
             torch.log10(torch.tensor(max_dist)),
@@ -403,8 +670,8 @@ def fit_variogram_gpu(
             device=device,
         )
     else:
-        # Use linear binning (original implementation)
-        bin_edges = torch.linspace(0, max_dist, nlags + 1, device=device)
+        # Use linear binning starting from epsilon (not 0)
+        bin_edges = torch.linspace(epsilon, max_dist, nlags + 1, device=device)
 
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
@@ -419,11 +686,28 @@ def fit_variogram_gpu(
         gamma = torch.zeros_like(gamma_counts)
         gamma[valid_lags] = gamma_sum[valid_lags] / gamma_counts[valid_lags]
 
-    # Fit variogram model
-    return _fit_variogram_model(bin_centers, gamma, valid_lags, device)
+        # Debug logging
+        n_valid = valid_lags.sum().item()
+        log.debug(
+            f"Variogram: {n_valid}/{nlags} bins with data, "
+            f"max_dist={max_dist:.0f}m, "
+            f"bin range=[{bin_edges[0]:.0f}, {bin_edges[-1]:.0f}]"
+        )
+        if n_valid == 0:
+            log.warning(
+                f"No valid distance bins! "
+                f"coords shape={coords_tensor.shape}, "
+                f"max_dist={max_dist:.2f}"
+            )
+
+    # Fit variogram model with range constraints
+    # Set max_range to the last bin edge to prevent unrealistic extrapolation
+    max_range_constraint = float(bin_edges[-1].item())
+    return _fit_variogram_model(
+        bin_centers, gamma, valid_lags, device, max_range=max_range_constraint
+    )
 
 
-@delayed
 def calculate_variogram_gpu(
     group: pd.DataFrame, data_col: str, **kwargs
 ) -> tuple[float, int]:
@@ -472,7 +756,7 @@ def calculate_variogram_gpu(
     max_dist = kwargs.get("max_dist")
 
     try:
-        # Fit variogram using GPU with haversine distances
+        # Fit variogram using GPU with Euclidean distances
         range_param, nugget, sill, mse = fit_variogram_gpu(
             coords=coords,
             values=values,
@@ -487,9 +771,18 @@ def calculate_variogram_gpu(
 
     except Exception as e:
         log.error(f"GPU variogram calculation failed: {e}")
+        import traceback
+
+        log.error(f"Full traceback:\n{traceback.format_exc()}")
         log.info("Falling back to CPU calculation...")
         # Fallback to CPU calculation if GPU fails
         from pykrige.ok import OrdinaryKriging
+
+        # Filter out GPU-specific parameters that OrdinaryKriging doesn't accept
+        gpu_specific_params = {"log_binning", "max_dist", "crs"}
+        filtered_kwargs = {
+            k: v for k, v in kwargs.items() if k not in gpu_specific_params
+        }
 
         orig_kwargs = {
             "variogram_model": "spherical",
@@ -497,77 +790,95 @@ def calculate_variogram_gpu(
             "anisotropy_scaling": 1,
             "anisotropy_angle": 0,
         }
-        orig_kwargs.update(**kwargs)
+        orig_kwargs.update(**filtered_kwargs)
 
         ok_vgram = OrdinaryKriging(
-            group["easting"], group["northing"], group[data_col], **orig_kwargs
+            group["x"], group["y"], group[data_col], **orig_kwargs
         )
         return ok_vgram.variogram_model_parameters[1], len(group)
 
 
-def copy_ref_to_dvc(
-    cfg: ConfigBox,
-) -> None:
-    """Copy the reference ranges file to the DVC-tracked location."""
-    fn = (
-        f"{Path(cfg.train.spatial_autocorr).stem}_"
-        f"{cfg.calc_spatial_autocorr.use_existing}"
-        f"{Path(cfg.train.spatial_autocorr).suffix}"
-    )
-    ranges_fn_ref = Path("reference", fn)
-    log.info("Using existing spatial autocorrelation ranges from %s...", ranges_fn_ref)
-    ranges_fn_dvc = get_autocorr_ranges_fn(cfg)
-
-    if ranges_fn_dvc.exists():
-        log.info("Overwriting existing spatial autocorrelation ranges...")
-        ranges_fn_dvc.unlink()
-    shutil.copy(ranges_fn_ref, ranges_fn_dvc)
-
-
-# def transform_coords_to_equidistant(
-#     coords: np.ndarray, from_crs: str, to_crs: str
-# ) -> np.ndarray:
-#     """
-#     Transform coordinates to equidistant projection.
-
-#     Args:
-#         coords (np.ndarray): The coordinates to transform.
-
-#     Returns:
-#         np.ndarray: The transformed coordinates.
-#     """
-#     # Transform coordinates to equidistant projection
-#     transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
-#     return np.asarray(transformer.transform(coords[:, 0], coords[:, 1]))
-
-
-def _assign_zones(df: pd.DataFrame, n_zones: int) -> pd.DataFrame:
+def transform_coords_to_equidistant(
+    coords: np.ndarray, from_crs: str, to_crs: str
+) -> np.ndarray:
     """
-    Assigns zones to the DataFrame based on x and y coordinates.
+    Transform coordinates to equidistant projection.
 
     Args:
-        df (pd.DataFrame): The DataFrame with x and y coordinates.
-        n_sectors (int): The number of sectors to divide the data into.
+        coords (np.ndarray): The coordinates to transform.
 
     Returns:
-        pd.DataFrame: The DataFrame with an additional 'zone' column.
+        np.ndarray: The transformed coordinates.
     """
-    df = df.assign(
-        easting=df.x + abs(df.x.min()),
-        northing=df.y + abs(df.y.min()),
-    )
-
-    x_bins = np.linspace(df.easting.min(), df.easting.max(), n_zones + 1)
-    y_bins = np.linspace(df.northing.min(), df.northing.max(), n_zones // 2 + 1)
-
-    x_zones = np.digitize(df.easting, x_bins) - 1
-    y_zones = np.digitize(df.northing, y_bins) - 1
-
-    df["zone"] = [f"{x}_{y}" for x, y in zip(x_zones, y_zones)]
-    return df.drop(columns=["easting", "northing"])
+    # Transform coordinates to equidistant projection
+    transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
+    return np.asarray(transformer.transform(coords[:, 0], coords[:, 1]))
 
 
-@delayed
+def _determine_h3_resolution(
+    n_samples: int, target_samples_per_cell: int = 5000
+) -> int:
+    """
+    Determine appropriate H3 resolution based on sample density.
+
+    H3 resolutions and approximate cell counts globally:
+    - res 0: ~122 cells (very coarse, ~4M km² per cell)
+    - res 1: ~842 cells (~600k km² per cell)
+    - res 2: ~5882 cells (~86k km² per cell)
+    - res 3: ~41162 cells (~12k km² per cell)
+    - res 4: ~288122 cells (~1800 km² per cell)
+    - res 5: ~2M cells (~252 km² per cell)
+
+    Args:
+        n_samples (int): Total number of samples
+        target_samples_per_cell (int): Target number of samples per H3 cell
+
+    Returns:
+        int: H3 resolution (0-5)
+    """
+    # Estimate desired number of cells
+    target_n_cells = max(1, n_samples // target_samples_per_cell)
+
+    # Map to appropriate H3 resolution
+    # Use global cell counts to estimate resolution
+    if target_n_cells <= 122:
+        return 0
+    elif target_n_cells <= 842:
+        return 1
+    elif target_n_cells <= 5882:
+        return 2
+    elif target_n_cells <= 41162:
+        return 3
+    elif target_n_cells <= 288122:
+        return 4
+    else:
+        return 5  # Maximum resolution we'll use for global data
+
+
+def _assign_h3_cells(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
+    """
+    Assign H3 cells to DataFrame based on lat/lon coordinates.
+
+    Args:
+        df (pd.DataFrame): DataFrame with 'x' (lon) and 'y' (lat) columns
+        resolution (int): H3 resolution level
+
+    Returns:
+        pd.DataFrame: DataFrame with additional 'h3_cell' column
+    """
+    # H3 expects (lat, lon) order
+    # Using h3.geo_to_h3 for h3-py v3.x or h3.latlng_to_cell for v4.x
+    try:
+        # Try v4.x API first
+        h3_cells = [
+            h3.latlng_to_cell(lat, lon, resolution) for lon, lat in zip(df.x, df.y)
+        ]
+    except AttributeError:
+        # Fall back to v3.x API
+        h3_cells = [h3.geo_to_h3(lat, lon, resolution) for lon, lat in zip(df.x, df.y)]
+    return df.assign(h3_cell=h3_cells)
+
+
 def _single_trait_ranges(
     ddf: pd.DataFrame,
     trait_col: str,
@@ -583,69 +894,71 @@ def _single_trait_ranges(
     # fixed_max_dist = 6_000_000  # 6000 km in meters - approximate half-Earth distance
     # vgram_kwargs["max_dist"] = fixed_max_dist
 
-    if cfg.crs == "EPSG:4326":
-        log.info("Adding UTM coordinates...")
+    # Calculate global variogram first (with smaller sample)
+    global_kwargs = vgram_kwargs.copy()
+    global_kwargs["n_max"] = min(30000, len(trait_df))
+    global_sample = (
+        trait_df.sample(global_kwargs["n_max"], random_state=42)
+        if len(trait_df) > global_kwargs["n_max"]
+        else trait_df
+    )
+    global_result = calculate_variogram_gpu(global_sample, trait_col, **global_kwargs)
 
-        trait_df = add_utm(trait_df)
+    # Then calculate by chunks for local patterns using H3 spatial blocking
+    if syscfg.n_chunks > 1:
+        log.info("Using H3 spatial blocking for robust local estimates...")
 
-        vgram_kwargs["crs"] = "EPSG:4326"
+        # Determine appropriate H3 resolution based on sample density
+        # Target ~5000 samples per cell for good local estimates
+        h3_resolution = _determine_h3_resolution(
+            len(trait_df), target_samples_per_cell=5000
+        )
+        log.info(f"Using H3 resolution {h3_resolution} for {len(trait_df)} samples")
+
+        # Assign H3 cells to each sample
+        trait_df = _assign_h3_cells(trait_df, h3_resolution)
+
+        # Filter to cells with sufficient samples for reliable variogram estimation
+        min_samples_per_cell = 100
+        cell_counts = trait_df.h3_cell.value_counts()
+        valid_cells = cell_counts[cell_counts >= min_samples_per_cell].index
+
+        log.info(
+            f"Found {len(valid_cells)} H3 cells with >={min_samples_per_cell} "
+            f"samples (out of {trait_df.h3_cell.nunique()} total cells)"
+        )
+
+        # Set max_samples per cell to balance representation
+        samples_per_chunk = min(10000, len(trait_df) // len(valid_cells))
+        vgram_kwargs["n_max"] = samples_per_chunk
+
         results = [
             calculate_variogram_gpu(group, trait_col, **vgram_kwargs)
-            for _, group in trait_df.groupby("zone")
+            for cell, group in trait_df.groupby("h3_cell")
+            if cell in valid_cells
         ]
 
-    elif cfg.crs == "EPSG:6933":
-        vgram_kwargs["crs"] = "EPSG:6933"
-
-        # Calculate global variogram first (with smaller sample)
-        global_kwargs = vgram_kwargs.copy()
-        global_kwargs["n_max"] = min(30000, len(trait_df))
-        global_sample = (
-            trait_df.sample(global_kwargs["n_max"], random_state=42)
-            if len(trait_df) > global_kwargs["n_max"]
-            else trait_df
-        )
-        global_result = calculate_variogram_gpu(
-            global_sample, trait_col, **global_kwargs
-        )
-
-        # Then calculate by chunks for local patterns
-        if syscfg.n_chunks > 1:
-            log.info("Using latitude bands for more consistent results...")
-            # Use latitude bands instead of arbitrary zones for more consistent results
-            trait_df = trait_df.assign(
-                lat_band=pd.cut(trait_df.y, bins=syscfg.n_chunks, labels=False)
-            )
-
-            # Set max_samples per chunk to balance representation
-            samples_per_chunk = min(10000, len(trait_df) // syscfg.n_chunks)
-            vgram_kwargs["n_max"] = samples_per_chunk
-
-            results = [
-                calculate_variogram_gpu(group, trait_col, **vgram_kwargs)
-                for _, group in trait_df.groupby("lat_band")
-            ]
-
-            # Add global result to the chunk results
-            results.append(global_result)
-        else:
-            results = [global_result]
-
+        # Add global result to the chunk results
+        results.append(global_result)
     else:
-        raise ValueError(f"Unknown CRS: {cfg.crs}")
+        results = [global_result]
 
     autocorr_ranges = list(compute(*results))
     if len(autocorr_ranges) == 1:
-        global_range, global_n = autocorr_ranges[0]
+        global_range, _ = autocorr_ranges[0]
     else:
-        global_range, global_n = autocorr_ranges[-1]
+        global_range, _ = autocorr_ranges[-1]
         autocorr_ranges = autocorr_ranges[:-1]
 
-    filt_ranges = [(r, n) for r, n in autocorr_ranges if n > 0]
+        filt_ranges = [
+            (r, n) for r, n in autocorr_ranges if isinstance(n, (int, float)) and n > 0
+        ]
 
-    # Weight the ranges by the number of samples used to calculate them
-    sample_sizes = np.array([n for _, n in filt_ranges])
-    weights = sample_sizes / sample_sizes.sum()
+        # Weight the ranges by the number of pairs used to calculate them
+        # Number of unique pairs = n*(n-1)/2 (excluding self-pairs and double-counting)
+        sample_sizes = np.array([n for _, n in filt_ranges])
+    n_pairs = sample_sizes * (sample_sizes - 1) / 2
+    weights = n_pairs / n_pairs.sum()
     ranges = np.array([r for r, _ in filt_ranges])
 
     # Create a new row and append it to the DataFrame
@@ -697,90 +1010,6 @@ def check_gpu_availability() -> bool:
     return True
 
 
-def main(cfg: ConfigBox = get_config()) -> None:
-    """Main function for calculating spatial autocorrelation."""
-    syscfg = cfg[detect_system()][cfg.model_res]["calc_spatial_autocorr"]
-    log.setLevel(logging.DEBUG)
-
-    if cfg.calc_spatial_autocorr.use_existing:
-        copy_ref_to_dvc(cfg)
-        return
-
-    # Set GPU devices from configuration
-    if hasattr(syscfg, "gpu_ids"):
-        set_gpu_devices(syscfg.gpu_ids)
-        log.info(f"Set GPU devices from config: {GPU_DEVICES}")
-    else:
-        log.warning("No GPU IDs specified in config, defaulting to [0]")
-        set_gpu_devices([0])
-
-    # Check GPU availability
-    using_gpu = check_gpu_availability()
-    if not using_gpu:
-        log.warning("Falling back to CPU calculations")
-
-    y_fn = get_y_fn(cfg)
-
-    log.info("Initializing Dask...")
-    client, _ = init_dask(
-        dashboard_address=cfg.dask_dashboard,
-        n_workers=syscfg.n_workers,
-        threads_per_worker=1,
-    )
-
-    # Use only sPlot data to calculate spatial autocorrelation
-    log.info("Reading sPlot features from %s...", y_fn)
-    valid_cols = get_active_traits(cfg)
-    y_ddf = (
-        dd.read_parquet(y_fn, columns=["x", "y", "source", *valid_cols])
-        .query("source == 's'")
-        .drop(columns=["source"])
-    )
-    y_cols = y_ddf.columns.difference(["x", "y"]).to_list()
-
-    vgram_kwargs = {"n_max": 18000, "nlags": 50, "log_binning": True}
-
-    results = [
-        _single_trait_ranges(
-            (
-                y_ddf[["x", "y", trait_col]]
-                .astype(np.float32)
-                .dropna(subset=[trait_col])
-                .reset_index(drop=True)
-            ),
-            trait_col,
-            cfg,
-            syscfg,
-            vgram_kwargs,
-        )
-        for trait_col in y_cols
-    ]
-
-    log.info("Computing range statistics for all traits...")
-    ranges_df = pd.concat(compute(*results), ignore_index=True)  # type: ignore
-
-    close_dask(client)
-
-    log.info("Saving range statistics to DataFrame...")
-    # Path to be checked into DVC
-    ranges_fn_dvc = get_autocorr_ranges_fn(cfg)
-
-    # Path to be used as reference when computing ranges for other resolutions.
-    # Tracked with git.
-    trait_stat = cfg.datasets.Y.trait_stats[cfg.datasets.Y.trait_stat - 1]
-    ranges_fn_ref = Path(
-        "reference",
-        f"{ranges_fn_dvc.stem}_{cfg.PFT}_{cfg.model_res}_{trait_stat}{ranges_fn_dvc.suffix}",
-    )
-
-    log.info("Saving spatial autocorrelation ranges to %s...", ranges_fn_dvc)
-    if ranges_fn_dvc.exists():
-        log.info("Overwriting existing spatial autocorrelation ranges...")
-        ranges_fn_dvc.unlink()
-
-    ranges_df.to_parquet(ranges_fn_dvc)
-    shutil.copy(ranges_fn_dvc, ranges_fn_ref)
-
-
 if __name__ == "__main__":
-    main()
+    args = cli()
+    main(args)
