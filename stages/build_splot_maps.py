@@ -11,21 +11,23 @@ Set USE_SLURM=false to use local execution by default, or use --local flag to ov
 """
 
 import argparse
-import os
 import subprocess
-import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from dotenv import load_dotenv
 from simple_slurm import Slurm
 
-# Load environment variables from .env file
-load_dotenv()
+# Setup environment and path
+from src.pipeline.entrypoint_utils import (
+    setup_environment,
+    determine_execution_mode,
+    setup_log_directory,
+    build_base_command,
+    add_common_args,
+    add_execution_args,
+)
 
-# Add project root to path to import src modules
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+project_root = setup_environment()
 
 from src.conf.conf import get_config  # noqa: E402
 
@@ -37,38 +39,8 @@ def cli() -> argparse.Namespace:
             "Submit Slurm jobs to build sPlot trait maps for all configured traits."
         )
     )
-    parser.add_argument(
-        "-p",
-        "--params",
-        type=str,
-        help="Path to parameters file.",
-    )
-    parser.add_argument(
-        "-o",
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing files.",
-    )
-    parser.add_argument(
-        "--partition",
-        type=str,
-        default="main",
-        help="Slurm partition to use.",
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help=(
-            "Force local parallel execution instead of Slurm "
-            "(overrides USE_SLURM env variable)."
-        ),
-    )
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=4,
-        help="Number of parallel jobs to run locally (default: 4).",
-    )
+    add_common_args(parser)
+    add_execution_args(parser, multi_job=True, n_jobs_default=4)
     return parser.parse_args()
 
 
@@ -76,11 +48,12 @@ def run_trait_job(
     trait: str, params_path: str | None, overwrite: bool
 ) -> tuple[str, int]:
     """Run a single trait job locally."""
-    cmd = ["python", "-m", "src.data.build_splot_map", "--trait", trait]
-    if params_path:
-        cmd.extend(["--params", params_path])
-    if overwrite:
-        cmd.append("--overwrite")
+    cmd = build_base_command(
+        "src.data.build_splot_map",
+        params_path=params_path,
+        overwrite=overwrite,
+        extra_args={"--trait": trait}
+    )
 
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=False, text=True)
@@ -143,12 +116,12 @@ def run_slurm(
     job_ids = []
     for trait in trait_names:
         # Construct the command
-        cmd_parts = ["python", "-m", "src.data.build_splot_map"]
-        if params_path:
-            cmd_parts.extend(["--params", params_path])
-        if overwrite:
-            cmd_parts.append("--overwrite")
-        cmd_parts.extend(["--trait", trait])
+        cmd_parts = build_base_command(
+            "src.data.build_splot_map",
+            params_path=params_path,
+            overwrite=overwrite,
+            extra_args={"--trait": trait}
+        )
         command = " ".join(cmd_parts)
 
         # Create Slurm job configuration
@@ -184,22 +157,15 @@ def main() -> None:
     print(f"Found {len(trait_names)} traits to process: {', '.join(trait_names)}")
 
     # Determine execution mode
-    # Check environment variable USE_SLURM (default to False if not set)
-    use_slurm_env = os.getenv("USE_SLURM", "false").lower() in ("true", "1", "yes", "t")
-
-    # Command-line flag --local overrides environment variable
-    use_local = args.local or not use_slurm_env
+    use_local, mode = determine_execution_mode(args.local)
+    print(f"Execution mode: {mode}")
 
     if use_local:
         # Run locally in parallel
-        mode = "local (--local flag)" if args.local else "local (USE_SLURM=false)"
-        print(f"Execution mode: {mode}")
         run_local(trait_names, str(params_path), args.overwrite, args.n_jobs)
     else:
         # Submit to Slurm
-        print("Execution mode: Slurm")
-        log_dir = Path("logs/build_splot_maps")
-        log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir = setup_log_directory("build_splot_maps")
         print(f"Logs will be written to: {log_dir.absolute()}")
         run_slurm(
             trait_names, str(params_path), args.overwrite, args.partition, log_dir

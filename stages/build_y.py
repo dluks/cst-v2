@@ -14,22 +14,25 @@ Set USE_SLURM=false to use local execution by default, or use --local flag to ov
 """
 
 import argparse
-import os
 import subprocess
 import sys
-import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
-from dotenv import load_dotenv
 from simple_slurm import Slurm
 
-# Load environment variables from .env file
-load_dotenv()
+# Setup environment and path
+from src.pipeline.entrypoint_utils import (
+    setup_environment,
+    determine_execution_mode,
+    setup_log_directory,
+    build_base_command,
+    add_common_args,
+    add_execution_args,
+    wait_for_job_completion,
+)
 
-# Add project root to path to import src modules
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+project_root = setup_environment()
 
 from src.conf.conf import get_config  # noqa: E402
 
@@ -39,148 +42,21 @@ def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=("Process Y data per trait in parallel, then merge into Y.parquet.")
     )
-    parser.add_argument(
-        "-p",
-        "--params",
-        type=str,
-        help="Path to parameters file.",
-    )
-    parser.add_argument(
-        "-o",
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing files.",
-    )
-    parser.add_argument(
-        "--partition",
-        type=str,
-        default="main",
-        help="Slurm partition to use.",
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help=(
-            "Force local parallel execution instead of Slurm "
-            "(overrides USE_SLURM env variable)."
-        ),
-    )
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=4,
-        help="Number of parallel jobs to run locally (default: 4).",
-    )
+    add_common_args(parser)
+    add_execution_args(parser, multi_job=True, n_jobs_default=4)
     return parser.parse_args()
-
-
-def check_job_status(job_id: int | str) -> str:
-    """
-    Check the status of a Slurm job.
-
-    Args:
-        job_id: Slurm job ID
-
-    Returns:
-        Job state: 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'NOT_FOUND'
-    """
-    try:
-        result = subprocess.run(
-            ["squeue", "-j", str(job_id), "-h", "-o", "%T"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-
-        # Job not in queue - check sacct for completed/failed jobs
-        result = subprocess.run(
-            ["sacct", "-j", str(job_id), "-n", "-X", "-o", "State"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            state = result.stdout.strip().split()[0]
-            return state
-
-        return "NOT_FOUND"
-
-    except (subprocess.TimeoutExpired, Exception) as e:
-        print(f"Warning: Could not check job status: {e}")
-        return "UNKNOWN"
-
-
-def wait_for_job_completion(
-    job_id: int | str, job_name: str, poll_interval: int = 30
-) -> bool:
-    """
-    Wait for a Slurm job to complete.
-
-    Args:
-        job_id: Slurm job ID
-        job_name: Name of the job (for logging)
-        poll_interval: Seconds to wait between status checks
-
-    Returns:
-        True if job completed successfully, False otherwise
-    """
-    print(f"\nWaiting for {job_name} (job {job_id}) to complete...")
-    print(f"Checking status every {poll_interval} seconds...")
-
-    start_time = time.time()
-    last_status = None
-
-    while True:
-        status = check_job_status(job_id)
-
-        if status != last_status:
-            elapsed = int(time.time() - start_time)
-            print(f"[{elapsed}s] Job {job_id} status: {status}")
-            last_status = status
-
-        if status in ["COMPLETED"]:
-            print(f"✓ Job {job_id} completed successfully!")
-            return True
-        elif status in [
-            "FAILED",
-            "CANCELLED",
-            "TIMEOUT",
-            "NODE_FAIL",
-            "OUT_OF_MEMORY",
-        ]:
-            print(f"✗ Job {job_id} failed with status: {status}")
-            return False
-        elif status in ["PENDING", "RUNNING", "CONFIGURING"]:
-            # Job still running, continue waiting
-            time.sleep(poll_interval)
-        else:
-            # Unknown or not found - could mean it completed before polling started
-            # Try to verify output file exists
-            time.sleep(5)
-            status = check_job_status(job_id)
-            if status == "NOT_FOUND":
-                msg = (
-                    f"Warning: Job {job_id} not found in queue. "
-                    "May have already completed."
-                )
-                print(msg)
-                return True
-            time.sleep(poll_interval)
 
 
 def run_trait_job(
     trait: str, params_path: str | None, overwrite: bool
 ) -> tuple[str, int]:
     """Run a single trait job locally."""
-    cmd = ["python", "-m", "src.features.build_y_trait", "--trait", trait]
-    if params_path:
-        cmd.extend(["--params", params_path])
-    if overwrite:
-        cmd.append("--overwrite")
+    cmd = build_base_command(
+        "src.features.build_y_trait",
+        params_path=params_path,
+        overwrite=overwrite,
+        extra_args={"--trait": trait}
+    )
 
     print(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=False, text=True)
@@ -189,11 +65,11 @@ def run_trait_job(
 
 def run_merge_step(params_path: str | None, overwrite: bool) -> int:
     """Run the merge step to combine all trait files."""
-    cmd = ["python", "-m", "src.features.merge_y_traits"]
-    if params_path:
-        cmd.extend(["--params", params_path])
-    if overwrite:
-        cmd.append("--overwrite")
+    cmd = build_base_command(
+        "src.features.merge_y_traits",
+        params_path=params_path,
+        overwrite=overwrite
+    )
 
     print(f"\nRunning merge step: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=False, text=True)
@@ -268,12 +144,12 @@ def run_slurm(
     trait_job_ids = []
     for trait in trait_names:
         # Construct the command
-        cmd_parts = ["python", "-m", "src.features.build_y_trait"]
-        if params_path:
-            cmd_parts.extend(["--params", params_path])
-        if overwrite:
-            cmd_parts.append("--overwrite")
-        cmd_parts.extend(["--trait", trait])
+        cmd_parts = build_base_command(
+            "src.features.build_y_trait",
+            params_path=params_path,
+            overwrite=overwrite,
+            extra_args={"--trait": trait}
+        )
         command = " ".join(cmd_parts)
 
         # Create Slurm job configuration
@@ -303,11 +179,11 @@ def run_slurm(
     dependency_str = "afterok:" + ":".join(str(jid) for jid in trait_job_ids)
 
     # Construct merge command
-    merge_cmd_parts = ["python", "-m", "src.features.merge_y_traits"]
-    if params_path:
-        merge_cmd_parts.extend(["--params", params_path])
-    if overwrite:
-        merge_cmd_parts.append("--overwrite")
+    merge_cmd_parts = build_base_command(
+        "src.features.merge_y_traits",
+        params_path=params_path,
+        overwrite=overwrite
+    )
     merge_command = " ".join(merge_cmd_parts)
 
     # Create Slurm job for merge with dependencies
@@ -358,15 +234,10 @@ def main() -> None:
     print(f"Found {len(trait_names)} traits to process: {', '.join(trait_names)}")
 
     # Determine execution mode
-    # Check environment variable USE_SLURM (default to False if not set)
-    use_slurm_env = os.getenv("USE_SLURM", "false").lower() in ("true", "1", "yes", "t")
-
-    # Command-line flag --local overrides environment variable
-    use_local = args.local or not use_slurm_env
+    use_local, mode = determine_execution_mode(args.local)
 
     if use_local:
         # Run locally in parallel
-        mode = "local (--local flag)" if args.local else "local (USE_SLURM=false)"
         print(f"Execution mode: {mode}")
         run_local(
             trait_names,
@@ -377,8 +248,7 @@ def main() -> None:
     else:
         # Submit to Slurm
         print("Execution mode: Slurm with job dependencies")
-        log_dir = Path("logs/build_y")
-        log_dir.mkdir(parents=True, exist_ok=True)
+        log_dir = setup_log_directory("build_y")
         print(f"Logs will be written to: {log_dir.absolute()}")
         run_slurm(
             trait_names,

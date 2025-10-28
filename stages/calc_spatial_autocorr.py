@@ -13,23 +13,26 @@ import argparse
 import os
 import subprocess
 import sys
-import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import dask.dataframe as dd
 import pandas as pd
-from dotenv import load_dotenv
 from simple_slurm import Slurm
 
 from src.conf.conf import get_config
 
-# Load environment variables from .env file
-load_dotenv()
+# Setup environment and path
+from src.pipeline.entrypoint_utils import (
+    setup_environment,
+    determine_execution_mode,
+    build_base_command,
+    add_common_args,
+    add_resource_args,
+    wait_for_job_completion,
+)
 
-# Add project root to path to import src modules
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+project_root = setup_environment()
 
 
 def cli() -> argparse.Namespace:
@@ -37,17 +40,14 @@ def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Calculate spatial autocorrelation locally or on Slurm."
     )
-    parser.add_argument(
-        "-p",
-        "--params",
-        type=str,
-        help="Path to parameters file.",
-    )
-    parser.add_argument(
-        "-s",
-        "--sys-params",
-        type=str,
-        help="Path to system parameters file.",
+    add_common_args(parser)
+    add_resource_args(
+        parser,
+        time_default="06:00:00",
+        cpus_default=8,
+        mem_default="64GB",
+        include_gpus=True,
+        gpus_default="1"
     )
     parser.add_argument(
         "-d",
@@ -56,52 +56,9 @@ def cli() -> argparse.Namespace:
         help="Enable debug mode.",
     )
     parser.add_argument(
-        "-o",
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing files.",
-    )
-    parser.add_argument(
-        "--partition",
-        type=str,
-        default="main",
-        help="Slurm partition to use (default: main).",
-    )
-    parser.add_argument(
-        "--local",
-        action="store_true",
-        help=(
-            "Force local execution instead of Slurm (overrides USE_SLURM env variable)."
-        ),
-    )
-    parser.add_argument(
         "--no-wait",
         action="store_true",
         help="Don't wait for Slurm job to complete (submit and exit).",
-    )
-    parser.add_argument(
-        "--time",
-        type=str,
-        default="06:00:00",
-        help="Time limit for Slurm job (default: 06:00:00).",
-    )
-    parser.add_argument(
-        "--cpus",
-        type=int,
-        default=8,
-        help="Number of CPUs for Slurm job (default: 8).",
-    )
-    parser.add_argument(
-        "--mem",
-        type=str,
-        default="64GB",
-        help="Memory for Slurm job (default: 64GB).",
-    )
-    parser.add_argument(
-        "--gpus",
-        type=str,
-        default="1",
-        help="Number of GPUs for Slurm job (default: 1).",
     )
     parser.add_argument(
         "--max-parallel",
@@ -121,7 +78,6 @@ def main() -> None:
 
     # Convert paths to absolute if provided
     params_path = str(Path(args.params).absolute()) if args.params else None
-    sys_params_path = str(Path(args.sys_params).absolute()) if args.sys_params else None
 
     # Set CONFIG_PATH BEFORE importing dataset_utils to avoid module-level load error
     if params_path is not None:
@@ -131,11 +87,7 @@ def main() -> None:
     from src.utils.dataset_utils import get_y_fn
 
     # Determine execution mode
-    # Check environment variable USE_SLURM (default to False if not set)
-    use_slurm_env = os.getenv("USE_SLURM", "false").lower() in ("true", "1", "yes", "t")
-
-    # Command-line flag --local overrides environment variable
-    use_local = args.local or not use_slurm_env
+    use_local, mode = determine_execution_mode(args.local)
     ranges_fp = Path(
         get_config(params_path=params_path).spatial_autocorr.ranges_fp
     ).resolve()
@@ -147,13 +99,12 @@ def main() -> None:
     )
     print(f"Found {len(traits)} traits to process: {', '.join(traits)}")
 
+    print(f"Execution mode: {mode}")
+
     if use_local:
         # Run locally
-        mode = "local (--local flag)" if args.local else "local (USE_SLURM=false)"
-        print(f"Execution mode: {mode}")
         run_local(
             params_path,
-            sys_params_path,
             args.debug,
             args.overwrite,
             traits,
@@ -162,10 +113,8 @@ def main() -> None:
         )
     else:
         # Submit to Slurm
-        print("Execution mode: Slurm")
         run_slurm(
             params_path,
-            sys_params_path,
             args.debug,
             args.overwrite,
             args.partition,
@@ -177,99 +126,6 @@ def main() -> None:
             traits=traits,
             ranges_fp=ranges_fp,
         )
-
-
-def check_job_status(job_id: int | str) -> str:
-    """
-    Check the status of a Slurm job.
-
-    Args:
-        job_id: Slurm job ID
-
-    Returns:
-        Job state: 'PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED', 'NOT_FOUND'
-    """
-    try:
-        result = subprocess.run(
-            ["squeue", "-j", str(job_id), "-h", "-o", "%T"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip()
-
-        # Job not in queue - check sacct for completed/failed jobs
-        result = subprocess.run(
-            ["sacct", "-j", str(job_id), "-n", "-X", "-o", "State"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            state = result.stdout.strip().split()[0]
-            return state
-
-        return "NOT_FOUND"
-
-    except (subprocess.TimeoutExpired, Exception) as e:
-        print(f"Warning: Could not check job status: {e}")
-        return "UNKNOWN"
-
-
-def wait_for_job_completion(job_id: int | str, poll_interval: int = 30) -> bool:
-    """
-    Wait for a Slurm job to complete.
-
-    Args:
-        job_id: Slurm job ID
-        poll_interval: Seconds to wait between status checks
-
-    Returns:
-        True if job completed successfully, False otherwise
-    """
-    print(f"\nWaiting for job {job_id} to complete...")
-    print(f"Checking status every {poll_interval} seconds...")
-
-    start_time = time.time()
-    last_status = None
-
-    while True:
-        status = check_job_status(job_id)
-
-        if status != last_status:
-            elapsed = int(time.time() - start_time)
-            print(f"[{elapsed}s] Job {job_id} status: {status}")
-            last_status = status
-
-        if status in ["COMPLETED"]:
-            print(f"✓ Job {job_id} completed successfully!")
-            return True
-        elif status in [
-            "FAILED",
-            "CANCELLED",
-            "TIMEOUT",
-            "NODE_FAIL",
-            "OUT_OF_MEMORY",
-        ]:
-            print(f"✗ Job {job_id} failed with status: {status}")
-            return False
-        elif status in ["PENDING", "RUNNING", "CONFIGURING"]:
-            # Job still running, continue waiting
-            time.sleep(poll_interval)
-        else:
-            # Unknown or not found - could mean it completed before polling started
-            time.sleep(5)
-            status = check_job_status(job_id)
-            if status == "NOT_FOUND":
-                print(
-                    f"Warning: Job {job_id} not found in queue. "
-                    "May have already completed."
-                )
-                return True
-            time.sleep(poll_interval)
 
 
 def combine_results(temp_dir: Path, output_fp: Path, cfg, traits: list[str]) -> None:
@@ -334,7 +190,6 @@ def combine_results(temp_dir: Path, output_fp: Path, cfg, traits: list[str]) -> 
 def run_single_trait(
     trait: str,
     params_path: str | None,
-    sys_params_path: str | None,
     debug: bool,
     output_dir: Path,
 ) -> tuple[str, bool]:
@@ -344,31 +199,25 @@ def run_single_trait(
     Args:
         trait: Trait name
         params_path: Path to parameters file
-        sys_params_path: Path to system parameters file
         debug: Enable debug mode
         output_dir: Output directory for results
 
     Returns:
         Tuple of (trait_name, success)
     """
-    cmd = [
-        "python",
-        "-m",
-        "src.features.calc_spatial_autocorr_gpu",
-        "--trait",
-        trait,
-        "--output-dir",
-        str(output_dir),
-    ]
-    if params_path:
-        cmd.extend(["--params", params_path])
-    if sys_params_path:
-        cmd.extend(["--sys_params", sys_params_path])
+    extra_args: dict[str, str | None] = {
+        "--trait": trait,
+        "--output-dir": str(output_dir),
+    }
     if debug:
-        cmd.append("--debug")
+        extra_args["--debug"] = None
 
-    # Always overwrite when processing individual traits
-    cmd.append("--overwrite")
+    cmd = build_base_command(
+        "src.features.calc_spatial_autocorr_gpu",
+        params_path=params_path,
+        overwrite=True,  # Always overwrite when processing individual traits
+        extra_args=extra_args
+    )
 
     # Set CONFIG_PATH in subprocess environment to avoid import-time errors
     env = os.environ.copy()
@@ -402,7 +251,6 @@ def run_single_trait(
 
 def run_local(
     params_path: str | None,
-    sys_params_path: str | None,
     debug: bool,
     overwrite: bool,
     traits: list[str],
@@ -437,7 +285,7 @@ def run_local(
         # Submit all trait jobs
         futures = {
             executor.submit(
-                run_single_trait, trait, params_path, sys_params_path, debug, temp_dir
+                run_single_trait, trait, params_path, debug, temp_dir
             ): trait
             for trait in traits
         }
@@ -466,7 +314,6 @@ def run_local(
 
 def run_slurm(
     params_path: str | None,
-    sys_params_path: str | None,
     debug: bool,
     overwrite: bool,
     partition: str,
@@ -504,22 +351,19 @@ def run_slurm(
 
     for trait in traits:
         # Construct command for this trait
-        cmd_parts = [
-            "python",
-            "-m",
-            "src.features.calc_spatial_autocorr_gpu",
-            "--trait",
-            trait,
-            "--output-dir",
-            str(temp_dir),
-            "--overwrite",
-        ]
-        if params_path:
-            cmd_parts.extend(["--params", params_path])
-        if sys_params_path:
-            cmd_parts.extend(["--sys_params", sys_params_path])
+        extra_args: dict[str, str | None] = {
+            "--trait": trait,
+            "--output-dir": str(temp_dir),
+        }
         if debug:
-            cmd_parts.append("--debug")
+            extra_args["--debug"] = None
+
+        cmd_parts = build_base_command(
+            "src.features.calc_spatial_autocorr_gpu",
+            params_path=params_path,
+            overwrite=True,
+            extra_args=extra_args
+        )
         command = " ".join(cmd_parts)
 
         # Create Slurm job configuration with GPU support
