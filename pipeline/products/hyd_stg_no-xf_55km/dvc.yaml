@@ -84,15 +84,6 @@ stages:
       - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.fp}
       - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.report_fp}
 
-  standardize_other_products:
-    cmd: python src/data/standardize_other_products.py
-    deps:
-      - src/data/standardize_other_products.py
-      - ${raw_dir}/other-trait-maps
-    outs:
-      - ${interim_dir}/other_trait_maps:
-          persist: false
-  
   build_gbif_maps:
     cmd: python ${project_root}/stages/build_gbif_maps.py --params params.yaml
     deps:
@@ -141,17 +132,17 @@ stages:
     outs:
       - ${project_root}/${spatial_autocorr.ranges_fp}
 
-  # build_cv_splits:
-  #   cmd: python src/features/skcv_splits.py -o
-  #   deps:
-  #     - src/features/skcv_splits.py
-  #     - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
-  #     - ${train.dir}/${PFT}/${model_res}/${train.spatial_autocorr}
-  #   params:
-  #     - train.cv_splits
-  #   outs:
-  #     - ${train.dir}/${PFT}/${model_res}/${train.cv_splits.dir}:
-  #         persist: false
+  build_cv_splits:
+    cmd: python src/features/skcv_splits.py -o
+    deps:
+      - src/features/skcv_splits.py
+      - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
+      - ${train.dir}/${PFT}/${model_res}/${train.spatial_autocorr}
+    params:
+      - train.cv_splits
+    outs:
+      - ${train.dir}/${PFT}/${model_res}/${train.cv_splits.dir}:
+          persist: false
 
   # train_models:
   #   cmd: python src/models/train_models.py -r && python src/models/cv_stats.py
