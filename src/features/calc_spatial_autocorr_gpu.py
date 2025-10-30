@@ -157,16 +157,13 @@ def main(args: argparse.Namespace) -> None:
     if cfg.crs != "EPSG:4326":
         log.info("Transforming coordinates from %s to EPSG:4326 (lat/lon)...", cfg.crs)
         transformer = Transformer.from_crs(cfg.crs, "EPSG:4326", always_xy=True)
-        orig_x = y_df["x"].copy()
-        orig_y = y_df["y"].copy()
-        index = y_df.index
 
         # Transform to lat/lon
-        x, y = transformer.transform(orig_x, orig_y)
+        x, y = transformer.transform(y_df["x"], y_df["y"])
 
         y_df = y_df.assign(
-            x=pd.Series(x, index=index),
-            y=pd.Series(y, index=index),
+            x=pd.Series(x, index=y_df.index),
+            y=pd.Series(y, index=y_df.index),
         )
     else:
         log.info(
@@ -319,8 +316,6 @@ def _calculate_haversine_distance(
     lat2 = coords2_rad[:, 1].unsqueeze(0)  # [1, m]
 
     # Haversine formula:
-    # d = R * arccos(sin(lat1)*sin(lat2) + cos(lat1)*cos(lat2)*cos(dlon))
-    # Using the numerically stable haversine formulation:
     # a = sin²(Δlat/2) + cos(lat1)*cos(lat2)*sin²(Δlon/2)
     # c = 2*atan2(√a, √(1-a))
     # d = R * c
@@ -351,6 +346,8 @@ def _estimate_max_distance(coords_tensor: torch.Tensor, n_samples: int) -> float
     with torch.no_grad():
         # Estimate max distance from a subset of data
         subset_size = min(1000, n_samples)
+        # Don't use a fixed seed here - we want to sample the full spatial extent
+        # Using the same seed would give identical distance estimates across traits
         indices = torch.randperm(n_samples, device=coords_tensor.device)[:subset_size]
         subset_coords = coords_tensor[indices]
 
@@ -386,6 +383,8 @@ def _estimate_min_distance(
     with torch.no_grad():
         # Sample a subset for efficiency
         subset_size = min(2000, n_samples)
+        # Don't use a fixed seed here - we want to sample the full spatial extent
+        # Using the same seed would give identical distance estimates across traits
         indices = torch.randperm(n_samples, device=coords_tensor.device)[:subset_size]
         subset_coords = coords_tensor[indices]
 
@@ -491,6 +490,7 @@ def _fit_variogram_model(
     device: torch.device,
     min_range: float | None = None,
     max_range: float | None = None,
+    weights: torch.Tensor | None = None,
 ) -> tuple[float, float, float, float]:
     """
     Fit a spherical variogram model to the experimental variogram.
@@ -505,9 +505,10 @@ def _fit_variogram_model(
         device (torch.device): PyTorch device
         min_range (float | None): Minimum allowed range (default: first bin center)
         max_range (float | None): Maximum allowed range (default: last bin edge)
+        weights (torch.Tensor | None): Optional per-bin weights (e.g., pair counts)
 
     Returns:
-        tuple[float, float, float, float]: Range, nugget, sill, and MSE
+        tuple[float, float, float, float]: Range, nugget, sill, and (weighted) MSE
     """
     bin_centers_valid = bin_centers[valid_lags]
     gamma_valid = gamma[valid_lags]
@@ -550,6 +551,12 @@ def _fit_variogram_model(
     min_range_tensor = torch.tensor(min_range, device=device)
     max_range_tensor = torch.tensor(max_range, device=device)
 
+    weights_valid = None
+    if weights is not None:
+        weights_valid = weights[valid_lags].to(device)
+        # Normalize to keep loss scale comparable
+        weights_valid = weights_valid / (weights_valid.sum() + 1e-12)
+
     for _ in range(500):
         optimizer.zero_grad()
         nugget, sill, range_param = params
@@ -566,16 +573,14 @@ def _fit_variogram_model(
         # Calculate predicted values using spherical model
         pred = spherical_model(bin_centers_valid, nugget_pos, sill_pos, range_pos)
 
-        # Calculate loss (MSE) with optional weak L2 penalty on range
-        mse_loss = torch.mean((pred - gamma_valid) ** 2)
+        # Weighted or unweighted MSE loss
+        residuals = pred - gamma_valid
+        if weights_valid is not None:
+            mse_loss = torch.sum(weights_valid * residuals**2)
+        else:
+            mse_loss = torch.mean(residuals**2)
 
-        # Add weak L2 penalty to prefer ranges toward the middle of the allowed range
-        # This helps prevent fitting to extreme values
-        range_penalty_weight = 0.0001
-        range_mid = (min_range_tensor + max_range_tensor) / 2
-        range_penalty = range_penalty_weight * ((range_pos - range_mid) ** 2)
-
-        loss = mse_loss + range_penalty
+        loss = mse_loss
         loss.backward()
         optimizer.step()
 
@@ -588,9 +593,13 @@ def _fit_variogram_model(
             min_range + (max_range - min_range) * torch.sigmoid(range_param)
         ).item()
 
-        # Calculate final MSE (without penalty)
+        # Final (weighted) MSE
         pred = spherical_model(bin_centers_valid, nugget, sill, range_val)
-        mse = torch.mean((pred - gamma_valid) ** 2).item()
+        residuals = pred - gamma_valid
+        if weights_valid is not None:
+            mse = torch.sum(weights_valid * residuals**2).item()
+        else:
+            mse = torch.mean(residuals**2).item()
 
         return range_val, nugget, sill, mse
 
@@ -620,7 +629,7 @@ def fit_variogram_gpu(
 
     Returns:
         Tuple[float, float, float, float]: Estimated range, nugget,
-            sill, and MSE
+            sill, and (weighted) MSE
     """
     # Set the GPU device
     device = torch.device(f"cuda:{gpu_id}" if torch.cuda.is_available() else "cpu")
@@ -629,7 +638,7 @@ def fit_variogram_gpu(
     coords_tensor = torch.tensor(coords, dtype=torch.float32, device=device)
     values_tensor = torch.tensor(values, dtype=torch.float32, device=device)
 
-    # Check for NaN or inf in coordinates
+    # Validate coordinates
     if torch.isnan(coords_tensor).any() or torch.isinf(coords_tensor).any():
         n_nan = torch.isnan(coords_tensor).sum().item()
         n_inf = torch.isinf(coords_tensor).sum().item()
@@ -639,7 +648,7 @@ def fit_variogram_gpu(
             f"{coords_tensor.max().item()}]"
         )
 
-    # Calculate pairwise distances (coordinates are already in equidistant projection)
+    # Number of samples
     n_samples = coords_tensor.shape[0]
 
     # Process in chunks to handle large datasets
@@ -651,7 +660,7 @@ def fit_variogram_gpu(
 
     # Create distance bins - either linear or logarithmic
     # Start at small epsilon to ensure zero distance never falls in any bin
-    epsilon = 1e-6  # 1 micrometer - effectively excludes self-pairs
+    epsilon = 1e-6  # effectively excludes self-pairs
 
     if log_binning:
         # Use logarithmic binning for adaptive bin sizes
@@ -682,14 +691,23 @@ def fit_variogram_gpu(
 
     # Calculate mean semivariance for each bin
     with torch.no_grad():
-        valid_lags = gamma_counts > 0
+        # Filter out sparsely populated bins to reduce noise
+        # dynamic threshold: at least 100 pairs or 1% of max count across bins
+        min_pairs_abs = 100.0
+        max_count_val = float(
+            gamma_counts.max().item() if gamma_counts.numel() > 0 else 0.0
+        )
+        min_pairs_rel = 0.01 * max_count_val
+        min_pairs = max(min_pairs_abs, min_pairs_rel)
+
+        valid_lags = gamma_counts >= min_pairs
         gamma = torch.zeros_like(gamma_counts)
         gamma[valid_lags] = gamma_sum[valid_lags] / gamma_counts[valid_lags]
 
         # Debug logging
         n_valid = valid_lags.sum().item()
         log.debug(
-            f"Variogram: {n_valid}/{nlags} bins with data, "
+            f"Variogram: {n_valid}/{nlags} bins with data (min_pairs={min_pairs:.0f}), "
             f"max_dist={max_dist:.0f}m, "
             f"bin range=[{bin_edges[0]:.0f}, {bin_edges[-1]:.0f}]"
         )
@@ -700,11 +718,15 @@ def fit_variogram_gpu(
                 f"max_dist={max_dist:.2f}"
             )
 
-    # Fit variogram model with range constraints
-    # Set max_range to the last bin edge to prevent unrealistic extrapolation
+    # Fit variogram model with range constraint and bin-count weights
     max_range_constraint = float(bin_edges[-1].item())
     return _fit_variogram_model(
-        bin_centers, gamma, valid_lags, device, max_range=max_range_constraint
+        bin_centers,
+        gamma,
+        valid_lags,
+        device,
+        max_range=max_range_constraint,
+        weights=gamma_counts,
     )
 
 
@@ -734,7 +756,7 @@ def calculate_variogram_gpu(
 
     group = group.copy()
     if len(group) > n_max:
-        group = group.sample(n_max)
+        group = group.sample(n_max, random_state=42)
 
     # Set n_lags dynamically based on the number of samples
     nlags = min(50, max(10, len(group) // 20))
@@ -756,7 +778,7 @@ def calculate_variogram_gpu(
     max_dist = kwargs.get("max_dist")
 
     try:
-        # Fit variogram using GPU with Euclidean distances
+        # Fit variogram using GPU with great-circle distances
         range_param, nugget, sill, mse = fit_variogram_gpu(
             coords=coords,
             values=values,
@@ -796,23 +818,6 @@ def calculate_variogram_gpu(
             group["x"], group["y"], group[data_col], **orig_kwargs
         )
         return ok_vgram.variogram_model_parameters[1], len(group)
-
-
-def transform_coords_to_equidistant(
-    coords: np.ndarray, from_crs: str, to_crs: str
-) -> np.ndarray:
-    """
-    Transform coordinates to equidistant projection.
-
-    Args:
-        coords (np.ndarray): The coordinates to transform.
-
-    Returns:
-        np.ndarray: The transformed coordinates.
-    """
-    # Transform coordinates to equidistant projection
-    transformer = Transformer.from_crs(from_crs, to_crs, always_xy=True)
-    return np.asarray(transformer.transform(coords[:, 0], coords[:, 1]))
 
 
 def _determine_h3_resolution(
@@ -946,6 +951,9 @@ def _single_trait_ranges(
     autocorr_ranges = list(compute(*results))
     if len(autocorr_ranges) == 1:
         global_range, _ = autocorr_ranges[0]
+        # No local ranges to aggregate; produce a minimal output row
+        filt_ranges = []
+        sample_sizes = np.array([], dtype=float)
     else:
         global_range, _ = autocorr_ranges[-1]
         autocorr_ranges = autocorr_ranges[:-1]
@@ -953,28 +961,47 @@ def _single_trait_ranges(
         filt_ranges = [
             (r, n) for r, n in autocorr_ranges if isinstance(n, (int, float)) and n > 0
         ]
-
-        # Weight the ranges by the number of pairs used to calculate them
-        # Number of unique pairs = n*(n-1)/2 (excluding self-pairs and double-counting)
+        # Weight by number of unique pairs per chunk
         sample_sizes = np.array([n for _, n in filt_ranges])
-    n_pairs = sample_sizes * (sample_sizes - 1) / 2
-    weights = n_pairs / n_pairs.sum()
-    ranges = np.array([r for r, _ in filt_ranges])
 
-    # Create a new row and append it to the DataFrame
+    n_pairs = (
+        sample_sizes * (sample_sizes - 1) / 2 if sample_sizes.size else np.array([])
+    )
+    weights = (n_pairs / n_pairs.sum()) if n_pairs.size else np.array([])
+    ranges = np.array([r for r, _ in filt_ranges]) if filt_ranges else np.array([])
+
+    # Create output row
+    if ranges.size and weights.size:
+        mean_val = float(np.average(ranges, weights=weights))
+        std_val = float(
+            np.sqrt(np.average((ranges - ranges.mean()) ** 2, weights=weights))
+        )
+        median_val = float(np.median(ranges))
+        q05_val = float(np.quantile(ranges, 0.05))
+        q95_val = float(np.quantile(ranges, 0.95))
+        n_chunks_val = int(len(ranges))
+        n_val = int(sample_sizes.sum())
+    else:
+        # Fallback if only global or no valid chunks
+        mean_val = float(global_range)
+        std_val = 0.0
+        median_val = float(global_range)
+        q05_val = float(global_range)
+        q95_val = float(global_range)
+        n_chunks_val = 1
+        n_val = int(len(trait_df))
+
     new_ranges = pd.DataFrame(
         [
             {
                 "trait": trait_col,
-                "mean": np.average(ranges, weights=weights),
-                "std": np.sqrt(
-                    np.average((ranges - ranges.mean()) ** 2, weights=weights)
-                ),
-                "median": np.median(ranges),
-                "q05": np.quantile(ranges, 0.05),
-                "q95": np.quantile(ranges, 0.95),
-                "n": sample_sizes.sum(),
-                "n_chunks": len(ranges),
+                "mean": mean_val,
+                "std": std_val,
+                "median": median_val,
+                "q05": q05_val,
+                "q95": q95_val,
+                "n": n_val,
+                "n_chunks": n_chunks_val,
             }
         ]
     )
