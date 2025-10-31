@@ -133,16 +133,19 @@ stages:
       - ${project_root}/${spatial_autocorr.ranges_fp}
 
   build_cv_splits:
-    cmd: python src/features/skcv_splits.py -o
+    cmd: python ${project_root}/stages/build_cv_splits.py --params params.yaml --overwrite
     deps:
-      - src/features/skcv_splits.py
-      - ${train.dir}/${PFT}/${model_res}/${train.Y.fn}
-      - ${train.dir}/${PFT}/${model_res}/${train.spatial_autocorr}
+      - ${project_root}/stages/build_cv_splits.py
+      - ${project_root}/src/features/build_cv_splits.py
+      - ${project_root}/${train.Y.fp}
+      - ${project_root}/${spatial_autocorr.ranges_fp}
     params:
       - train.cv_splits
+      - train.Y.fp
+      - spatial_autocorr.ranges_fp
     outs:
-      - ${train.dir}/${PFT}/${model_res}/${train.cv_splits.dir}:
-          persist: false
+      - ${project_root}/${train.cv_splits.dir_fp}:
+          persist: true
 
   # train_models:
   #   cmd: python src/models/train_models.py -r && python src/models/cv_stats.py

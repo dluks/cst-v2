@@ -324,34 +324,42 @@ stages:
       md5: c66d23ee1248f2a758a1adca40f1ed74
       size: 7601
   build_cv_splits:
-    cmd: python src/features/skcv_splits.py -o
+    cmd: python ../../../stages/build_cv_splits.py --params params.yaml --overwrite
     deps:
-    - path: data/features/Shrub_Tree_Grass/55km/Y.parquet
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
       hash: md5
-      md5: 9cb9b74c89b51d45f3fa4fa6d811f600.dir
-      size: 22743420
-      nfiles: 260
-    - path: data/features/Shrub_Tree_Grass/55km/spatial_autocorr.parquet
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+    - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
       hash: md5
-      md5: 441bd83e2018563b7f0a7458209b3c44
-      size: 8060
-    - path: src/features/skcv_splits.py
+      md5: c66d23ee1248f2a758a1adca40f1ed74
+      size: 7601
+    - path: ../../../src/features/build_cv_splits.py
       hash: md5
-      md5: a17ab9d0efe98b372ddc6042a074cd91
-      size: 10734
+      md5: a64cb7478a4256d9f64047983257da58
+      size: 17584
+    - path: ../../../stages/build_cv_splits.py
+      hash: md5
+      md5: 22daedc80bb558d5fa9e748905230bd2
+      size: 9379
+      isexec: true
     params:
       params.yaml:
+        spatial_autocorr.ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+        train.Y.fp: data/features/hyd_stg_no-xf_55km/Y.parquet
         train.cv_splits:
-          range_stat: median
+          range_stat: mean
           n_splits: 5
-          n_sims: 100
+          n_sims: 200
           dir: skcv_splits
+          dir_fp: data/features/hyd_stg_no-xf_55km/skcv_splits
     outs:
-    - path: data/features/Shrub_Tree_Grass/55km/skcv_splits
+    - path: ../../../data/features/hyd_stg_no-xf_55km/skcv_splits
       hash: md5
-      md5: 105dc5c0bac8b3c79169401a7e002bce.dir
-      size: 1127530
-      nfiles: 37
+      md5: 0d287c5d6d45afa282ed5dc8a84205c5.dir
+      size: 3075583
+      nfiles: 12
   train_models:
     cmd: python src/models/train_models.py -r && python src/models/cv_stats.py
     deps:

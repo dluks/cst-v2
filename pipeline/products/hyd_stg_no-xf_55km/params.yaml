@@ -918,6 +918,7 @@ train:
   dir: data/features
   Y:
     fn: Y.parquet
+    fp: data/features/hyd_stg_no-xf_55km/Y.parquet  # Full path to Y file
   missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values
   trait_sets: ["splot", "gbif", "splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
@@ -926,6 +927,7 @@ train:
     n_splits: 5
     n_sims: 200
     dir: skcv_splits
+    dir_fp: data/features/hyd_stg_no-xf_55km/skcv_splits  # Full path to CV splits directory
   weights:
     fn: feature_weights.parquet
     method: auto # "auto", "manual" -- "manual" will use below weights
