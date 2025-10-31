@@ -321,8 +321,8 @@ stages:
     outs:
     - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
       hash: md5
-      md5: 049e4d5e93e159997962cf3148705949
-      size: 7598
+      md5: c66d23ee1248f2a758a1adca40f1ed74
+      size: 7601
   build_cv_splits:
     cmd: python src/features/skcv_splits.py -o
     deps:
