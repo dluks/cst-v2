@@ -24,10 +24,13 @@ from src.conf.conf import get_config
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
+    PartitionDistributor,
     add_common_args,
+    add_partition_args,
     add_resource_args,
     build_base_command,
     determine_execution_mode,
+    resolve_partitions,
     setup_environment,
     wait_for_job_completion,
 )
@@ -39,13 +42,14 @@ def cli() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Train models locally or on Slurm.")
     add_common_args(parser)
+    add_partition_args(parser, enable_multi_partition=True)
     add_resource_args(
         parser,
         time_default="04:00:00",
-        cpus_default=74,
+        cpus_default=112,
         mem_default="128GB",
-        include_gpus=True,
-        gpus_default="2",
+        include_gpus=False,
+        gpus_default="0",
     )
     parser.add_argument(
         "-d",
@@ -180,6 +184,16 @@ def main() -> None:
             cfg,
         )
     else:
+        # Determine partitions to use
+        partitions = resolve_partitions(args.partition, args.partitions)
+        if len(partitions) > 1:
+            print(
+                f"Distributing jobs across {len(partitions)} partitions: "
+                f"{', '.join(partitions)}"
+            )
+        else:
+            print(f"Using partition: {partitions[0]}")
+
         # Submit to Slurm
         run_slurm(
             params_path,
@@ -187,11 +201,10 @@ def main() -> None:
             args.sample,
             args.resume,
             args.overwrite,
-            args.partition,
+            partitions,
             args.time,
             args.cpus,
             args.mem,
-            args.gpus,
             wait=not args.no_wait,
             tasks=tasks,
             cfg=cfg,
@@ -454,11 +467,10 @@ def run_slurm(
     sample: float,
     resume: bool,
     overwrite: bool,
-    partition: str,
+    partitions: list[str],
     time_limit: str,
     cpus: int,
     mem: str,
-    gpus: str,
     wait: bool,
     tasks: list[dict],
     cfg,
@@ -470,6 +482,9 @@ def run_slurm(
     product_code = cfg.product_code
     log_dir = Path("logs/train_models") / product_code
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create partition distributor for round-robin distribution
+    distributor = PartitionDistributor(partitions)
 
     # Submit a job for each task
     job_ids = []
@@ -525,7 +540,10 @@ def run_slurm(
         else:
             task_name += "_full_model"
 
-        # Create Slurm job configuration with GPU support
+        # Get partition using round-robin distribution
+        partition = distributor.get_next()
+
+        # Create Slurm job configuration
         slurm = Slurm(
             job_name=job_name,
             output=str(log_dir / f"%j_{task_name}.log"),
@@ -534,7 +552,6 @@ def run_slurm(
             cpus_per_task=cpus,
             mem=mem,
             partition=partition,
-            gres=f"gpu:{gpus}",
         )
 
         # Submit the job
@@ -547,9 +564,20 @@ def run_slurm(
             task_desc += f"/fold_{fold}"
         else:
             task_desc += "/full_model"
-        print(f"  Submitted job {job_id} for: {task_desc}")
+
+        # Show partition in output if using multiple partitions
+        partition_info = f" [{partition}]" if len(distributor) > 1 else ""
+        print(f"  Submitted job {job_id} for: {task_desc}{partition_info}")
 
     print(f"\nSubmitted {len(job_ids)} jobs")
+
+    # Show distribution summary if using multiple partitions
+    if len(distributor) > 1:
+        summary = distributor.get_summary()
+        print("Job distribution across partitions:")
+        for partition, count in summary.items():
+            print(f"  {partition}: {count} jobs")
+
     print(f"Logs directory: {log_dir.absolute()}")
 
     if wait:
@@ -566,7 +594,7 @@ def run_slurm(
             else:
                 task_name += "/full_model"
 
-            success = wait_for_job_completion(job_id, poll_interval=30)
+            success = wait_for_job_completion(job_id, poll_interval=5)
 
             if success:
                 successful.append(task)

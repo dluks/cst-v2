@@ -184,8 +184,8 @@ def train_cv_fold(
         path=str(fold_model_path),
     ).fit(
         train,
-        num_gpus=cfg.autogluon.num_gpus,
-        num_cpus=cfg.autogluon.num_cpus,
+        # num_gpus=cfg.autogluon.num_gpus,
+        # num_cpus=cfg.autogluon.num_cpus,
         presets=preset,
         time_limit=cfg.autogluon.cv_fit_time_limit,
         num_bag_folds=cfg.autogluon.num_bag_folds,
@@ -410,25 +410,52 @@ def main() -> None:
             )
             return
 
-    # Load or prepare data
-    trait_models_dir = Path(cfg.models.dir_fp) / args.trait / cfg.train.arch
-    tmp_xy_path = trait_models_dir / "tmp" / "xy.parquet"
+    # Load pre-generated XY data
+    xy_path = Path(cfg.train.xy_data.fp).resolve()
 
-    if tmp_xy_path.exists() and args.resume:
-        log.info("Loading existing xy data for %s...", args.trait)
-        xy = dd.read_parquet(tmp_xy_path).compute().reset_index(drop=True)
-    else:
-        log.info("Preparing xy data for %s...", args.trait)
-        feats, labels = load_data(cfg)
-        xy = prep_full_xy(feats, labels, args.trait, cfg)
+    if not xy_path.exists():
+        log.error(
+            "XY data not found at %s. "
+            "Please run the prepare_xy_data stage first.",
+            xy_path,
+        )
+        raise FileNotFoundError(
+            "XY data not found. Run 'dvc repro prepare_xy_data' first."
+        )
 
-        # Save for future use
-        if not args.dry_run:
-            log.info("Saving xy data for %s...", args.trait)
-            tmp_xy_path.parent.mkdir(parents=True, exist_ok=True)
-            dd.from_pandas(xy, npartitions=100).to_parquet(
-                tmp_xy_path, compression="zstd", overwrite=True
-            )
+    log.info("Loading pre-generated XY data for %s...", args.trait)
+    xy_all = pd.read_parquet(xy_path, engine="pyarrow")
+
+    # Get trait column names to filter out other traits
+    all_traits = (
+        pd.read_parquet(Path(cfg.train.Y.fp), engine="pyarrow")
+        .columns.difference(["x", "y", "source"])
+        .to_list()
+    )
+
+    # Select relevant columns for this trait
+    # Keep: x, y, source, trait value, trait-specific fold column, and all features
+    # Exclude: other trait values and other fold columns
+    fold_col = f"{args.trait}_fold"
+    cols_to_exclude = set()
+
+    # Exclude other trait values
+    for trait in all_traits:
+        if trait != args.trait:
+            cols_to_exclude.add(trait)
+
+    # Exclude other fold columns
+    for col in xy_all.columns:
+        if col.endswith("_fold") and col != fold_col:
+            cols_to_exclude.add(col)
+
+    # Select columns to keep
+    cols_to_keep = [col for col in xy_all.columns if col not in cols_to_exclude]
+
+    # Filter and rename fold column
+    xy = xy_all[cols_to_keep].rename(columns={fold_col: "fold"}).reset_index(drop=True)
+
+    log.info("Loaded data shape: %s", xy.shape)
 
     # Train the model
     if args.fold is not None:

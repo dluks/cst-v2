@@ -388,3 +388,117 @@ def apply_post_processing(
     if callback is not None:
         return callback(results)
     return None
+
+
+# ====================
+# Multi-Partition Support
+# ====================
+
+def add_partition_args(
+    parser: argparse.ArgumentParser,
+    enable_multi_partition: bool = True,
+) -> None:
+    """
+    Add partition argument(s) to an argument parser.
+
+    Supports both single partition (--partition) and multiple partitions
+    (--partitions) for distributing jobs across multiple Slurm partitions.
+
+    Args:
+        parser: ArgumentParser instance to add arguments to
+        enable_multi_partition: If True, adds --partitions argument for
+            multi-partition support
+    """
+    parser.add_argument(
+        "--partition",
+        type=str,
+        default="main",
+        help="Slurm partition to use (default: main).",
+    )
+
+    if enable_multi_partition:
+        parser.add_argument(
+            "--partitions",
+            type=str,
+            nargs="+",
+            default=None,
+            help=(
+                "Multiple Slurm partitions to distribute jobs across "
+                "(e.g., --partitions milan genoa). Jobs will be round-robin "
+                "distributed. If specified, overrides --partition."
+            ),
+        )
+
+
+def resolve_partitions(
+    partition: str,
+    partitions: list[str] | None,
+) -> list[str]:
+    """
+    Resolve partition list from single partition or multi-partition arguments.
+
+    Args:
+        partition: Single partition from --partition argument
+        partitions: List of partitions from --partitions argument (or None)
+
+    Returns:
+        List of partitions to use for job distribution
+    """
+    return partitions if partitions else [partition]
+
+
+class PartitionDistributor:
+    """
+    Distributes jobs across multiple Slurm partitions using round-robin.
+
+    Tracks partition usage and provides partition selection for job submission.
+
+    Example:
+        >>> distributor = PartitionDistributor(["milan", "genoa"])
+        >>> for i in range(5):
+        ...     partition = distributor.get_next()
+        ...     print(f"Job {i}: {partition}")
+        Job 0: milan
+        Job 1: genoa
+        Job 2: milan
+        Job 3: genoa
+        Job 4: milan
+        >>> distributor.get_summary()
+        {'milan': 3, 'genoa': 2}
+    """
+
+    def __init__(self, partitions: list[str]):
+        """
+        Initialize the partition distributor.
+
+        Args:
+            partitions: List of partition names to distribute across
+        """
+        self.partitions = partitions
+        self.counts = {p: 0 for p in partitions}
+        self.index = 0
+
+    def get_next(self) -> str:
+        """
+        Get the next partition in round-robin order.
+
+        Returns:
+            Partition name
+        """
+        partition = self.partitions[self.index % len(self.partitions)]
+        self.counts[partition] += 1
+        self.index += 1
+        return partition
+
+    def get_summary(self) -> dict[str, int]:
+        """
+        Get summary of jobs distributed to each partition.
+
+        Returns:
+            Dictionary mapping partition name to job count
+        """
+        return self.counts.copy()
+
+    def __len__(self) -> int:
+        """Return number of partitions."""
+        return len(self.partitions)

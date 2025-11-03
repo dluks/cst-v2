@@ -776,10 +776,10 @@ old_sycfgs:
 
 geos:
   calc_spatial_autocorr:
-        n_workers: 3
-        n_workers_variogram: 20  # For WGS84 coords only
-        n_chunks: 16 # x direction only
-        gpu_ids: [1, 2]
+    n_workers: 3
+    n_workers_variogram: 20  # For WGS84 coords only
+    n_chunks: 16 # x direction only
+    gpu_ids: [1, 2]
 
 mask:
   path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
@@ -919,6 +919,9 @@ train:
   Y:
     fn: Y.parquet
     fp: data/features/hyd_stg_no-xf_55km/Y.parquet  # Full path to Y file
+  xy_data:
+    fn: xy_all_traits.parquet
+    fp: data/features/hyd_stg_no-xf_55km/xy_data/xy_all_traits.parquet  # Full path to merged XY data
   predict:
     fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
   missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values

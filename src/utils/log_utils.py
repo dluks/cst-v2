@@ -2,6 +2,7 @@
 
 import logging
 import os
+from pathlib import Path
 
 
 class ColoredFormatter(logging.Formatter):
@@ -68,6 +69,10 @@ def setup_file_logger(
     level: str | int = "INFO",
 ):
     """Setup a file logger."""
+    # Ensure the log directory exists
+    log_path = Path(log_file).resolve()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
     file_log = logging.getLogger(logger_name)
     formatter = logging.Formatter("%(asctime)s : %(message)s")
     file_handler = logging.FileHandler(log_file, mode="a")
