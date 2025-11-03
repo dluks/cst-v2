@@ -106,3 +106,5 @@ job*.txt
 profile*
 profiling/*
 tmp
+
+logs
