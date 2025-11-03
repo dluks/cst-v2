@@ -919,6 +919,8 @@ train:
   Y:
     fn: Y.parquet
     fp: data/features/hyd_stg_no-xf_55km/Y.parquet  # Full path to Y file
+  predict:
+    fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
   missing_val_thresh: 0.4 # Drop features with more than this fraction of missing values
   trait_sets: ["splot", "gbif", "splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
@@ -947,6 +949,8 @@ processed:
 autogluon:
   included_model_types: ["GBM"]
   presets: "high"
+  num_bag_folds: 5
+  num_stack_levels: 1
   save_bag_folds: true
   refit_full: false
   set_best_to_refit_full: false
@@ -960,6 +964,7 @@ autogluon:
 
 models:
   dir: models
+  dir_fp: models/hyd_stg_no-xf_55km  # Full path to models directory
 
 aoa:
   dir: aoa

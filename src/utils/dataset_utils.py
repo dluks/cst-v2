@@ -293,7 +293,9 @@ def check_y_set(y_set: str) -> None:
 
 def get_models_dir(config: ConfigBox = cfg) -> Path:
     """Get the path to the models directory for a specific configuration."""
-    return Path(config.models.dir) / config.PFT / config.model_res
+    if getattr(config, "product_code", None) is None:
+        return Path(config.models.dir) / config.PFT / config.model_res
+    return Path(config.models.dir) / config.product_code / config.PFT / config.model_res
 
 
 def get_trait_models_dir(trait: str, config: ConfigBox = cfg) -> Path:
