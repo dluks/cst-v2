@@ -1,0 +1,20 @@
+version: "2"
+project_root: "../../.."
+trait_dir: "pipeline/traits/hydraulic_no-xf"
+trait_type: "hydraulic"
+
+traits:
+  raw: data/raw/hydraulic_traits_knighton/GlobalTrees_Traits_Median.xlsx
+  sheet: GlobalTraits_Median
+  names:
+    - gsmax
+    - P12
+    - P50
+    - P88
+    - rdmax
+    - WUE
+  transform: null
+  pfts: data/raw/try_pfts.parquet
+  pfts_threshold: 0.60
+  harmonization_fp: data/raw/hydraulic_traits_matching_results_2025-10-03.gz
+  interim_out: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet

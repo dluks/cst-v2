@@ -1,0 +1,15 @@
+params:
+  - params.yaml
+
+stages:
+  build_traits:
+    cmd: python ../../../src/data/build_hydraulic_traits.py --params ${trait_dir}/params.yaml
+    deps:
+      - ../../../src/data/build_hydraulic_traits.py
+      - ../../../${traits.raw}
+      - ../../../src/utils/match_pfts.py
+      - ../../../${traits.harmonization_fp}
+    outs:
+      - ../../../${traits.interim_out}
+      # Also outputs transformer pickle IF transform is not None, but as it is a small,
+      # conditional output, it is OK not to track it with DVC.

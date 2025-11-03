@@ -1,0 +1,26 @@
+schema: '2.0'
+stages:
+  build_traits:
+    cmd: python ../../../src/data/build_hydraulic_traits.py --params pipeline/traits/hydraulic_no-xf/params.yaml
+    deps:
+    - path: ../../../data/raw/hydraulic_traits_knighton/GlobalTrees_Traits_Median.xlsx
+      hash: md5
+      md5: 8680a8231329721e19d386d01bb31c30
+      size: 8939466
+    - path: ../../../data/raw/hydraulic_traits_matching_results_2025-10-03.gz
+      hash: md5
+      md5: 83a366595f698d189f87b93487130c0c
+      size: 23398694
+    - path: ../../../src/data/build_hydraulic_traits.py
+      hash: md5
+      md5: 664a311f255f4d785fc1d47ac24f5541
+      size: 5941
+    - path: ../../../src/utils/match_pfts.py
+      hash: md5
+      md5: aac20eb95e99e4a152a68e85bbf338b5
+      size: 6371
+    outs:
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
