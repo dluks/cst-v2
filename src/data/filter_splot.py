@@ -51,11 +51,11 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 01. Extract sPlot data
     log.info("Extracting sPlot data...")
-    splot_raw_dir = Path(cfg.raw_dir, cfg.datasets.Y.splot)
+    splot_raw_dir = Path(cfg.splot.raw.dir)
     splot_prep_dir = Path(cfg.splot.filtered.out_dir, cfg.trait_type)
     splot_prep_dir.mkdir(parents=True, exist_ok=True)
 
-    if cfg.splot_open:
+    if cfg.splot.splot_open:
         header_df, vegetation_df = _extract_splot_open(splot_raw_dir)
     else:
         header_df, vegetation_df = _extract_splot_full(splot_raw_dir, splot_prep_dir)
@@ -70,7 +70,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 02. Load traits data
     log.info("Loading traits data...")
-    traits_fp = Path(cfg.traits.interim_out)
+    traits_fp = Path(cfg.traits_fp)
     traits_cols = {
         "nameOutWCVP": "string[pyarrow]",
         "pft": "category",
@@ -93,7 +93,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 03. Clean species names in vegetation data
     log.info("Cleaning species names...")
-    abundance_col = "Relative_cover" if cfg.splot_open else "Rel_Abund_Plot"
+    abundance_col = "Relative_cover" if cfg.splot.splot_open else "Rel_Abund_Plot"
 
     vegetation_df = (
         vegetation_df[["PlotObservationID", "Species", abundance_col]]
@@ -278,7 +278,9 @@ def main(args: argparse.Namespace | None = None) -> None:
     )
 
     # Save report
-    _save_report(stats, output_fp.parent / cfg.splot.filtered.report_fp, cfg.splot_open)
+    _save_report(
+        stats, output_fp.parent / cfg.splot.filtered.report_fp, cfg.splot.splot_open
+    )
 
 
 def _save_report(stats: dict[str, Any], output_fp: Path, splot_open: bool) -> None:

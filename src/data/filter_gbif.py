@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import dask
 import dask.dataframe as dd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -104,10 +105,13 @@ def _save_report(stats: dict[str, Any], output_fp: Path) -> None:
     """Save a formatted pipeline stage report with filtering statistics."""
     duration = stats["end_time"] - stats["start_time"]
 
+    # Check if species filtering was applied
+    has_species_filter = "min_observations" in stats and stats["min_observations"] > 0
+
     report_content = f"""# GBIF Data Filtering Report
 
-Generated: {stats["end_time"].strftime("%Y-%m-%d %H:%M:%S")}  
-Duration: {duration.total_seconds():.1f} seconds  
+Generated: {stats["end_time"].strftime("%Y-%m-%d %H:%M:%S")}
+Duration: {duration.total_seconds():.1f} seconds
 Data Source: GBIF Occurrence Data
 
 ---
@@ -116,27 +120,75 @@ Data Source: GBIF Occurrence Data
 
 | Metric | Count |
 |--------|------:|
-| GBIF observations | {stats["input_gbif_records"]:,} |
-| GBIF species | {stats["input_gbif_species"]:,} |
+| GBIF observations (initial) | {stats["pre_filter_gbif_records"]:,} |
+| GBIF species (initial) | {stats["pre_filter_gbif_species"]:,} |
 | Trait species (available) | {stats["input_trait_species"]:,} |
 | Plant functional types | {stats["input_pfts"]:,} |
 
----
+**Note:** Initial counts include only SPECIES-rank taxa with valid coordinates, \
+after optional country filtering.
 
+---
+"""
+
+    # Conditionally add species filtering section
+    if has_species_filter:
+        report_content += f"""
+## Species Filtering (Minimum Observation Count)
+
+Filter applied: Species with fewer than {stats.get("min_observations", 20)} observations are removed.
+
+### Records
+- **Before filter:** {stats["pre_filter_gbif_records"]:,}
+- **After filter:** {stats["post_filter_gbif_records"]:,}
+- **Dropped:** {stats["dropped_records"]:,} \
+({100 - stats["retention_pct_records"]:.2f}%)
+- **Retained:** {stats["retention_pct_records"]:.2f}%
+
+### Species
+- **Before filter:** {stats["pre_filter_gbif_species"]:,}
+- **After filter:** {stats["post_filter_gbif_species"]:,}
+- **Dropped:** {stats["dropped_species"]:,} \
+({100 - stats["retention_pct_species"]:.2f}%)
+- **Retained:** {stats["retention_pct_species"]:.2f}%
+
+---
+"""
+
+    # Use appropriate baseline for trait matching stats
+    baseline_records = (
+        stats["post_filter_gbif_records"]
+        if has_species_filter
+        else stats["pre_filter_gbif_records"]
+    )
+    baseline_species = (
+        stats["post_filter_gbif_species"]
+        if has_species_filter
+        else stats["pre_filter_gbif_species"]
+    )
+
+    report_content += f"""
 ## Trait Matching Results
 
+Matching {"filtered " if has_species_filter else ""}GBIF species with \
+trait database.
+
 ### Observations
-- **Input records:** {stats["input_gbif_records"]:,}
+- **{"Filtered" if has_species_filter else "Input"} GBIF records:** \
+{baseline_records:,}
 - **Matched records:** {stats["matched_records"]:,} \
 ({stats["matched_records_pct"]:.2f}%)
-- **Dropped records:** \
-{stats["input_gbif_records"] - stats["matched_records"]:,}
+- **Dropped records:** {stats["unmatched_records"]:,}
 
 ### Species Coverage
-- **GBIF species:** {stats["input_gbif_species"]:,}
+- **{"Filtered" if has_species_filter else "Input"} GBIF species:** \
+{baseline_species:,}
 - **Matched species:** {stats["matched_species"]:,} \
-({stats["matched_species_pct"]:.2f}% of trait database)
-- **Species without traits:** {stats["input_gbif_species"] - stats["matched_species"]:,}
+({stats["matched_species_pct"]:.2f}% of \
+{"filtered" if has_species_filter else "input"} GBIF)
+- **Species without traits:** {stats["unmatched_species"]:,}
+- **Trait database coverage:** {stats["trait_coverage_pct"]:.2f}% \
+of available trait species represented
 
 ---
 
@@ -180,11 +232,23 @@ locations contribute equally regardless of sampling frequency.
 
 ## Summary Statistics
 
-- **Data retention:** \
-{100 * stats["output_records"] / stats["input_gbif_records"]:.1f}% \
-of original GBIF observations retained
-- **Species coverage:** {stats["matched_species_pct"]:.1f}% \
-of available trait species represented
+- **Overall data retention:** \
+{100 * stats["output_records"] / stats["pre_filter_gbif_records"]:.1f}% \
+of initial GBIF observations retained"""
+
+    # Conditionally add species filtering impact line
+    if has_species_filter:
+        report_content += f"""
+- **Species filtering impact:** \
+{stats["retention_pct_species"]:.1f}% of species retained after \
+minimum count filter"""
+
+    report_content += f"""
+- **Trait matching rate:** \
+{stats["matched_species_pct"]:.1f}% of \
+{"filtered" if has_species_filter else "input"} GBIF species matched with traits
+- **Trait database coverage:** \
+{stats["trait_coverage_pct"]:.1f}% of available trait species represented
 - **Locations with resurveys:** \
 {100 * stats["locations_with_resurveys"] / stats["resurvey_groups"]:.1f}% \
 of location groups have multiple years
@@ -222,8 +286,8 @@ def main(args: argparse.Namespace | None = None) -> None:
         args = cli()
 
     cfg = get_config(params_path=args.params)
-    syscfg = cfg[detect_system()][cfg.model_res].get(
-        "filter_gbif", cfg[detect_system()][cfg.model_res].get("match_gbif_pfts", {})
+    syscfg = cfg[detect_system()].get(
+        "filter_gbif", cfg[detect_system()].get("match_gbif_pfts", {})
     )
 
     # Initialize statistics dictionary
@@ -231,7 +295,7 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 01. Load traits data
     log.info("Loading traits data...")
-    traits_fp = Path(cfg.traits.interim_out)
+    traits_fp = Path(cfg.traits_fp)
     traits_cols = {
         "GBIFKeyGBIF": pd.Int32Dtype(),
         "pft": "category",
@@ -276,10 +340,10 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # 03. Load and filter GBIF data with Dask
     with Client(
-        dashboard_address=cfg.dask_dashboard, n_workers=syscfg.get("n_workers", 40)
+        dashboard_address=cfg.get("dask_dashboard", ":39143"),
+        n_workers=syscfg.get("n_workers", 40),
     ):
         log.info(f"Loading GBIF data from {gbif_raw_fp}...")
-
         gbif = (
             dd.read_parquet(
                 gbif_raw_fp,
@@ -296,13 +360,72 @@ def main(args: argparse.Namespace | None = None) -> None:
         if args.country is not None:
             gbif = gbif.drop(columns=["countrycode"])
 
-        # Collect input GBIF statistics
-        stats["input_gbif_records"] = len(gbif)
-        stats["input_gbif_species"] = gbif.specieskey.nunique().compute()
+        # Collect pre-filter statistics (before < 20 observations filter)
+        stats["pre_filter_gbif_records"] = len(gbif)
+        stats["pre_filter_gbif_species"] = gbif.specieskey.nunique().compute()
         log.info(
-            f"Loaded {stats['input_gbif_records']:,} GBIF observations "
-            f"with {stats['input_gbif_species']:,} unique species"
+            f"Loaded {stats['pre_filter_gbif_records']:,} GBIF observations "
+            f"with {stats['pre_filter_gbif_species']:,} unique species "
+            f"(before minimum observation filter)"
         )
+
+        if cfg.gbif.min_observations > 0:
+            # Apply species observation count filter
+            log.info(
+                f"Filtering species with fewer than \
+{cfg.gbif.min_observations} observations..."
+            )
+            # Store min_observations for reporting
+            stats["min_observations"] = cfg.gbif.min_observations
+
+            # Count observations per species
+            species_counts = (
+                gbif.groupby("specieskey")
+                .size()
+                .reset_index()
+                .rename(columns={0: "n_obs"})
+            )
+            # Filter to species with >= min_observations and keep only specieskey
+            species_to_keep = (
+                species_counts[species_counts["n_obs"] >= cfg.gbif.min_observations][
+                    ["specieskey"]
+                ].compute()  # Materialize the filter as it's small
+            )
+            # Use merge to filter - this is more efficient in Dask than isin
+            gbif = gbif.merge(species_to_keep, on="specieskey", how="inner")
+
+            # Collect post-filter statistics
+            stats["post_filter_gbif_records"] = len(gbif)
+            stats["post_filter_gbif_species"] = gbif.specieskey.nunique().compute()
+            stats["dropped_records"] = (
+                stats["pre_filter_gbif_records"] - stats["post_filter_gbif_records"]
+            )
+            stats["dropped_species"] = (
+                stats["pre_filter_gbif_species"] - stats["post_filter_gbif_species"]
+            )
+            stats["retention_pct_records"] = (
+                (stats["post_filter_gbif_records"] / stats["pre_filter_gbif_records"])
+                * 100
+                if stats["pre_filter_gbif_records"] > 0
+                else 0
+            )
+            stats["retention_pct_species"] = (
+                (stats["post_filter_gbif_species"] / stats["pre_filter_gbif_species"])
+                * 100
+                if stats["pre_filter_gbif_species"] > 0
+                else 0
+            )
+            log.info(
+                f"After filtering: {stats['post_filter_gbif_records']:,} observations, "
+                f"{stats['post_filter_gbif_species']:,} species "
+                f"(dropped {stats['dropped_records']:,} records from "
+                f"{stats['dropped_species']:,} species)"
+            )
+        else:
+            # No filtering applied - use pre-filter values as post-filter baseline
+            stats["post_filter_gbif_records"] = stats["pre_filter_gbif_records"]
+            stats["post_filter_gbif_species"] = stats["pre_filter_gbif_species"]
+            log.info("Skipping minimum observation filter (min_observations = 0)")
 
         # 04. Match with traits data
         log.info("Matching GBIF observations with trait species...")
@@ -311,33 +434,50 @@ def main(args: argparse.Namespace | None = None) -> None:
         traits_dask = dd.from_pandas(traits_df, npartitions=1)
 
         # Inner join to keep only species with trait data
-        before = len(gbif)
         gbif_matched = gbif.merge(
             traits_dask,
             left_on="specieskey",
             right_on="GBIFKeyGBIF",
             how="inner",
         ).drop(columns=["GBIFKeyGBIF"])
-        after = len(gbif_matched)
 
-        stats["matched_records"] = after
-        stats["matched_records_pct"] = (after / before) * 100 if before > 0 else 0
+        stats["matched_records"] = len(gbif_matched)
+        stats["matched_records_pct"] = (
+            (stats["matched_records"] / stats["post_filter_gbif_records"]) * 100
+            if stats["post_filter_gbif_records"] > 0
+            else 0
+        )
+        stats["unmatched_records"] = (
+            stats["post_filter_gbif_records"] - stats["matched_records"]
+        )
 
         log.info(
-            "Dropped %d records without trait data (%.2f%%)",
-            before - after,
-            100 - ((after / before) * 100),
+            "Dropped %d records without trait data (%.2f%% of filtered GBIF data)",
+            stats["unmatched_records"],
+            100 - stats["matched_records_pct"],
         )
+
         n_species = gbif_matched.specieskey.nunique().compute()
-        n_trait_species = traits_df.GBIFKeyGBIF.nunique()
         stats["matched_species"] = n_species
         stats["matched_species_pct"] = (
+            (n_species / stats["post_filter_gbif_species"]) * 100
+            if stats["post_filter_gbif_species"] > 0
+            else 0
+        )
+        stats["unmatched_species"] = (
+            stats["post_filter_gbif_species"] - stats["matched_species"]
+        )
+
+        n_trait_species = traits_df.GBIFKeyGBIF.nunique()
+        stats["trait_coverage_pct"] = (
             100 * n_species / n_trait_species if n_trait_species > 0 else 0
         )
         log.info(
-            "Number of species in trait data retained: %d (%.2f%%)",
+            "Matched %d species (%.2f%% of filtered GBIF species, "
+            "%.2f%% of trait database)",
             n_species,
-            100 * n_species / n_trait_species,
+            stats["matched_species_pct"],
+            stats["trait_coverage_pct"],
         )
 
         # 05. Calculate resurvey weights

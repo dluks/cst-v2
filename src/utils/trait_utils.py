@@ -11,7 +11,8 @@ from box import ConfigBox
 from src.conf.conf import get_config
 from src.conf.environment import log
 from src.utils.dask_utils import repartition_if_set
-from src.utils.dataset_utils import get_try_traits_interim_fn
+
+# from src.utils.dataset_utils import get_try_traits_interim_fn
 
 
 def genus_species_caps(col: pd.Series) -> pd.Series:
@@ -121,24 +122,24 @@ def get_trait_name_from_id(
     return mapping[tnum][length], mapping[tnum]["unit"]
 
 
-def get_traits_to_process(
-    valid_traits: list[int],
-    using_pca: bool,
-    trait_id: int | None,
-) -> list[str]:
-    """Get the traits to process."""
-    if using_pca and trait_id is not None:
-        raise ValueError("Cannot specify a trait ID when using PCA")
+# def get_traits_to_process(
+#     valid_traits: list[int],
+#     using_pca: bool,
+#     trait_id: int | None,
+# ) -> list[str]:
+#     """Get the traits to process."""
+#     if using_pca and trait_id is not None:
+#         raise ValueError("Cannot specify a trait ID when using PCA")
 
-    if using_pca:
-        # In this case, we're going to be creating PCA maps
-        trait_cols = dd.read_parquet(get_try_traits_interim_fn()).columns
-        pca_components = [c for c in trait_cols if c.startswith("PC")]
-        return pca_components
+#     if using_pca:
+#         # In this case, we're going to be creating PCA maps
+#         trait_cols = dd.read_parquet(get_try_traits_interim_fn()).columns
+#         pca_components = [c for c in trait_cols if c.startswith("PC")]
+#         return pca_components
 
-    else:
-        # In this case, we're going to be creating trait maps of one or more traits
-        return format_traits_to_process(trait_id, valid_traits)
+#     else:
+#         # In this case, we're going to be creating trait maps of one or more traits
+#         return format_traits_to_process(trait_id, valid_traits)
 
 
 def format_traits_to_process(
@@ -201,18 +202,18 @@ def check_for_existing_maps(
         return _check_list(traits_to_process), []
 
 
-def load_try_traits(npartitions: int, traits_to_process: list[str]) -> dd.DataFrame:
-    needed_columns = ["speciesname"]
-    needed_columns.extend(traits_to_process)
-    log.info("Loading trait data for columns: %s", ", ".join(needed_columns))
+# def load_try_traits(npartitions: int, traits_to_process: list[str]) -> dd.DataFrame:
+#     needed_columns = ["speciesname"]
+#     needed_columns.extend(traits_to_process)
+#     log.info("Loading trait data for columns: %s", ", ".join(needed_columns))
 
-    # Load pre-cleaned and filtered TRY traits and set species as index
-    traits = (
-        dd.read_parquet(
-            get_try_traits_interim_fn(),
-            columns=needed_columns,
-        )
-        .pipe(repartition_if_set, npartitions)
-        .set_index("speciesname")
-    )
-    return traits
+#     # Load pre-cleaned and filtered TRY traits and set species as index
+#     traits = (
+#         dd.read_parquet(
+#             get_try_traits_interim_fn(),
+#             columns=needed_columns,
+#         )
+#         .pipe(repartition_if_set, npartitions)
+#         .set_index("speciesname")
+#     )
+#     return traits

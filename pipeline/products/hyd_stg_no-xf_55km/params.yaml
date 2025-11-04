@@ -841,7 +841,7 @@ traits:
   pfts: data/raw/try_pfts.parquet
   pfts_threshold: 0.60
   harmonization_fp: data/raw/hydraulic_traits_matching_results_2025-10-03.gz
-  interim_out: data/interim/try/hydraulic_no-xf.parquet
+  interim_out: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
   trait_map_layers: ["mean", "std", "median", "q05", "q95", "count", "count_weighted"]
   target_trait_stat: "mean"
 

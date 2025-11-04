@@ -1,0 +1,61 @@
+schema: '2.0'
+stages:
+  filter_gbif:
+    cmd: python ../../../stages/filter_gbif.py --params params.yaml --partition genoa
+    deps:
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../data/raw/all_tracheophyta_non-cult/0061405-250920141307145.parquet
+      hash: md5
+      md5: bb664849c4654a77f58763a2f7e1a37f.dir
+      size: 23880184749
+      nfiles: 3656
+    - path: ../../../src/data/filter_gbif.py
+      hash: md5
+      md5: 058f74900a0d864ebaa504f59266a114
+      size: 20657
+    params:
+      params.yaml:
+        gbif.min_observations: 0
+    outs:
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/filter_gbif_report.md
+      hash: md5
+      md5: 2daffe126be8fa8d75eacb73ca5b63a3
+      size: 2289
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
+      hash: md5
+      md5: 330b94ea84f903a58649c786bb8682cd.dir
+      size: 391705722
+      nfiles: 523
+    - path: 
+        ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtering_density.png
+      hash: md5
+      md5: c1f86725f53f8476dab5e49f51bb3928
+      size: 264913
+  filter_splot:
+    cmd: python ../../../stages/filter_splot.py --params params.yaml --partition genoa
+    deps:
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../data/raw/splot4-0
+      hash: md5
+      md5: 99990a51d13fe4485f72dd03590d44a6.dir
+      size: 521575464
+      nfiles: 3
+    - path: ../../../src/data/filter_splot.py
+      hash: md5
+      md5: bdcc31ca1a9d55eed210d639969b16fb
+      size: 16073
+    outs:
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/filter_splot_report.md
+      hash: md5
+      md5: 97b974794754eb9733d8401ad3cfe4a0
+      size: 2001
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
+      hash: md5
+      md5: 7f9270d6cc21675857696f5e0ea873e4
+      size: 22533501

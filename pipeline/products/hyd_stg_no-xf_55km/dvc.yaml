@@ -52,37 +52,6 @@ stages:
   #     - ${interim_dir}/${trydb.interim.dir}/${trydb.interim.pca_fn}:
   #         persist: true
 
-  build_traits:
-    cmd: python ${project_root}/src/data/build_hydraulic_traits.py --params ${product_dir}/params.yaml
-    deps:
-      - ${project_root}/src/data/build_hydraulic_traits.py
-      - ${project_root}/${traits.raw}
-      - ${project_root}/src/utils/match_pfts.py
-    outs:
-      - ${project_root}/${traits.interim_out}
-      # Also outputs transformer pickle IF transform is not None, but as it is a small,
-      # conditional output, it is OK not to track it with DVC.
-
-  filter_gbif:
-    cmd: python ${project_root}/src/data/filter_gbif.py --params ${product_dir}/params.yaml
-    deps:
-      - ${project_root}/src/data/filter_gbif.py
-      - ${project_root}/${gbif.raw_fp}
-      - ${project_root}/${traits.interim_out}
-    outs:
-      - ${project_root}/${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.fp}
-      - ${project_root}/${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.report_fp}
-      - ${project_root}/${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.density_plot_fp}
-
-  filter_splot:
-    cmd: python ${project_root}/src/data/filter_splot.py --params ${product_dir}/params.yaml
-    deps:
-      - ${project_root}/src/data/filter_splot.py
-      - ${project_root}/data/raw/${splot.raw.dir}
-      - ${project_root}/${traits.interim_out}
-    outs:
-      - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.fp}
-      - ${project_root}/${splot.filtered.out_dir}/${trait_type}/${splot.filtered.report_fp}
 
   build_gbif_maps:
     cmd: python ${project_root}/stages/build_gbif_maps.py --params params.yaml

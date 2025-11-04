@@ -1,0 +1,40 @@
+version: "2"
+project_root: "../../.."
+product_dir: "pipeline/occurrences/gbif_splot_stg_hydraulic_filtered"
+trait_type: "hydraulic"
+product_code: "gbif_splot_stg_hydraulic_filtered"
+model_res: "1km"
+
+# See pipeline/traits/hydraulic_no-xf/params.yaml for more details.
+traits_fp: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+
+
+nemo:
+  match_gbif_pfts:
+    n_workers: 60
+    n_partitions: 80
+
+
+gbif:
+  raw_fp: data/raw/all_tracheophyta_non-cult/0061405-250920141307145.parquet
+  min_observations: 0
+  filtered:
+    out_dir: data/interim/gbif/filtered_occurrences
+    fp: gbif_filtered.parquet
+    report_fp: filter_gbif_report.md
+    density_plot_fp: gbif_filtering_density.png
+  maps:
+    out_dir: data/interim/gbif/maps
+    min_count: 10
+    max_count: 500
+
+splot:
+  splot_open: false
+  raw:
+    dir: data/raw/splot4-0
+  filtered:
+    out_dir: data/interim/splot/filtered_surveys
+    fp: splot_filtered.parquet
+    report_fp: filter_splot_report.md
+  maps:
+    out_dir: data/interim/splot/maps
