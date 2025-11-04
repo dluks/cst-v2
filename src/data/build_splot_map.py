@@ -103,8 +103,8 @@ def main(args: argparse.Namespace | None = None) -> None:
     log.info("Processing trait %s...", args.trait)
 
     # Rasterize each statistic
-    stat_cols = ["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95", "cw_range"]
-    stat_names = ["mean", "std", "median", "q05", "q95", "range"]
+    stat_cols = ["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95", "cw_q02", "cw_q98"]
+    stat_names = ["mean", "std", "median", "q05", "q95", "q02", "q98"]
 
     log.info("Rasterizing statistics...")
     grids = []
@@ -115,7 +115,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         requested_funcs = ["mean"]
 
         # Add count on the last statistic
-        if stat_col == "cw_range":
+        if stat_col == "cw_q98":
             requested_funcs.append("count")
             requested_funcs.append("count_weighted")
 

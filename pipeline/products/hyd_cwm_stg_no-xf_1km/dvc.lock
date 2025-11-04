@@ -1,0 +1,663 @@
+schema: '2.0'
+stages:
+  standardize_other_products:
+    cmd: python src/data/standardize_other_products.py
+    deps:
+    - path: data/raw/other-trait-maps
+      hash: md5
+      md5: 848dac77f0897cf7e58f41a196fe1d68.dir
+      size: 32055985074
+      nfiles: 1510
+    - path: src/data/standardize_other_products.py
+      hash: md5
+      md5: 2e4c967cc9dda5883850576253521e00
+      size: 4665
+    outs:
+    - path: data/interim/other_trait_maps
+      hash: md5
+      md5: 4ce80d8ff95ecdcbad3f7738ed93d461.dir
+      size: 1183362520
+      nfiles: 63
+  build_container:
+    cmd: stages/build_container.sh singularity cit-sci-traits latest cit-sci-traits.def
+      cit-sci-traits.sif
+    deps:
+    - path: README.md
+      hash: md5
+      md5: c255f86c149ea407ee916b3eb75be456
+      size: 9726
+    - path: cit-sci-traits.def
+      hash: md5
+      md5: a9ece716692785bb77a429cccfd774d0
+      size: 1465
+    - path: poetry.lock
+      hash: md5
+      md5: 8f7cfac13e06acaf604d74b7951ca402
+      size: 667727
+    - path: pyproject.toml
+      hash: md5
+      md5: abb62da99ab8238dbfd94f6814da0866
+      size: 1732
+    - path: stages/build_container.sh
+      hash: md5
+      md5: 52742d9dcb076bd83a511a755757a5f3
+      size: 917
+      isexec: true
+    params:
+      params.yaml:
+        container:
+          type: singularity
+          name: cit-sci-traits
+          docker_tag: latest
+          def: cit-sci-traits.def
+          image: cit-sci-traits.sif
+    outs:
+    - path: cit-sci-traits.sif
+      hash: md5
+      md5: 2168f356be5b96afb1549bb3bec41a15
+      size: 20662411264
+      isexec: true
+  get_TRY_mean_traits:
+    cmd: python src/data/build_try_traits.py
+    deps:
+    - path: data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
+      hash: md5
+      md5: f2cc4a7dd419bed117f42e62780b16e8
+      size: 307941318
+    - path: src/data/build_try_traits.py
+      hash: md5
+      md5: c918e38e1c0d49fbac88a6308042cdc2
+      size: 5918
+    params:
+      params.yaml:
+        trydb:
+          raw:
+            dir: TRY_6_gapfilled_for_distribution
+            zip: TRY6_gapfilled_for_distribution.zip
+            zipfile_csv: TRY6_gapfilled_for_distribution/TRY6_gapfilled_filtered_2.csv.zip
+            pfts: try_pft_v2.parquet
+          interim:
+            dir: try
+            quantile_range:
+            transform: power
+            already_norm:
+            filtered: traits.parquet
+            transformer_fn: power_transformer.pkl
+    outs:
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: d21efd0d564ee1dc6fdc499c12c06bc3
+      size: 2163
+    - path: data/interim/try/traits.parquet
+      hash: md5
+      md5: e72bbe287c0bcc22a16e6989703d0c24
+      size: 10537510
+  match_gbif_pfts:
+    cmd: python src/data/match_gbif_pfts.py
+    deps:
+    - path: data/raw/all_tracheophyta_non-cult_2024-04-10
+      hash: md5
+      md5: ada860692d425bd047bd09fd4531fdbf.dir
+      size: 30005038638
+      nfiles: 1584
+    - path: data/raw/try_pft_v2.parquet
+      hash: md5
+      md5: d49a4b1611eebbd529c9e9aba6aa5f69
+      size: 2232209
+    - path: src/data/match_gbif_pfts.py
+      hash: md5
+      md5: 6eb77a3b1d810e69a28df4ddcb0b5450
+      size: 2541
+    params:
+      params.yaml:
+        datasets.Y.gbif: all_tracheophyta_non-cult_2024-04-10
+        gbif.interim.dir: gbif
+        gbif.interim.matched: gbif_pfts.parquet
+        gbif.raw.dir: all_tracheophyta_non-cult_2024-04-10
+    outs:
+    - path: data/interim/gbif/gbif_pfts.parquet
+      hash: md5
+      md5: 3588c721bb421ef1f67c9a9c00b72c49.dir
+      size: 4026649735
+      nfiles: 159
+  extract_splot:
+    cmd: python src/data/extract_splot.py
+    deps:
+    - path: data/raw/splot4-0
+      hash: md5
+      md5: 99990a51d13fe4485f72dd03590d44a6.dir
+      size: 521575464
+      nfiles: 3
+    - path: src/data/extract_splot.py
+      hash: md5
+      md5: 2a89310e584294f1661965d542a50d18
+      size: 3108
+    params:
+      params.yaml:
+        datasets.Y.splot: splot4-0
+        splot.interim.dir: splot
+    outs:
+    - path: data/interim/splot/extracted
+      hash: md5
+      md5: 79e5388fb25a0c2fa5af8eb08c26498e.dir
+      size: 508142149
+      nfiles: 3
+  harmonize_eo_data:
+    cmd: python src/data/harmonize_eo_data.py
+    deps:
+    - path: src/data/harmonize_eo_data.py
+      hash: md5
+      md5: 6d6518fbd723a6d1689b1be572658c9f
+      size: 8191
+    params:
+      params.yaml:
+        base_resolution: 1000
+        datasets.X:
+          canopy_height: ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: modis_sur_refl_monthly_avg_1km
+          soilgrids: soilgrids_v2-0_1km
+          vodca: vodca_mean-p5-p95_1km
+          worldclim: wc2-1_30s_bio
+        eo_data.interim.dir: eo_data
+        mask:
+          path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+          keep_classes:
+          - 10
+          - 20
+          - 30
+          - 40
+          - 60
+          - 70
+          - 90
+          - 95
+          - 100
+        model_res: 55km
+        target_resolution: 55000
+        worldclim.bio_vars:
+        - '1'
+        - '4'
+        - '7'
+        - '12'
+        - 13-14
+        - '15'
+    outs:
+    - path: data/interim/eo_data/55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
+  build_predict:
+    cmd: python src/features/featurize_predict.py
+    deps:
+    - path: data/interim/eo_data/55km
+      hash: md5
+      md5: 10252a0aaa6d27dc0d7d939a7d1dbcba.dir
+      size: 14279660
+      nfiles: 150
+    - path: src/features/featurize_predict.py
+      hash: md5
+      md5: ca3da443b6f09c8a58773d046fa54dca
+      size: 5035
+    params:
+      params.yaml:
+        eo_data.interim.dir: eo_data
+        eo_data.predict.dir: predict
+        eo_data.predict.imputed_fn: eo_predict_imputed.parquet
+        eo_data.predict.mask_fn: eo_predict_mask.parquet
+        model_res: 55km
+        train.dir: data/features
+    outs:
+    - path: data/features/predict/55km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 2c314baaded50a8949b8fef26c2de020
+      size: 11107078
+    - path: data/features/predict/55km/eo_predict_mask.parquet
+      hash: md5
+      md5: 1ad3cfece7a07456126cb939a4e088f4
+      size: 229806
+  build_gbif_maps:
+    cmd: python ../../../stages/build_gbif_maps.py --params params.yaml --partitions
+      milan genoa --cpus 33 --mem 256GB --time 00:30:00
+    deps:
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
+      hash: md5
+      md5: 330b94ea84f903a58649c786bb8682cd.dir
+      size: 391705722
+      nfiles: 523
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_gbif_map.py
+      hash: md5
+      md5: 1dcf272eb4eca5255e01362cecb21fcd
+      size: 4517
+    outs:
+    - path: ../../../data/interim/gbif/maps/hyd_cwm_stg_no-xf_1km
+      hash: md5
+      md5: 971ea05d2420def035b7f1dba95643c9.dir
+      size: 344373162
+      nfiles: 6
+  build_splot_maps:
+    cmd: python ../../../stages/build_splot_maps.py --params params.yaml --partitions
+      milan genoa --cpus 2 --mem 256GB --time 00:15:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
+      hash: md5
+      md5: 7f9270d6cc21675857696f5e0ea873e4
+      size: 22533501
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_splot_map.py
+      hash: md5
+      md5: 5a5013424dbb5eff254a880500f1c432
+      size: 5757
+    outs:
+    - path: ../../../data/interim/splot/maps/hyd_cwm_stg_no-xf_1km
+      hash: md5
+      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
+      size: 130599118
+      nfiles: 6
+  build_y:
+    cmd: python ../../../stages/build_y.py --params params.yaml
+    deps:
+    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_55km
+      hash: md5
+      md5: f6ebc3954206660498708fd0ac0da035.dir
+      size: 9228470
+      nfiles: 6
+    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_55km
+      hash: md5
+      md5: 7bcdcb9f6c7cc80e5c7aa7394480004a.dir
+      size: 2986458
+      nfiles: 6
+    - path: ../../../src/features/build_y_trait.py
+      hash: md5
+      md5: c057b54bd7270af40af44e16fc8f9f3e
+      size: 4649
+    - path: ../../../src/features/merge_y_traits.py
+      hash: md5
+      md5: 1ae2d7919523487fbaa5edeb867dea9d
+      size: 3236
+    - path: ../../../stages/build_y.py
+      hash: md5
+      md5: ee1f5420bca453e630ccc5f306499b4d
+      size: 12537
+      isexec: true
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        product_code: hyd_stg_no-xf_55km
+        train.Y.fn: Y.parquet
+        train.dir: data/features
+        traits.names:
+        - gsmax
+        - P12
+        - P50
+        - P88
+        - rdmax
+        - WUE
+    outs:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+      hash: md5
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+  calculate_spatial_autocorr:
+    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml
+    deps:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+      hash: md5
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+    - path: ../../../src/features/calc_spatial_autocorr_gpu.py
+      hash: md5
+      md5: 6d2933b57cc37f38835cab1338493fb0
+      size: 36125
+    params:
+      params.yaml:
+        spatial_autocorr.ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+    outs:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+      hash: md5
+      md5: c66d23ee1248f2a758a1adca40f1ed74
+      size: 7601
+  build_cv_splits:
+    cmd: python ../../../stages/build_cv_splits.py --params params.yaml --overwrite
+    deps:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+      hash: md5
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+    - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+      hash: md5
+      md5: c66d23ee1248f2a758a1adca40f1ed74
+      size: 7601
+    - path: ../../../src/features/build_cv_splits.py
+      hash: md5
+      md5: a64cb7478a4256d9f64047983257da58
+      size: 17584
+    - path: ../../../stages/build_cv_splits.py
+      hash: md5
+      md5: 22daedc80bb558d5fa9e748905230bd2
+      size: 9379
+      isexec: true
+    params:
+      params.yaml:
+        spatial_autocorr.ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+        train.Y.fp: data/features/hyd_stg_no-xf_55km/Y.parquet
+        train.cv_splits:
+          range_stat: mean
+          n_splits: 5
+          n_sims: 200
+          dir: skcv_splits
+          dir_fp: data/features/hyd_stg_no-xf_55km/skcv_splits
+    outs:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/skcv_splits
+      hash: md5
+      md5: 0d287c5d6d45afa282ed5dc8a84205c5.dir
+      size: 3075583
+      nfiles: 12
+  train_models:
+    cmd: python src/models/train_models.py -r && python src/models/cv_stats.py
+    deps:
+    - path: data/features/Shrub_Tree_Grass/55km/Y.parquet
+      hash: md5
+      md5: 9cb9b74c89b51d45f3fa4fa6d811f600.dir
+      size: 22743420
+      nfiles: 260
+    - path: data/features/Shrub_Tree_Grass/55km/skcv_splits
+      hash: md5
+      md5: 105dc5c0bac8b3c79169401a7e002bce.dir
+      size: 1127530
+      nfiles: 37
+    - path: data/features/predict/55km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 2c314baaded50a8949b8fef26c2de020
+      size: 11107078
+    - path: data/features/predict/55km/eo_predict_mask.parquet
+      hash: md5
+      md5: 1ad3cfece7a07456126cb939a4e088f4
+      size: 229806
+    - path: data/interim/try/power_transformer.pkl
+      hash: md5
+      md5: 1baf90006b4ab6ec21964725243b8f9a
+      size: 2463
+    - path: src/models/train_models.py
+      hash: md5
+      md5: 2cdb1448642111361ccb9267d132c598
+      size: 1135
+    params:
+      params.yaml:
+        autogluon:
+          included_model_types:
+          - GBM
+          presets: high
+          save_bag_folds: true
+          refit_full: false
+          set_best_to_refit_full: false
+          cv_fit_time_limit: 3600
+          full_fit_time_limit: 12600
+          num_gpus: 2
+          num_cpus: 110
+          feature_importance: true
+          FI_time_limit: 1800
+          FI_num_shuffle_sets: 10
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 223
+        - 224
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 351
+        - 614
+        - 1080
+        - 3106
+        - 3107
+        - 3112
+        - 3113
+        - 3114
+        - 3117
+        - 3120
+        train.arch: autogluon
+    outs:
+    - path: models/Shrub_Tree_Grass/55km
+      hash: md5
+      md5: b077c3f5cc8530b6596fe895807aa04f.dir
+      size: 12552145362
+      nfiles: 21430
+  aoa:
+    cmd: python src/analysis/aoa.py
+    deps:
+    - path: data/features/Shrub_Tree_Grass/55km/Y.parquet
+      hash: md5
+      md5: 9cb9b74c89b51d45f3fa4fa6d811f600.dir
+      size: 22743420
+      nfiles: 260
+    - path: data/features/predict/55km/eo_predict_imputed.parquet
+      hash: md5
+      md5: 2c314baaded50a8949b8fef26c2de020
+      size: 11107078
+    - path: models/Shrub_Tree_Grass/55km
+      hash: md5
+      md5: b077c3f5cc8530b6596fe895807aa04f.dir
+      size: 12552145362
+      nfiles: 21430
+    - path: src/analysis/aoa.py
+      hash: md5
+      md5: b1f01afcf1303145330b22e503654342
+      size: 15771
+    params:
+      params.yaml:
+        aoa:
+          dir: aoa
+        datasets.Y.traits:
+        - 4
+        - 6
+        - 13
+        - 14
+        - 15
+        - 21
+        - 26
+        - 27
+        - 46
+        - 47
+        - 50
+        - 55
+        - 78
+        - 95
+        - 138
+        - 144
+        - 145
+        - 146
+        - 163
+        - 169
+        - 223
+        - 224
+        - 237
+        - 281
+        - 282
+        - 289
+        - 297
+        - 351
+        - 614
+        - 1080
+        - 3106
+        - 3107
+        - 3112
+        - 3113
+        - 3114
+        - 3117
+        - 3120
+    outs:
+    - path: data/processed/Shrub_Tree_Grass/55km/aoa
+      hash: md5
+      md5: 02f36f2618b084da4ea29fdcea6454f2.dir
+      size: 5590016
+      nfiles: 74
+  aggregate_all_stats:
+    cmd: python src/models/multires_stats.py -mfc
+    deps:
+    - path: models/Shrub_Tree_Grass/55km
+      hash: md5
+      md5: b077c3f5cc8530b6596fe895807aa04f.dir
+      size: 12552145362
+      nfiles: 21430
+    - path: src/models/multires_stats.py
+      hash: md5
+      md5: f3c369b3a540ffc3f0a309f26dd3975a
+      size: 11211
+    params:
+      params.yaml:
+        analysis:
+          dir: results
+          multires_results_fn: all_results.parquet
+          multires_fi_fn: all_fi.parquet
+  aggregate_aoa:
+    cmd: python src/analysis/multires_aoa.py
+    deps:
+    - path: data/processed/Shrub_Tree_Grass/55km/aoa
+      hash: md5
+      md5: 02f36f2618b084da4ea29fdcea6454f2.dir
+      size: 5590016
+      nfiles: 74
+    - path: src/analysis/multires_aoa.py
+      hash: md5
+      md5: c24832274df1c9615d161e87e6d82277
+      size: 2969
+  build_traits:
+    cmd: python ../../../src/data/build_hydraulic_traits.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    deps:
+    - path: ../../../data/raw/hydraulic_traits_knighton/GlobalTrees_Traits_Median.xlsx
+      hash: md5
+      md5: 8680a8231329721e19d386d01bb31c30
+      size: 8939466
+    - path: ../../../src/data/build_hydraulic_traits.py
+      hash: md5
+      md5: 664a311f255f4d785fc1d47ac24f5541
+      size: 5941
+    - path: ../../../src/utils/match_pfts.py
+      hash: md5
+      md5: aac20eb95e99e4a152a68e85bbf338b5
+      size: 6371
+    outs:
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+  filter_gbif:
+    cmd: python ../../../src/data/filter_gbif.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    deps:
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: 
+        ../../../data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
+      hash: md5
+      md5: 93b44988f61d1cac0a7b38b54aa4e7f8.dir
+      size: 30005037636
+      nfiles: 1583
+    - path: ../../../src/data/filter_gbif.py
+      hash: md5
+      md5: 3a878a89d4576c87eb7f3f6364eb6fa3
+      size: 15078
+    outs:
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/filter_gbif_report.md
+      hash: md5
+      md5: 18ca57d03bf0c47fcf2c65f2ce686e73
+      size: 1929
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
+      hash: md5
+      md5: 46f043d49446fe6820398a80ed66eb60.dir
+      size: 547187487
+      nfiles: 227
+    - path: 
+        ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtering_density.png
+      hash: md5
+      md5: 9d7c02c32d7ae5e13394b6cd9031bd6e
+      size: 288341
+  filter_splot:
+    cmd: python ../../../src/data/filter_splot.py --params pipeline/products/hyd_stg_no-xf_55km/params.yaml
+    deps:
+    - path: ../../../data/interim/try/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../data/raw/splot4-0
+      hash: md5
+      md5: 99990a51d13fe4485f72dd03590d44a6.dir
+      size: 521575464
+      nfiles: 3
+    - path: ../../../src/data/filter_splot.py
+      hash: md5
+      md5: 7cc68c9429af825d8395e9ed589b991b
+      size: 16066
+    outs:
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/filter_splot_report.md
+      hash: md5
+      md5: df090eacd5bb8611064479123d73354c
+      size: 2001
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
+      hash: md5
+      md5: b76e2d5175fc03a97e7f8efe03425789
+      size: 22616220
+  prepare_xy_data:
+    cmd: python ../../../stages/prepare_xy_data.py --params params.yaml --partition
+      milan --cpus 64 --mem 128GB
+    deps:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+      hash: md5
+      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
+      size: 1894184
+      nfiles: 1
+    - path: ../../../data/features/hyd_stg_no-xf_55km/skcv_splits
+      hash: md5
+      md5: 0d287c5d6d45afa282ed5dc8a84205c5.dir
+      size: 3075583
+      nfiles: 12
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
+      hash: md5
+      md5: 5b2f18e8c3dd1d322a01f7bcd523f29a
+      size: 11252958
+    - path: ../../../stages/prepare_xy_data.py
+      hash: md5
+      md5: 116edcb35ad189c4e8273ebdeb08860f
+      size: 7879
+    params:
+      params.yaml:
+        train.Y.fp: data/features/hyd_stg_no-xf_55km/Y.parquet
+        train.cv_splits.dir_fp: data/features/hyd_stg_no-xf_55km/skcv_splits
+        train.predict.fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
+        train.xy_data.fp: data/features/hyd_stg_no-xf_55km/xy_data/xy_all_traits.parquet
+    outs:
+    - path: ../../../data/features/hyd_stg_no-xf_55km/xy_data/xy_all_traits.parquet
+      hash: md5
+      md5: 602624120a1b20db24e2763c525bb300
+      size: 9178216

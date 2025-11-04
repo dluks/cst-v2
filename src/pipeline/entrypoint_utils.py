@@ -249,18 +249,23 @@ def format_command_string(cmd_parts: list[str]) -> str:
 # Argument Parser Helpers
 # ====================
 
-def add_common_args(parser: argparse.ArgumentParser) -> None:
+def add_common_args(
+    parser: argparse.ArgumentParser,
+    include_partition: bool = True
+) -> None:
     """
     Add common arguments to an argument parser.
 
     Common arguments include:
     - -p/--params: Path to parameters file
     - -o/--overwrite: Overwrite existing files
-    - --partition: Slurm partition
+    - --partition: Slurm partition (optional, controlled by include_partition)
     - --local: Force local execution
 
     Args:
         parser: ArgumentParser instance to add arguments to
+        include_partition: If True, adds --partition argument. Set to False
+            when using add_partition_args() instead.
     """
     parser.add_argument(
         "-p",
@@ -274,12 +279,13 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Overwrite existing files.",
     )
-    parser.add_argument(
-        "--partition",
-        type=str,
-        default="main",
-        help="Slurm partition to use (default: main).",
-    )
+    if include_partition:
+        parser.add_argument(
+            "--partition",
+            type=str,
+            default="main",
+            help="Slurm partition to use (default: main).",
+        )
     parser.add_argument(
         "--local",
         action="store_true",

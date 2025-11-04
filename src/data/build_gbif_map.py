@@ -53,7 +53,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     args = cli() if args is None else args
     cfg = get_config(params_path=args.params)
 
-    syscfg = cfg[detect_system()][cfg.model_res]["build_gbif_maps"]
+    syscfg = cfg[detect_system()]["build_gbif_maps"]
 
     npartitions = syscfg.get("npartitions", None)
 
@@ -61,7 +61,6 @@ def main(args: argparse.Namespace | None = None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     with Client(
-        dashboard_address=cfg.dask_dashboard,
         n_workers=syscfg.n_workers,
         threads_per_worker=syscfg.threads_per_worker,
     ):

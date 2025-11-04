@@ -25,6 +25,11 @@ from src.pipeline.entrypoint_utils import (
     build_base_command,
     add_common_args,
     add_execution_args,
+    add_partition_args,
+    add_resource_args,
+    resolve_partitions,
+    PartitionDistributor,
+    wait_for_job_completion,
 )
 
 project_root = setup_environment()
@@ -39,8 +44,16 @@ def cli() -> argparse.Namespace:
             "Submit Slurm jobs to build sPlot trait maps for all configured traits."
         )
     )
-    add_common_args(parser)
+    add_common_args(parser, include_partition=False)
     add_execution_args(parser, multi_job=True, n_jobs_default=4)
+    add_partition_args(parser, enable_multi_partition=True)
+    add_resource_args(
+        parser,
+        time_default="00:15:00",
+        cpus_default=10,
+        mem_default="30GB",
+        include_gpus=False,
+    )
     return parser.parse_args()
 
 
@@ -109,11 +122,18 @@ def run_slurm(
     trait_names: list[str],
     params_path: str | None,
     overwrite: bool,
-    partition: str,
+    partitions: list[str],
     log_dir: Path,
+    time_limit: str,
+    cpus: int,
+    mem: str,
 ) -> None:
-    """Submit trait jobs to Slurm."""
+    """Submit trait jobs to Slurm and wait for completion."""
+    # Create partition distributor for round-robin distribution
+    distributor = PartitionDistributor(partitions)
+
     job_ids = []
+    trait_to_job = {}
     for trait in trait_names:
         # Construct the command
         cmd_parts = build_base_command(
@@ -124,26 +144,68 @@ def run_slurm(
         )
         command = " ".join(cmd_parts)
 
+        # Get partition using round-robin distribution
+        partition = distributor.get_next()
+
         # Create Slurm job configuration
         slurm = Slurm(
             job_name=f"splot_{trait}",
             output=str(log_dir / f"%j_{trait}.log"),
             error=str(log_dir / f"%j_{trait}.err"),
-            time="00:15:00",
-            cpus_per_task=10,
-            mem="30GB",
+            time=time_limit,
+            cpus_per_task=cpus,
+            mem=mem,
             partition=partition,
         )
 
         # Submit the job
         job_id = slurm.sbatch(command)
-        job_ids.append((trait, job_id))
-        print(f"Submitted job {job_id} for trait '{trait}'")
+        job_ids.append(job_id)
+        trait_to_job[job_id] = trait
+
+        # Show partition in output if using multiple partitions
+        partition_info = f" [{partition}]" if len(distributor) > 1 else ""
+        print(f"Submitted job {job_id} for trait '{trait}'{partition_info}")
 
     print(f"\nSubmitted {len(job_ids)} jobs successfully")
+
+    # Show distribution summary if using multiple partitions
+    if len(distributor) > 1:
+        summary = distributor.get_summary()
+        print("Job distribution across partitions:")
+        for partition, count in summary.items():
+            print(f"  {partition}: {count} jobs")
+
     print("Job IDs and traits:")
-    for trait, job_id in job_ids:
-        print(f"  {job_id}: {trait}")
+    for job_id in job_ids:
+        print(f"  {job_id}: {trait_to_job[job_id]}")
+
+    # Wait for all jobs to complete
+    print(f"\nWaiting for {len(job_ids)} jobs to complete...")
+    successful = []
+    failed = []
+
+    for job_id in job_ids:
+        trait = trait_to_job[job_id]
+        success = wait_for_job_completion(job_id, poll_interval=5)
+
+        if success:
+            successful.append(trait)
+            print(f"✓ Job {job_id} ({trait}) completed successfully")
+        else:
+            failed.append(trait)
+            print(f"✗ Job {job_id} ({trait}) failed. Check logs:")
+            print(f"  {log_dir.absolute()}/{job_id}_{trait}.err")
+
+    # Report results
+    print(f"\n{'=' * 60}")
+    print(f"Completed: {len(successful)}/{len(trait_names)} traits")
+    if failed:
+        print(f"Failed traits: {', '.join(failed)}")
+        import sys
+        sys.exit(1)
+    else:
+        print("All traits processed successfully!")
 
 
 def main() -> None:
@@ -164,11 +226,28 @@ def main() -> None:
         # Run locally in parallel
         run_local(trait_names, str(params_path), args.overwrite, args.n_jobs)
     else:
+        # Determine partitions to use
+        partitions = resolve_partitions(args.partition, args.partitions)
+        if len(partitions) > 1:
+            print(
+                f"Distributing jobs across {len(partitions)} partitions: "
+                f"{', '.join(partitions)}"
+            )
+        else:
+            print(f"Using partition: {partitions[0]}")
+
         # Submit to Slurm
         log_dir = setup_log_directory("build_splot_maps")
         print(f"Logs will be written to: {log_dir.absolute()}")
         run_slurm(
-            trait_names, str(params_path), args.overwrite, args.partition, log_dir
+            trait_names,
+            str(params_path),
+            args.overwrite,
+            partitions,
+            log_dir,
+            args.time,
+            args.cpus,
+            args.mem,
         )
 
 

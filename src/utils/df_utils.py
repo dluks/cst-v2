@@ -14,7 +14,6 @@ import pyproj
 import xarray as xr
 from affine import Affine
 
-from src.conf.conf import get_config
 from src.conf.environment import log
 from src.utils.raster_utils import create_sample_raster
 
@@ -343,7 +342,7 @@ def agg_df(
     """
     Aggregate a DataFrame by specified columns and apply aggregation functions.
 
-    When weights are provided, all statistics (mean, std, median, quantiles, range)
+    When weights are provided, all statistics (mean, std, median, quantiles)
     are calculated using weighted versions. Both count (unweighted) and count_weighted
     (sum of weights) are included in the output.
 
@@ -358,7 +357,7 @@ def agg_df(
     funcs : dict of str to Any, list of str, or None, optional
         When weights are provided: a list of function names to compute
         (e.g., ["mean", "std", "count"]). Supported: "mean", "std", "median",
-        "q05", "q95", "range", "count", "count_weighted".
+        "q02", "q05", "q95", "q98", "count", "count_weighted".
         When weights are not provided: a dict where keys are result column names
         and values are aggregation functions, or a list of function names.
         If None, all default functions are computed.
@@ -380,16 +379,17 @@ def agg_df(
         "mean",
         "std",
         "median",
+        "q02",
         "q05",
         "q95",
-        "range",
+        "q98",
         "count",
         "count_weighted",
     }
 
     if n_max is not None:
         # Randomly subsample a maximum of n_max points from each group
-        seed = get_config().random_seed
+        seed = 42
         df = df.groupby(by, observed=False, group_keys=False).apply(
             lambda x: x.sample(n=min(n_max, len(x)), random_state=seed)
         )
@@ -445,17 +445,18 @@ def agg_df(
                 if "median" in requested_funcs:
                     results[f"{col}_median"] = _weighted_quantile(values, w, 0.5)
 
+                if "q02" in requested_funcs:
+                    results[f"{col}_q02"] = _weighted_quantile(values, w, 0.02)
+
                 if "q05" in requested_funcs:
                     results[f"{col}_q05"] = _weighted_quantile(values, w, 0.05)
 
                 if "q95" in requested_funcs:
                     results[f"{col}_q95"] = _weighted_quantile(values, w, 0.95)
 
-                if "range" in requested_funcs:
-                    results[f"{col}_range"] = _weighted_quantile(
-                        values, w, 0.98
-                    ) - _weighted_quantile(values, w, 0.02)
-                
+                if "q98" in requested_funcs:
+                    results[f"{col}_q98"] = _weighted_quantile(values, w, 0.98)
+
                 if "count" in requested_funcs:
                     results[f"{col}_count"] = len(values)
 
@@ -652,9 +653,9 @@ def rasterize_points(
 
     # Write each column of the DataFrame to a separate data variable in the raster
     for col in grid_df.columns:
-        log.info("Rasterizing %s", col)
         if str(col) in ("row", "col"):
             continue
+        log.info("Rasterizing %s", col)
         ref[col] = (("y", "x"), np.full(ref.rio.shape, nodata))
         ref[col].values[grid_df["row"].values, grid_df["col"].values] = grid_df[
             col
