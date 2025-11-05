@@ -1,0 +1,91 @@
+schema: '2.0'
+stages:
+  harmonize_eo_data:
+    cmd: python ../../../stages/harmonize_eo_data.py --params params.yaml --partitions
+      genoa milan --cpus 16 --mem 64GB --time 00:30:00
+    deps:
+    - path: ../../../data/raw/ALOS_CHILI
+      hash: md5
+      md5: 5affc8edbafec3593db9ed5ba0ffed2b.dir
+      size: 158504469
+      nfiles: 1
+    - path: ../../../data/raw/ETH_GlobalCanopyHeight_2020_v1_1km
+      hash: md5
+      md5: 7f7cab159554265edd5e012518dbb8eb.dir
+      size: 188155434
+      nfiles: 2
+    - path: ../../../data/raw/esa_worldcover_v100_1km
+      hash: md5
+      md5: 3cc4d8f50aa3b1441f8843cf46381e42.dir
+      size: 40502767
+      nfiles: 1
+    - path: ../../../data/raw/modis_sur_refl_monthly_avg_1km
+      hash: md5
+      md5: 5659a396fd8895b5d903eb74d628a4e0.dir
+      size: 58238905336
+      nfiles: 60
+    - path: ../../../data/raw/soilgrids_v2-0_1km
+      hash: md5
+      md5: c7c807d6306555672a2f93959f7b7bcc.dir
+      size: 15944244263
+      nfiles: 61
+    - path: ../../../data/raw/vodca_mean-p5-p95_1km
+      hash: md5
+      md5: ba45ecdbdf81992cef311ae550643bf1.dir
+      size: 11858431661
+      nfiles: 9
+    - path: ../../../data/raw/wc2-1_30s_bio
+      hash: md5
+      md5: 53925e6b695fc9ad52b84dbb92471a22.dir
+      size: 10773356934
+      nfiles: 19
+    - path: ../../../src/data/calculate_modis_ndvi.py
+      hash: md5
+      md5: 2cee5b2c24dac31e21c85c6ced1200ab
+      size: 4422
+    - path: ../../../src/data/harmonize_eo_file.py
+      hash: md5
+      md5: 370fc32afb0be4ee826f7bb6fa466436
+      size: 5348
+    - path: ../../../src/data/prune_worldclim_vars.py
+      hash: md5
+      md5: 65f7248e04cdde1a0165f032a890cc6e
+      size: 5113
+    params:
+      params.yaml:
+        base_resolution: 1000
+        datasets:
+          canopy_height: data/raw/ETH_GlobalCanopyHeight_2020_v1_1km
+          modis: data/raw/modis_sur_refl_monthly_avg_1km
+          soilgrids: data/raw/soilgrids_v2-0_1km
+          vodca: data/raw/vodca_mean-p5-p95_1km
+          worldclim: data/raw/wc2-1_30s_bio
+          alos: data/raw/ALOS_CHILI
+        interim.out_dir: data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_1km
+        landcover_mask:
+          path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
+          keep_classes:
+          - 10
+          - 20
+          - 30
+          - 40
+          - 60
+          - 70
+          - 90
+          - 95
+          - 100
+        model_res: 1km
+        target_resolution: 1000
+        worldclim.bio_vars:
+        - '1'
+        - '4'
+        - '7'
+        - '12'
+        - 13-14
+        - '15'
+    outs:
+    - path: ../../../data/interim/eo_data/modis_wc2_soil_canopy_vodca_alos_1km
+      hash: md5
+      md5: 34d4ca149abf29a24e54072d8dc8a300.dir
+      size: 38665896937
+      nfiles: 151

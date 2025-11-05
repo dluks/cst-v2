@@ -13,15 +13,16 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Any
+from typing import Any
 
 from dotenv import load_dotenv
-
 
 # ====================
 # Environment & Setup
 # ====================
+
 
 def setup_environment() -> Path:
     """
@@ -66,6 +67,7 @@ def determine_execution_mode(local_flag: bool) -> tuple[bool, str]:
 # Slurm Job Management
 # ====================
 
+
 def check_job_status(job_id: int | str) -> str:
     """
     Check the status of a Slurm job using squeue and sacct.
@@ -109,9 +111,7 @@ def check_job_status(job_id: int | str) -> str:
 
 
 def wait_for_job_completion(
-    job_id: int | str,
-    job_name: str = "",
-    poll_interval: int = 30
+    job_id: int | str, job_name: str = "", poll_interval: int = 5
 ) -> bool:
     """
     Wait for a Slurm job to complete by polling its status.
@@ -186,11 +186,12 @@ def setup_log_directory(stage_name: str) -> Path:
 # Command Building
 # ====================
 
+
 def build_base_command(
     module_path: str,
     params_path: str | None = None,
     overwrite: bool = False,
-    extra_args: dict[str, Any] | None = None
+    extra_args: dict[str, Any] | None = None,
 ) -> list[str]:
     """
     Build a base command for running a Python module with common arguments.
@@ -207,9 +208,11 @@ def build_base_command(
 
     Examples:
         >>> build_base_command("src.data.build_gbif_map", "/path/to/params.yaml", True)
-        ['python', '-m', 'src.data.build_gbif_map', '--params', '/path/to/params.yaml', '--overwrite']
+        ['python', '-m', 'src.data.build_gbif_map', '--params', '/path/to/params.yaml',
+        '--overwrite']
 
-        >>> build_base_command("src.data.harmonize", extra_args={"--dry-run": None, "--cpus": 4})
+        >>> build_base_command("src.data.harmonize", extra_args={"--dry-run": None,
+        "--cpus": 4})
         ['python', '-m', 'src.data.harmonize', '--dry-run', '--cpus', '4']
     """
     cmd = ["python", "-m", module_path]
@@ -249,9 +252,9 @@ def format_command_string(cmd_parts: list[str]) -> str:
 # Argument Parser Helpers
 # ====================
 
+
 def add_common_args(
-    parser: argparse.ArgumentParser,
-    include_partition: bool = True
+    parser: argparse.ArgumentParser, include_partition: bool = True
 ) -> None:
     """
     Add common arguments to an argument parser.
@@ -290,8 +293,7 @@ def add_common_args(
         "--local",
         action="store_true",
         help=(
-            "Force local execution instead of Slurm "
-            "(overrides USE_SLURM env variable)."
+            "Force local execution instead of Slurm (overrides USE_SLURM env variable)."
         ),
     )
 
@@ -302,7 +304,7 @@ def add_resource_args(
     cpus_default: int = 4,
     mem_default: str = "16GB",
     include_gpus: bool = False,
-    gpus_default: str = "1"
+    gpus_default: str = "1",
 ) -> None:
     """
     Add resource specification arguments to an argument parser.
@@ -344,9 +346,7 @@ def add_resource_args(
 
 
 def add_execution_args(
-    parser: argparse.ArgumentParser,
-    multi_job: bool = False,
-    n_jobs_default: int = 4
+    parser: argparse.ArgumentParser, multi_job: bool = False, n_jobs_default: int = 4
 ) -> None:
     """
     Add execution control arguments to an argument parser.
@@ -371,15 +371,13 @@ def add_execution_args(
         )
 
 
-
-
 # ====================
 # Post-processing Helpers
 # ====================
 
+
 def apply_post_processing(
-    results: list[Any],
-    callback: Callable[[list[Any]], Any] | None = None
+    results: list[Any], callback: Callable[[list[Any]], Any] | None = None
 ) -> Any:
     """
     Apply optional post-processing callback to results.
@@ -399,6 +397,7 @@ def apply_post_processing(
 # ====================
 # Multi-Partition Support
 # ====================
+
 
 def add_partition_args(
     parser: argparse.ArgumentParser,
