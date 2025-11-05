@@ -41,7 +41,7 @@ stages:
       nfiles: 19
     - path: ../../../src/data/calculate_modis_ndvi.py
       hash: md5
-      md5: 2cee5b2c24dac31e21c85c6ced1200ab
+      md5: e96da668b0d21055e19f52e27e23de73
       size: 4422
     - path: ../../../src/data/harmonize_eo_file.py
       hash: md5
