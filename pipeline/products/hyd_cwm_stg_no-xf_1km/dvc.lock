@@ -308,7 +308,7 @@ stages:
       nfiles: 1
   calculate_spatial_autocorr:
     cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
-      l40s --gpus 1 --time 01:00:00
+      l40s --gpus 1 --time 0:10:00
     deps:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
       hash: md5
