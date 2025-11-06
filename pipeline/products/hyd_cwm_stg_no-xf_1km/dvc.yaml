@@ -7,7 +7,13 @@ stages:
   ######################################################################################
 
   build_gbif_maps:
-    cmd: python ${project_root}/stages/build_gbif_maps.py --params params.yaml --partitions milan genoa --cpus 61 --mem 350GB --time 00:30:00
+    cmd: >-
+      python ${project_root}/stages/build_gbif_maps.py
+      --params params.yaml
+      --partitions milan genoa
+      --cpus 61
+      --mem 350GB
+      --time 00:30:00
     deps:
       - ${project_root}/src/data/build_gbif_map.py
       - ${project_root}/data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
@@ -17,7 +23,13 @@ stages:
           persist: false 
 
   build_splot_maps:
-    cmd: python ${project_root}/stages/build_splot_maps.py --params params.yaml --partitions milan genoa --cpus 2 --mem 256GB --time 00:30:00
+    cmd: >-
+      python ${project_root}/stages/build_splot_maps.py
+      --params params.yaml
+      --partitions milan genoa
+      --cpus 2
+      --mem 256GB
+      --time 00:30:00
     deps:
       - ${project_root}/src/data/build_splot_map.py
       - ${project_root}/data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
