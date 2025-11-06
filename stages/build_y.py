@@ -29,6 +29,9 @@ from src.pipeline.entrypoint_utils import (
     build_base_command,
     add_common_args,
     add_execution_args,
+    add_partition_args,
+    resolve_partitions,
+    PartitionDistributor,
     wait_for_job_completion,
 )
 
@@ -42,8 +45,58 @@ def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=("Process Y data per trait in parallel, then merge into Y.parquet.")
     )
-    add_common_args(parser)
+    add_common_args(parser, include_partition=False)
     add_execution_args(parser, multi_job=True, n_jobs_default=4)
+    add_partition_args(parser, enable_multi_partition=True)
+
+    # Resource arguments for individual trait jobs
+    parser.add_argument(
+        "--time",
+        type=str,
+        default="00:15:00",
+        help="Time limit for individual trait jobs (default: 00:15:00)",
+    )
+    parser.add_argument(
+        "--cpus",
+        type=int,
+        default=4,
+        help="Number of CPUs for individual trait jobs (default: 4)",
+    )
+    parser.add_argument(
+        "--mem",
+        type=str,
+        default="16GB",
+        help="Memory for individual trait jobs (default: 16GB)",
+    )
+
+    # Resource arguments for merge job
+    parser.add_argument(
+        "--merge-time",
+        type=str,
+        default="00:30:00",
+        help="Time limit for merge job (default: 00:30:00)",
+    )
+    parser.add_argument(
+        "--merge-cpus",
+        type=int,
+        default=8,
+        help="Number of CPUs for merge job (default: 8)",
+    )
+    parser.add_argument(
+        "--merge-mem",
+        type=str,
+        default="32GB",
+        help="Memory for merge job (default: 32GB)",
+    )
+
+    # Debug mode
+    parser.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        help="Enable debug mode: process only the first trait.",
+    )
+
     return parser.parse_args()
 
 
@@ -136,10 +189,19 @@ def run_slurm(
     trait_names: list[str],
     params_path: str | None,
     overwrite: bool,
-    partition: str,
+    partitions: list[str],
     log_dir: Path,
+    time_limit: str = "00:15:00",
+    cpus: int = 4,
+    mem: str = "16GB",
+    merge_time: str = "00:30:00",
+    merge_cpus: int = 8,
+    merge_mem: str = "32GB",
 ) -> None:
     """Submit trait jobs to Slurm with automatic merge via job dependencies."""
+    # Initialize partition distributor for round-robin distribution
+    distributor = PartitionDistributor(partitions)
+
     # Submit trait processing jobs
     trait_job_ids = []
     for trait in trait_names:
@@ -152,14 +214,17 @@ def run_slurm(
         )
         command = " ".join(cmd_parts)
 
+        # Get next partition for round-robin distribution
+        partition = distributor.get_next()
+
         # Create Slurm job configuration
         slurm = Slurm(
             job_name=f"y_{trait}",
             output=str(log_dir / f"%j_{trait}.log"),
             error=str(log_dir / f"%j_{trait}.err"),
-            time="00:15:00",
-            cpus_per_task=4,
-            mem="16GB",
+            time=time_limit,
+            cpus_per_task=cpus,
+            mem=mem,
             partition=partition,
         )
 
@@ -186,15 +251,18 @@ def run_slurm(
     )
     merge_command = " ".join(merge_cmd_parts)
 
+    # Use first partition for merge job (could be any partition)
+    merge_partition = partitions[0]
+
     # Create Slurm job for merge with dependencies
     merge_slurm = Slurm(
         job_name="merge_y_traits",
         output=str(log_dir / "%j_merge_y.log"),
         error=str(log_dir / "%j_merge_y.err"),
-        time="00:30:00",
-        cpus_per_task=8,
-        mem="32GB",
-        partition=partition,
+        time=merge_time,
+        cpus_per_task=merge_cpus,
+        mem=merge_mem,
+        partition=merge_partition,
         dependency=dependency_str,
     )
 
@@ -233,6 +301,11 @@ def main() -> None:
     trait_names = cfg.traits.names
     print(f"Found {len(trait_names)} traits to process: {', '.join(trait_names)}")
 
+    # In debug mode, only process the first trait
+    if args.debug:
+        trait_names = trait_names[:1]
+        print(f"DEBUG MODE: Limited to 1 trait: {trait_names[0]}")
+
     # Determine execution mode
     use_local, mode = determine_execution_mode(args.local)
 
@@ -247,6 +320,12 @@ def main() -> None:
         )
     else:
         # Submit to Slurm
+        partitions = resolve_partitions(args.partition, args.partitions)
+        if len(partitions) > 1:
+            print(
+                f"Distributing jobs across {len(partitions)} partitions: "
+                f"{', '.join(partitions)}"
+            )
         print("Execution mode: Slurm with job dependencies")
         log_dir = setup_log_directory("build_y")
         print(f"Logs will be written to: {log_dir.absolute()}")
@@ -254,8 +333,14 @@ def main() -> None:
             trait_names,
             str(params_path) if params_path else None,
             args.overwrite,
-            args.partition,
+            partitions,
             log_dir,
+            time_limit=args.time,
+            cpus=args.cpus,
+            mem=args.mem,
+            merge_time=args.merge_time,
+            merge_cpus=args.merge_cpus,
+            merge_mem=args.merge_mem,
         )
 
 

@@ -15,7 +15,7 @@ import dask.dataframe as dd
 from dask.distributed import Client
 
 from src.conf.conf import get_config
-from src.conf.environment import log
+from src.conf.environment import detect_system, log
 
 
 def cli() -> argparse.Namespace:
@@ -42,6 +42,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     """Main function to merge trait files."""
     args = cli() if args is None else args
     cfg = get_config(params_path=args.params)
+    syscfg = cfg[detect_system()]["merge_y_traits"]
 
     # Set up paths
     proj_root = os.environ.get("PROJECT_ROOT")
@@ -68,7 +69,11 @@ def main(args: argparse.Namespace | None = None) -> None:
     out_fn.parent.mkdir(parents=True, exist_ok=True)
 
     # Use dask for memory-efficient merging
-    with Client(n_workers=4, threads_per_worker=2, memory_limit="8GB"):
+    with Client(
+        n_workers=syscfg.n_workers,
+        threads_per_worker=syscfg.threads_per_worker,
+        memory_limit=syscfg.memory_limit,
+    ):
         log.info("Reading trait files...")
 
         # Read the first file to start

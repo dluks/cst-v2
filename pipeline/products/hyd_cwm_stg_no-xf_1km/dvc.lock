@@ -261,17 +261,18 @@ stages:
       size: 130599118
       nfiles: 6
   build_y:
-    cmd: python ../../../stages/build_y.py --params params.yaml
+    cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
+      genoa --time 01:00:00 --cpus 4 --mem 64GB --merge-cpus 9 --merge-mem 400GB
     deps:
-    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_55km
+    - path: ../../../data/interim/gbif/maps/hyd_cwm_stg_no-xf_1km
       hash: md5
-      md5: f6ebc3954206660498708fd0ac0da035.dir
-      size: 9228470
+      md5: 971ea05d2420def035b7f1dba95643c9.dir
+      size: 344373162
       nfiles: 6
-    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_55km
+    - path: ../../../data/interim/splot/maps/hyd_cwm_stg_no-xf_1km
       hash: md5
-      md5: 7bcdcb9f6c7cc80e5c7aa7394480004a.dir
-      size: 2986458
+      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
+      size: 130599118
       nfiles: 6
     - path: ../../../src/features/build_y_trait.py
       hash: md5
@@ -279,17 +280,17 @@ stages:
       size: 4649
     - path: ../../../src/features/merge_y_traits.py
       hash: md5
-      md5: 1ae2d7919523487fbaa5edeb867dea9d
-      size: 3236
+      md5: 266c3dd63c6228d4da83d9d9df48295e
+      size: 3387
     - path: ../../../stages/build_y.py
       hash: md5
-      md5: ee1f5420bca453e630ccc5f306499b4d
-      size: 12537
+      md5: 169c3889e2d00b91bd72b77043eaa14a
+      size: 10944
       isexec: true
     params:
       params.yaml:
         datasets.Y.trait_stat: 1
-        product_code: hyd_stg_no-xf_55km
+        product_code: hyd_cwm_stg_no-xf_1km
         train.Y.fn: Y.parquet
         train.dir: data/features
         traits.names:
@@ -300,10 +301,10 @@ stages:
         - rdmax
         - WUE
     outs:
-    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
       hash: md5
-      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
-      size: 1894184
+      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
+      size: 36839305
       nfiles: 1
   calculate_spatial_autocorr:
     cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml

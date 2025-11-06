@@ -39,7 +39,15 @@ stages:
           persist: false
 
   build_y:
-    cmd: python ${project_root}/stages/build_y.py --params params.yaml
+    cmd: >-
+      python ${project_root}/stages/build_y.py
+      --params params.yaml
+      --partitions milan genoa
+      --time 01:00:00
+      --cpus 4
+      --mem 64GB
+      --merge-cpus 9
+      --merge-mem 400GB
     deps:
       - ${project_root}/stages/build_y.py
       - ${project_root}/src/features/build_y_trait.py
