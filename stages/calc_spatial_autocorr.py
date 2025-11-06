@@ -24,11 +24,11 @@ from src.conf.conf import get_config
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
-    setup_environment,
-    determine_execution_mode,
-    build_base_command,
     add_common_args,
     add_resource_args,
+    build_base_command,
+    determine_execution_mode,
+    setup_environment,
     wait_for_job_completion,
 )
 
@@ -47,13 +47,16 @@ def cli() -> argparse.Namespace:
         cpus_default=8,
         mem_default="64GB",
         include_gpus=True,
-        gpus_default="1"
+        gpus_default="1",
     )
     parser.add_argument(
         "-d",
         "--debug",
         action="store_true",
-        help="Enable debug mode.",
+        help=(
+            "Enable debug mode: process only 1 trait and enable verbose logging "
+            "in the GPU calculation script."
+        ),
     )
     parser.add_argument(
         "--no-wait",
@@ -98,6 +101,11 @@ def main() -> None:
         .to_list()
     )
     print(f"Found {len(traits)} traits to process: {', '.join(traits)}")
+
+    # In debug mode, only process the first trait
+    if args.debug:
+        traits = traits[:1]
+        print(f"DEBUG MODE: Limited to 1 trait: {traits[0]}")
 
     print(f"Execution mode: {mode}")
 
@@ -216,7 +224,7 @@ def run_single_trait(
         "src.features.calc_spatial_autocorr_gpu",
         params_path=params_path,
         overwrite=True,  # Always overwrite when processing individual traits
-        extra_args=extra_args
+        extra_args=extra_args,
     )
 
     # Set CONFIG_PATH in subprocess environment to avoid import-time errors
@@ -235,13 +243,13 @@ def run_single_trait(
         print(f"    Exit code: {result.returncode}")
         if result.stderr:
             # Print last 20 lines of stderr for better error visibility
-            stderr_lines = result.stderr.strip().split('\n')
+            stderr_lines = result.stderr.strip().split("\n")
             print(f"    Last {min(20, len(stderr_lines))} lines of stderr:")
             for line in stderr_lines[-20:]:
                 print(f"      {line}")
         if result.stdout:
             # Also check stdout for error messages
-            stdout_lines = result.stdout.strip().split('\n')
+            stdout_lines = result.stdout.strip().split("\n")
             if stdout_lines:
                 print(f"    Last {min(5, len(stdout_lines))} lines of stdout:")
                 for line in stdout_lines[-5:]:
@@ -362,7 +370,7 @@ def run_slurm(
             "src.features.calc_spatial_autocorr_gpu",
             params_path=params_path,
             overwrite=True,
-            extra_args=extra_args
+            extra_args=extra_args,
         )
         command = " ".join(cmd_parts)
 
@@ -395,7 +403,7 @@ def run_slurm(
 
         for job_id in job_ids:
             trait = trait_to_job[job_id]
-            success = wait_for_job_completion(job_id, poll_interval=30)
+            success = wait_for_job_completion(job_id)
 
             if success:
                 successful.append(trait)

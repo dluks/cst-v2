@@ -65,7 +65,12 @@ stages:
           persist: false
 
   calculate_spatial_autocorr:
-    cmd: python ${project_root}/stages/calc_spatial_autocorr.py --params params.yaml
+    cmd: >-
+      python ${project_root}/stages/calc_spatial_autocorr.py
+      --params params.yaml
+      --partition l40s
+      --gpus 1
+      --time 0:10:00
     deps:
       - ${project_root}/src/features/calc_spatial_autocorr_gpu.py
       - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}

@@ -307,25 +307,26 @@ stages:
       size: 36839305
       nfiles: 1
   calculate_spatial_autocorr:
-    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml
+    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
+      l40s --gpus 1 --time 01:00:00
     deps:
-    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
       hash: md5
-      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
-      size: 1894184
+      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
+      size: 36839305
       nfiles: 1
     - path: ../../../src/features/calc_spatial_autocorr_gpu.py
       hash: md5
-      md5: 6d2933b57cc37f38835cab1338493fb0
-      size: 36125
+      md5: fa5e532d1648ee806e500e659a7560e5
+      size: 37045
     params:
       params.yaml:
-        spatial_autocorr.ranges_fp: data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+        spatial_autocorr.ranges_fp: data/features/hyd_cwm_stg_no-xf_1km/spatial_autocorr.parquet
     outs:
-    - path: ../../../data/features/hyd_stg_no-xf_55km/spatial_autocorr.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/spatial_autocorr.parquet
       hash: md5
-      md5: c66d23ee1248f2a758a1adca40f1ed74
-      size: 7601
+      md5: 131fab3586396a3b7934454be968495d
+      size: 7595
   build_cv_splits:
     cmd: python ../../../stages/build_cv_splits.py --params params.yaml --overwrite
     deps:

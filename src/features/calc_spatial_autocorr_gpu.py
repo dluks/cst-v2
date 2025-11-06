@@ -69,8 +69,10 @@ def cli() -> argparse.Namespace:
 
 
 # Available GPUs
-GPU_DEVICES = []  # Will be populated from syscfg
-CURRENT_GPU_IDX = 0
+# Under Slurm: GPU_DEVICES=[0] (Slurm maps allocated GPU to device 0)
+# Local: GPU_DEVICES from config (e.g., [0, 1, 2, 3])
+GPU_DEVICES = []
+CURRENT_GPU_IDX = 0  # Only used for round-robin with multiple GPUs
 
 
 def main(args: argparse.Namespace) -> None:
@@ -100,13 +102,24 @@ def main(args: argparse.Namespace) -> None:
         log.warning("Use --overwrite flag to overwrite existing files.")
         return
 
-    # Set GPU devices from configuration
-    if hasattr(syscfg, "gpu_ids"):
-        set_gpu_devices(syscfg.gpu_ids)
-        log.info(f"Set GPU devices from config: {GPU_DEVICES}")
-    else:
-        log.warning("No GPU IDs specified in config, defaulting to [0]")
+    # Set GPU devices: respect Slurm allocation if running under Slurm,
+    # otherwise use config-specified GPU IDs for local execution
+    import os
+    if "SLURM_JOB_ID" in os.environ:
+        # Running under Slurm - use device 0 (Slurm maps allocated GPU to device 0)
         set_gpu_devices([0])
+        log.info(
+            "Running under Slurm - using GPU device 0 "
+            "(mapped via CUDA_VISIBLE_DEVICES)"
+        )
+    elif hasattr(syscfg, "gpu_ids"):
+        # Local execution - use config-specified GPU IDs
+        set_gpu_devices(syscfg.gpu_ids)
+        log.info(f"Local execution - using GPU devices from config: {GPU_DEVICES}")
+    else:
+        # Fallback
+        set_gpu_devices([0])
+        log.warning("No GPU IDs specified in config, defaulting to [0]")
 
     # Check GPU availability
     using_gpu = check_gpu_availability()
@@ -194,12 +207,21 @@ def set_gpu_devices(gpu_ids):
 
 
 def get_next_gpu() -> int:
-    """Returns the next GPU ID in round-robin fashion."""
+    """Returns the next GPU ID in round-robin fashion.
+
+    For single-GPU setups (e.g., Slurm jobs with --gpus 1), always returns 0.
+    For multi-GPU setups, rotates through available devices.
+    """
     global CURRENT_GPU_IDX, GPU_DEVICES
     if not GPU_DEVICES:
         log.warning("No GPU devices configured, defaulting to device 0")
         return 0
 
+    # Single GPU - no need for round-robin
+    if len(GPU_DEVICES) == 1:
+        return GPU_DEVICES[0]
+
+    # Multiple GPUs - rotate through them
     gpu_id = GPU_DEVICES[CURRENT_GPU_IDX]
     CURRENT_GPU_IDX = (CURRENT_GPU_IDX + 1) % len(GPU_DEVICES)
     return gpu_id
