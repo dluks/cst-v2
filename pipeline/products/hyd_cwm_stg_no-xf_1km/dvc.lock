@@ -633,34 +633,34 @@ stages:
       size: 22616220
   prepare_xy_data:
     cmd: python ../../../stages/prepare_xy_data.py --params params.yaml --partition
-      milan --cpus 64 --mem 128GB
+      milan --cpus 48 --mem 256GB --time 01:00:00
     deps:
-    - path: ../../../data/features/hyd_stg_no-xf_55km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
       hash: md5
-      md5: 2d47b9f6f333f0403bfa7f9dd04d46d5.dir
-      size: 1894184
+      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
+      size: 36839305
       nfiles: 1
-    - path: ../../../data/features/hyd_stg_no-xf_55km/skcv_splits
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
-      md5: 0d287c5d6d45afa282ed5dc8a84205c5.dir
-      size: 3075583
+      md5: fe112ba6de83e8913a3b605b7ef43c1d.dir
+      size: 20085755
       nfiles: 12
-    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
       hash: md5
-      md5: 5b2f18e8c3dd1d322a01f7bcd523f29a
-      size: 11252958
+      md5: 9c9a86422be1edfff220bad343985715
+      size: 28636601445
     - path: ../../../stages/prepare_xy_data.py
       hash: md5
-      md5: 116edcb35ad189c4e8273ebdeb08860f
-      size: 7879
+      md5: d712ea5c94cd9605325a2336668aec8c
+      size: 7862
     params:
       params.yaml:
-        train.Y.fp: data/features/hyd_stg_no-xf_55km/Y.parquet
-        train.cv_splits.dir_fp: data/features/hyd_stg_no-xf_55km/skcv_splits
-        train.predict.fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_55km/X.parquet
-        train.xy_data.fp: data/features/hyd_stg_no-xf_55km/xy_data/xy_all_traits.parquet
+        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
+        train.cv_splits.dir_fp: data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
+        train.predict.fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
+        train.xy_data.fp: data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
     outs:
-    - path: ../../../data/features/hyd_stg_no-xf_55km/xy_data/xy_all_traits.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
       hash: md5
-      md5: 602624120a1b20db24e2763c525bb300
-      size: 9178216
+      md5: 5e3b81f4c0350b38ed9300eb134df245
+      size: 193184990

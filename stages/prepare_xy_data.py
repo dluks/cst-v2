@@ -143,6 +143,7 @@ def prepare_xy_data(cfg) -> None:
     # Remove old directory if it exists (from previous Dask partitioned format)
     if output_path.exists() and output_path.is_dir():
         import shutil
+
         log.info(f"Removing old partitioned directory: {output_path}")
         shutil.rmtree(output_path)
 
@@ -222,7 +223,7 @@ def run_slurm(
     if wait:
         # Wait for job to complete
         print(f"\nWaiting for job {job_id} to complete...")
-        success = wait_for_job_completion(job_id, poll_interval=30)
+        success = wait_for_job_completion(job_id)
 
         if success:
             print("\n✓ XY data preparation completed successfully!")

@@ -101,7 +101,13 @@ stages:
           persist: true
 
   prepare_xy_data:
-    cmd: python ${project_root}/stages/prepare_xy_data.py --params params.yaml --partition milan --cpus 64 --mem 128GB
+    cmd: >-
+      python ${project_root}/stages/prepare_xy_data.py
+      --params params.yaml
+      --partition milan
+      --cpus 48
+      --mem 256GB
+      --time 01:00:00
     deps:
       - ${project_root}/stages/prepare_xy_data.py
       - ${project_root}/${train.predict.fp}
