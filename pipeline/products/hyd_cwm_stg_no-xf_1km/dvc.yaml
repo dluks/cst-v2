@@ -80,7 +80,13 @@ stages:
       - ${project_root}/${spatial_autocorr.ranges_fp}
 
   build_cv_splits:
-    cmd: python ${project_root}/stages/build_cv_splits.py --params params.yaml --overwrite
+    cmd: >-
+      python ${project_root}/stages/build_cv_splits.py
+      --params params.yaml
+      --partitions genoa
+      --cpus 100
+      --mem 64GB
+      --time 00:20:00
     deps:
       - ${project_root}/stages/build_cv_splits.py
       - ${project_root}/src/features/build_cv_splits.py

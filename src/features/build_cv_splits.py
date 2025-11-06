@@ -175,12 +175,22 @@ def visualize_folds(
     """
     log.info("Creating fold visualization map...")
 
+    # Subsample data if too large for plotting performance
+    MAX_PLOT_POINTS = 100000
+    if len(trait_df) > MAX_PLOT_POINTS:
+        log.info(
+            "Subsampling from %d to %d points for plotting performance",
+            len(trait_df),
+            MAX_PLOT_POINTS
+        )
+        trait_df = trait_df.sample(n=MAX_PLOT_POINTS, random_state=42)
+
     # Get data bounds
     x_min, x_max = trait_df['x'].min(), trait_df['x'].max()
     y_min, y_max = trait_df['y'].min(), trait_df['y'].max()
 
     log.info("Data extent: x=[%.2f, %.2f], y=[%.2f, %.2f]", x_min, x_max, y_min, y_max)
-    log.info("Number of points: %d", len(trait_df))
+    log.info("Number of points to plot: %d", len(trait_df))
 
     # Set style
     sns.set_style("white")
@@ -261,8 +271,7 @@ def visualize_folds(
                 label=f'Fold {fold_id}',
                 s=marker_size,
                 alpha=0.7,
-                edgecolors='black',
-                linewidth=0.3,
+                edgecolors='none',
                 transform=data_crs,
                 zorder=10
             )
@@ -274,8 +283,7 @@ def visualize_folds(
                 label=f'Fold {fold_id}',
                 s=marker_size,
                 alpha=0.7,
-                edgecolors='black',
-                linewidth=0.3,
+                edgecolors='none',
                 zorder=10
             )
 

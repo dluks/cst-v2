@@ -24,10 +24,13 @@ from src.conf.conf import get_config
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
+    PartitionDistributor,
     add_common_args,
+    add_partition_args,
     add_resource_args,
     build_base_command,
     determine_execution_mode,
+    resolve_partitions,
     setup_environment,
     wait_for_job_completion,
 )
@@ -38,7 +41,8 @@ project_root = setup_environment()
 def cli() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Build CV splits locally or on Slurm.")
-    add_common_args(parser)
+    add_common_args(parser, include_partition=False)
+    add_partition_args(parser, enable_multi_partition=True)
     add_resource_args(
         parser,
         time_default="02:00:00",
@@ -104,6 +108,12 @@ def main() -> None:
         )
         print(f"Found {len(traits)} traits to process: {', '.join(traits)}")
 
+    # Handle debug mode
+    if args.debug:
+        print("\n⚠️  DEBUG MODE: Processing only 1 trait")
+        traits = [traits[0]]
+        print(f"Debug trait: {traits[0]}")
+
     print(f"Execution mode: {mode}")
 
     if use_local:
@@ -116,12 +126,22 @@ def main() -> None:
             args.max_parallel,
         )
     else:
+        # Determine partitions to use
+        partitions = resolve_partitions(args.partition, args.partitions)
+        if len(partitions) > 1:
+            print(
+                f"Distributing jobs across {len(partitions)} partitions: "
+                f"{', '.join(partitions)}"
+            )
+        else:
+            print(f"Using partition: {partitions[0]}")
+
         # Submit to Slurm
         run_slurm(
             params_path,
             args.debug,
             args.overwrite,
-            args.partition,
+            partitions,
             args.time,
             args.cpus,
             args.mem,
@@ -238,7 +258,7 @@ def run_slurm(
     params_path: str | None,
     debug: bool,
     overwrite: bool,
-    partition: str,
+    partitions: list[str],
     time_limit: str,
     cpus: int,
     mem: str,
@@ -251,6 +271,9 @@ def run_slurm(
     # Create log directory
     log_dir = Path("logs/build_cv_splits")
     log_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create partition distributor for round-robin distribution
+    distributor = PartitionDistributor(partitions)
 
     # Submit a job for each trait
     job_ids = []
@@ -276,6 +299,9 @@ def run_slurm(
         )
         command = " ".join(cmd_parts)
 
+        # Get partition using round-robin distribution
+        partition = distributor.get_next()
+
         # Create Slurm job configuration
         slurm = Slurm(
             job_name=f"cv_{trait[:12]}",
@@ -296,6 +322,13 @@ def run_slurm(
     print(f"\nSubmitted {len(job_ids)} jobs")
     print(f"Logs directory: {log_dir.absolute()}")
 
+    # Show distribution summary if using multiple partitions
+    if len(distributor) > 1:
+        summary = distributor.get_summary()
+        print("Job distribution across partitions:")
+        for partition, count in summary.items():
+            print(f"  {partition}: {count} jobs")
+
     if wait:
         # Wait for all jobs to complete
         print(f"\nWaiting for {len(job_ids)} jobs to complete...")
@@ -304,7 +337,7 @@ def run_slurm(
 
         for job_id in job_ids:
             trait = trait_to_job[job_id]
-            success = wait_for_job_completion(job_id, poll_interval=30)
+            success = wait_for_job_completion(job_id)
 
             if success:
                 successful.append(trait)
