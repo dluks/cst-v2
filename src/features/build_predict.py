@@ -2,6 +2,7 @@
 
 import argparse
 import math
+import os
 from pathlib import Path
 
 import dask.dataframe as dd
@@ -44,68 +45,96 @@ def cli() -> argparse.Namespace:
 
 def main(args: argparse.Namespace) -> None:
     """Main function for featurizing EO data for prediction and AoA calculation."""
-    params_path = Path(args.params).absolute()
+    params_path = Path(args.params).resolve()
     log.info("Loading config from %s", params_path)
     cfg = get_config(params_path)
     syscfg = cfg[detect_system()]["build_predict"]
+
+    os.environ["CONFIG_PATH"] = str(params_path)
 
     if args.debug:
         log.info("Running in debug mode...")
 
     out_fp = Path(cfg.x_dir) / cfg.x_fn
-    # Check if output already exists and handle overwrite
-    if out_fp.exists() and not args.overwrite:
-        log.info("Output file already exists: %s", out_fp)
-        log.info("Use --overwrite flag to overwrite existing files.")
-        return
     out_fp.parent.mkdir(parents=True, exist_ok=True)
 
-    log.info("Initializing Dask client...")
-    client, _ = init_dask(
-        dashboard_address=cfg.dask_dashboard,
-        n_workers=syscfg.n_workers,
-        memory_limit=syscfg.memory_limit,
-    )
-    config.set({"array.slicing.split_large_chunks": False})
+    # Check if DataFrame already exists
+    if out_fp.exists() and not args.overwrite:
+        log.info("Loading existing DataFrame from: %s", out_fp)
+        df = dd.read_parquet(out_fp)
+    else:
+        if out_fp.exists():
+            log.info("Removing existing DataFrame from: %s", out_fp)
+            out_fp.unlink()
 
-    log.info("Getting filenames...")
-
-    ds_fns = {}
-
-    for dataset in cfg.datasets:
-        ds_fns[dataset] = list(
-            (Path(cfg.interim.out_dir).resolve() / dataset).glob("*.tif")
+        # Compute DataFrame from scratch
+        log.info("Initializing Dask client...")
+        client, _ = init_dask(
+            dashboard_address=cfg.dask_dashboard,
+            n_workers=syscfg.n_workers,
+            memory_limit=syscfg.memory_limit,
+            threads_per_worker=syscfg.threads_per_worker,
         )
+        config.set({"array.slicing.split_large_chunks": False})
 
-    eo_fns = [fn for ds_fns in ds_fns.values() for fn in ds_fns]
+        log.info("Getting filenames...")
 
-    if args.debug:
-        eo_fns = eo_fns[:2]
+        ds_fns = {}
 
-    log.info("Loading rasters...")
-    ds = load_rasters_parallel(eo_fns, nchunks=syscfg.n_chunks)
+        for dataset in cfg.datasets:
+            ds_fns[dataset] = list(
+                (Path(cfg.interim.out_dir).resolve() / dataset).glob("*.tif")
+            )
 
-    log.info("Converting to Dask DataFrame...")
-    ddf = eo_ds_to_ddf(ds, thresh=cfg.missing_val_thresh)
+        eo_fns = [fn for ds_fns in ds_fns.values() for fn in ds_fns]
 
-    log.info("Computing partitions...")
-    df = compute_partitions(ddf).reset_index(drop=True).set_index(["y", "x"])
+        if args.debug:
+            eo_fns = eo_fns[:2]
 
-    log.info("Closing Dask client...")
-    close_dask(client)
+        log.info("Loading rasters...")
+        ds = load_rasters_parallel(eo_fns, nchunks=syscfg.n_chunks)
 
-    log.info("Saving DataFrame to disk...")
-    df.to_parquet(out_fp, compression="zstd", compression_level=19)
+        log.info("Converting to Dask DataFrame...")
+        ddf = eo_ds_to_ddf(ds, thresh=cfg.missing_val_thresh)
 
-    log.info("Generating report...")
+        log.info("Computing partitions...")
+        df = compute_partitions(ddf).reset_index(drop=True).set_index(["y", "x"])
+
+        log.info("Closing Dask client...")
+        close_dask(client)
+
+        log.info("Saving DataFrame to disk...")
+        df.to_parquet(out_fp, compression="zstd", compression_level=19)
+
+    # Generate report if it doesn't exist or overwrite is True
+    log.info("Checking report status...")
     report_fp = out_fp.parent / "report.md"
-    # Also check for report overwrite
-    if report_fp.exists() and not args.overwrite:
-        log.info("Report file already exists: %s", report_fp)
-        log.info("Use --overwrite flag to overwrite existing files.")
-        return
 
-    _build_report(df, report_fp)
+    if report_fp.exists() and not args.overwrite:
+        log.info("Report already exists, skipping generation: %s", report_fp)
+        log.info("Use --overwrite flag to regenerate.")
+    else:
+        log.info("Generating report...")
+        # Sample for report generation if dataset is large
+        # This significantly speeds up KDE plot generation for high-resolution data
+        REPORT_SAMPLE_SIZE = 50000
+        df_len = len(df)
+        df_frac = REPORT_SAMPLE_SIZE / df_len
+        if df_len > REPORT_SAMPLE_SIZE:
+            log.info(
+                "Sampling %s rows (from %s total) for report generation...",
+                f"{REPORT_SAMPLE_SIZE:,}",
+                f"{df_len:,}",
+            )
+            if isinstance(df, dd.DataFrame):
+                df_report = df.sample(frac=df_frac, random_state=42).compute()
+            else:
+                df_report = df.sample(n=REPORT_SAMPLE_SIZE, random_state=42)
+        else:
+            log.info("Using all %s rows for report generation...", f"{df_len:,}")
+            df_report = df.compute() if isinstance(df, dd.DataFrame) else df
+
+        _build_report(df_report, report_fp)  # pyright: ignore[reportArgumentType]
 
     log.info("Done!")
 
@@ -208,8 +237,11 @@ def _build_report(df: pd.DataFrame, report_fp: Path) -> None:
     """
     Generate a markdown report with feature statistics and distribution plots.
 
+    Note: For large datasets, this function is typically called with a subsample
+    of the data to improve performance, especially for KDE plot generation.
+
     Args:
-        df (pd.DataFrame): Input dataframe containing features
+        df (pd.DataFrame): Input dataframe containing features (may be subsampled)
         report_fp (Path): Path where to save the report
     """
     # Define figure path (next to report)

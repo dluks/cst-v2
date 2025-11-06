@@ -41,7 +41,7 @@ project_root = setup_environment()
 def cli() -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Train models locally or on Slurm.")
-    add_common_args(parser)
+    add_common_args(parser, include_partition=False)
     add_partition_args(parser, enable_multi_partition=True)
     add_resource_args(
         parser,

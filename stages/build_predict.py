@@ -19,13 +19,13 @@ from simple_slurm import Slurm
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
-    setup_environment,
-    determine_execution_mode,
-    setup_log_directory,
-    build_base_command,
     add_common_args,
     add_execution_args,
     add_resource_args,
+    build_base_command,
+    determine_execution_mode,
+    setup_environment,
+    setup_log_directory,
     wait_for_job_completion,
 )
 
@@ -40,10 +40,7 @@ def cli() -> argparse.Namespace:
     add_common_args(parser)
     add_execution_args(parser, multi_job=False)
     add_resource_args(
-        parser,
-        time_default="02:00:00",
-        cpus_default=8,
-        mem_default="32GB"
+        parser, time_default="02:00:00", cpus_default=8, mem_default="32GB"
     )
     parser.add_argument(
         "-d",
@@ -102,7 +99,7 @@ def run_local(
         "src.features.build_predict",
         params_path=params_path,
         overwrite=overwrite,
-        extra_args=extra_args
+        extra_args=extra_args,
     )
 
     print(f"Running: {' '.join(cmd)}")
@@ -140,9 +137,15 @@ def run_slurm(
         "src.features.build_predict",
         params_path=params_path,
         overwrite=overwrite,
-        extra_args=extra_args
+        extra_args=extra_args,
     )
-    command = " ".join(cmd_parts)
+
+    # Prepend CONFIG_PATH export if params_path is provided
+    # This ensures the environment variable is set before Python imports
+    if params_path:
+        command = f"export CONFIG_PATH={params_path} && {' '.join(cmd_parts)}"
+    else:
+        command = " ".join(cmd_parts)
 
     # Create Slurm job configuration
     slurm = Slurm(
@@ -159,11 +162,11 @@ def run_slurm(
     job_id = slurm.sbatch(command)
     print(f"Submitted job {job_id}")
     print(f"Logs will be written to: {log_dir.absolute()}")
-    print(f"Monitor progress: tail -f {log_dir.absolute()}/{job_id}_build_predict.log")
+    print(f"Monitor progress: tail -f {log_dir.absolute()}/{job_id}_build_predict.err")
 
     if wait:
         # Wait for job to complete
-        success = wait_for_job_completion(job_id, poll_interval=30)
+        success = wait_for_job_completion(job_id)
 
         if success:
             print("\n✓ Prediction building completed successfully!")
