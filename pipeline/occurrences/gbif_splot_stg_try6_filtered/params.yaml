@@ -1,12 +1,12 @@
 version: "2"
 project_root: "../../.."
-product_dir: "pipeline/occurrences/gbif_splot_stg_hydraulic_filtered"
-trait_type: "hydraulic"
-product_code: "gbif_splot_stg_hydraulic_filtered"
+product_dir: "pipeline/occurrences/gbif_splot_stg_try6_filtered"
+trait_type: "try6"
+product_code: "gbif_splot_stg_try6_filtered"
 model_res: "1km"
 
-# See pipeline/traits/hydraulic_no-xf/params.yaml for more details.
-traits_fp: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+# See pipeline/traits/try6_no-xf/params.yaml for more details.
+traits_fp: data/interim/traits/try6_no-xf/try6_no-xf.parquet
 
 
 nemo:

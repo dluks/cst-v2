@@ -20,6 +20,7 @@ from simple_slurm import Slurm
 from src.pipeline.entrypoint_utils import (
     add_common_args,
     add_execution_args,
+    add_resource_args,
     build_base_command,
     determine_execution_mode,
     setup_environment,
@@ -37,6 +38,9 @@ def cli() -> argparse.Namespace:
     )
     add_common_args(parser)
     add_execution_args(parser, multi_job=False)
+    add_resource_args(
+        parser, time_default="01:00:00", cpus_default=4, mem_default="64GB"
+    )
     return parser.parse_args()
 
 
@@ -66,6 +70,9 @@ def run_slurm(
     params_path: str | None,
     overwrite: bool,
     partition: str,
+    time_limit: str,
+    cpus: int,
+    mem: str,
     log_dir: Path,
 ) -> None:
     """Submit sPlot filtering job to Slurm."""
@@ -83,9 +90,9 @@ def run_slurm(
         job_name="filter_splot",
         output=str(log_dir / "%j_filter_splot.log"),
         error=str(log_dir / "%j_filter_splot.err"),
-        time="01:00:00",
-        cpus_per_task=4,
-        mem="64GB",
+        time=time_limit,
+        cpus_per_task=cpus,
+        mem=mem,
         partition=partition,
     )
 
@@ -139,6 +146,9 @@ def main() -> None:
             str(params_path) if params_path else None,
             args.overwrite,
             args.partition,
+            args.time,
+            args.cpus,
+            args.mem,
             log_dir,
         )
 

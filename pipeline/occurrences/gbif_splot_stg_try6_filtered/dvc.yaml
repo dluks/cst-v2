@@ -1,0 +1,38 @@
+params:
+  - params.yaml
+
+stages:
+  filter_gbif:
+    cmd: >-
+      python ../../../stages/filter_gbif.py
+      --params params.yaml
+      --partition milan
+      --time 00:30:00
+      --cpus 60
+      --mem 350GB
+    deps:
+      - ../../../src/data/filter_gbif.py
+      - ../../../${gbif.raw_fp}
+      - ../../../${traits_fp}
+    params:
+      - gbif.min_observations
+    outs:
+      - ../../../${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.fp}
+      - ../../../${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.report_fp}
+      - ../../../${gbif.filtered.out_dir}/${trait_type}/${gbif.filtered.density_plot_fp}
+
+  filter_splot:
+    cmd: >-
+      python ../../../stages/filter_splot.py
+      --params params.yaml
+      --partition milan
+      --time 01:00:00
+      --cpus 4
+      --mem 64GB
+    deps:
+      - ../../../src/data/filter_splot.py
+      - ../../../${splot.raw.dir}
+      - ../../../${traits_fp}
+    outs:
+      - ../../../${splot.filtered.out_dir}/${trait_type}/${splot.filtered.fp}
+      - ../../../${splot.filtered.out_dir}/${trait_type}/${splot.filtered.report_fp}
