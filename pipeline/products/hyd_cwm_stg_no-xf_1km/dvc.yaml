@@ -123,7 +123,14 @@ stages:
           persist: true
 
   train_models:
-    cmd: python ${project_root}/stages/train_models.py --params params.yaml --partitions milan genoa --cpus 96 --mem 30GB --gpus 0
+    cmd: >-
+      python ${project_root}/stages/train_models.py
+      --params params.yaml
+      --trait-sets splot_gbif
+      --partitions genoa
+      --cpus 96
+      --mem 384GB
+      --time 04:00:00
     deps:
       - ${project_root}/stages/train_models.py
       - ${project_root}/src/models/autogluon.py

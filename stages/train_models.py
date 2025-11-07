@@ -130,6 +130,12 @@ def main() -> None:
         )
         print(f"Found {len(traits)} traits to train: {', '.join(traits)}")
 
+    # Handle debug mode
+    if args.debug:
+        print("\n⚠️  DEBUG MODE: Training only 1 trait")
+        traits = [traits[0]]
+        print(f"Debug trait: {traits[0]}")
+
     # Get trait sets to train
     trait_sets = args.trait_sets or cfg.train.trait_sets
     print(f"Training trait sets: {', '.join(trait_sets)}")

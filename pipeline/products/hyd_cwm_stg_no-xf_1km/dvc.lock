@@ -366,95 +366,65 @@ stages:
       size: 20085755
       nfiles: 12
   train_models:
-    cmd: python src/models/train_models.py -r && python src/models/cv_stats.py
+    cmd: python ../../../stages/train_models.py --params params.yaml --trait-sets
+      splot_gbif --partitions genoa --cpus 96 --mem 384GB --time 04:00:00
     deps:
-    - path: data/features/Shrub_Tree_Grass/55km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
-      md5: 9cb9b74c89b51d45f3fa4fa6d811f600.dir
-      size: 22743420
-      nfiles: 260
-    - path: data/features/Shrub_Tree_Grass/55km/skcv_splits
+      md5: fe112ba6de83e8913a3b605b7ef43c1d.dir
+      size: 20085755
+      nfiles: 12
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
       hash: md5
-      md5: 105dc5c0bac8b3c79169401a7e002bce.dir
-      size: 1127530
-      nfiles: 37
-    - path: data/features/predict/55km/eo_predict_imputed.parquet
+      md5: 5e3b81f4c0350b38ed9300eb134df245
+      size: 193184990
+    - path: ../../../src/models/autogluon.py
       hash: md5
-      md5: 2c314baaded50a8949b8fef26c2de020
-      size: 11107078
-    - path: data/features/predict/55km/eo_predict_mask.parquet
+      md5: 0b3e5afec5d1bb4e299040798ca3282e
+      size: 15193
+    - path: ../../../stages/train_models.py
       hash: md5
-      md5: 1ad3cfece7a07456126cb939a4e088f4
-      size: 229806
-    - path: data/interim/try/power_transformer.pkl
-      hash: md5
-      md5: 1baf90006b4ab6ec21964725243b8f9a
-      size: 2463
-    - path: src/models/train_models.py
-      hash: md5
-      md5: 2cdb1448642111361ccb9267d132c598
-      size: 1135
+      md5: c49aa5b9773c2b26466139506ab34d26
+      size: 19584
+      isexec: true
     params:
       params.yaml:
         autogluon:
           included_model_types:
           - GBM
           presets: high
+          num_bag_folds: 5
+          num_stack_levels: 1
           save_bag_folds: true
           refit_full: false
           set_best_to_refit_full: false
-          cv_fit_time_limit: 3600
+          cv_fit_time_limit: 7200
           full_fit_time_limit: 12600
           num_gpus: 2
-          num_cpus: 110
+          num_cpus: 74
           feature_importance: true
           FI_time_limit: 1800
           FI_num_shuffle_sets: 10
-        datasets.Y.traits:
-        - 4
-        - 6
-        - 13
-        - 14
-        - 15
-        - 21
-        - 26
-        - 27
-        - 46
-        - 47
-        - 50
-        - 55
-        - 78
-        - 95
-        - 138
-        - 144
-        - 145
-        - 146
-        - 163
-        - 169
-        - 223
-        - 224
-        - 237
-        - 281
-        - 282
-        - 289
-        - 297
-        - 351
-        - 614
-        - 1080
-        - 3106
-        - 3107
-        - 3112
-        - 3113
-        - 3114
-        - 3117
-        - 3120
+        models.dir_fp: models/hyd_cwm_stg_no-xf_1km
         train.arch: autogluon
+        train.cv_splits.n_splits: 5
+        train.eval_results: evaluation_results.csv
+        train.feature_importance: feature_importance.csv
+        train.trait_sets:
+        - splot
+        - gbif
+        - splot_gbif
+        train.weights:
+          fn: feature_weights.parquet
+          method: auto
+          splot: 1.0
+          gbif: 0.08661
     outs:
-    - path: models/Shrub_Tree_Grass/55km
+    - path: ../../../models/hyd_cwm_stg_no-xf_1km
       hash: md5
-      md5: b077c3f5cc8530b6596fe895807aa04f.dir
-      size: 12552145362
-      nfiles: 21430
+      md5: d448bf89c06afbec00a62d4558fa8eae.dir
+      size: 203401615266
+      nfiles: 7771
   aoa:
     cmd: python src/analysis/aoa.py
     deps:
