@@ -8,21 +8,34 @@ __all__ = ["match_pfts"]
 
 
 def match_pfts(
-    df: pd.DataFrame, pfts_fp: Path, harmonization_fp: Path, threshold: float = 0.70
+    df: pd.DataFrame,
+    pfts_fp: Path,
+    harmonization_fp: Path,
+    threshold: float = 0.70,
+    harmonization_col: str = "hydNameIn",
 ) -> pd.DataFrame:
     """Match with growth forms (coarse PFTs) using species, then genus fallback.
 
     Strategy:
-    1) Left-merge on species to retain all hydraulic rows and capture species-level
+    1) Left-merge on species to retain all trait rows and capture species-level
        PFTs where available.
     2) For rows still missing PFT, derive the genus (first token of the species)
        and fill using the dominant PFT for that genus ONLY if it comprises at
        least 70% of records for that genus in the PFTs table.
 
-    Returns the input DataFrame with a categorical ``pft`` column added. Species
-    without a species- or genus-level match remain with missing PFT.
+    Args:
+        df: DataFrame with trait data, must contain 'speciesname' column
+        pfts_fp: Path to PFTs parquet file
+        harmonization_fp: Path to species harmonization CSV file
+        threshold: Minimum proportion for genus-level PFT assignment (default: 0.70)
+        harmonization_col: Column name in harmonization file to merge on
+            (default: "hydNameIn" for hydraulic traits, use "groNameIn" for TRY traits)
+
+    Returns:
+        DataFrame with a categorical ``pft`` column added. Species without a
+        species- or genus-level match remain with missing PFT.
     """
-    # Ensure dtype on hydraulic species column
+    # Ensure dtype on trait species column
     df = df.astype({"speciesname": "string[pyarrow]"}).copy()
 
     # Load initial species harmonization dataframe
@@ -52,12 +65,12 @@ def match_pfts(
     # Add GBIF keys and WCVP + WFO names for downstream matching with GBIF and sPlot
     df = df.merge(
         species_harmonization_df[
-            ["hydNameIn", "GBIFKeyGBIF", "nameOutWCVP", "nameOutWFO"]
+            [harmonization_col, "GBIFKeyGBIF", "nameOutWCVP", "nameOutWFO"]
         ],
         left_on="speciesname",
-        right_on="hydNameIn",
+        right_on=harmonization_col,
         how="left",
-    ).drop(columns=["hydNameIn"])
+    ).drop(columns=[harmonization_col])
 
     # Load and normalize PFTs table
     # After normalizing, extract TRY growth form species that have matches with WFO (and

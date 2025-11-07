@@ -1,0 +1,22 @@
+params:
+  - params.yaml
+
+stages:
+  build_traits:
+    cmd: >-
+      python ../../../stages/build_try6_traits.py
+      --params params.yaml
+      --partition milan
+      --time 01:00:00
+      --cpus 4
+      --mem 16GB
+    deps:
+      - ../../../stages/build_try6_traits.py
+      - ../../../src/data/build_try6_traits.py
+      - ../../../${traits.raw}/${traits.zip}
+      - ../../../src/utils/match_pfts.py
+      - ../../../src/utils/df_utils.py
+      - ../../../${traits.harmonization_fp}
+      - ../../../${traits.pfts}
+    outs:
+      - ../../../${traits.interim_out_dir}

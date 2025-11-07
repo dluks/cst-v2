@@ -1,0 +1,41 @@
+schema: '2.0'
+stages:
+  build_traits:
+    cmd: python ../../../stages/build_try6_traits.py --params params.yaml --partition
+      milan --time 01:00:00 --cpus 4 --mem 16GB
+    deps:
+    - path: 
+        ../../../data/raw/TRY_6_gapfilled_for_distribution/TRY6_gapfilled_for_distribution.zip
+      hash: md5
+      md5: f2cc4a7dd419bed117f42e62780b16e8
+      size: 307941318
+    - path: ../../../data/raw/hydraulic_traits_matching_results_2025-10-03.gz
+      hash: md5
+      md5: 83a366595f698d189f87b93487130c0c
+      size: 23398694
+    - path: ../../../data/raw/try_pfts.parquet
+      hash: md5
+      md5: 24bd21294a05c72f47199feaa7e35063
+      size: 2524607
+    - path: ../../../src/data/build_try6_traits.py
+      hash: md5
+      md5: 8b51d28ee5116f98082ec60b97ad705f
+      size: 18777
+    - path: ../../../src/utils/df_utils.py
+      hash: md5
+      md5: e0b471b0453adf5af018e3cb0a29dc81
+      size: 27027
+    - path: ../../../src/utils/match_pfts.py
+      hash: md5
+      md5: ee5981393c5d3da2a6bd566118e30452
+      size: 6877
+    - path: ../../../stages/build_try6_traits.py
+      hash: md5
+      md5: 75324f264d2f7d2ed62451f9235ae60b
+      size: 4453
+    outs:
+    - path: ../../../data/interim/traits/try6_no-xf
+      hash: md5
+      md5: ff027b0cd3174bcc3246a3d24a7495ce.dir
+      size: 12113015
+      nfiles: 4
