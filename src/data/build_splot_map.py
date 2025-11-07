@@ -4,6 +4,7 @@ per plot, grid it, and write each trait's corresponding raster stack to GeoTIFF 
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -50,6 +51,12 @@ def main(args: argparse.Namespace | None = None) -> None:
     """Main function."""
     args = cli() if args is None else args
     cfg = get_config(params_path=args.params)
+
+    # Enable GDAL multi-threading based on allocated CPUs
+    # This significantly speeds up raster writing operations
+    n_cpus = os.environ.get("SLURM_CPUS_PER_TASK", "1")
+    os.environ["GDAL_NUM_THREADS"] = n_cpus
+    log.info("Setting GDAL_NUM_THREADS=%s", n_cpus)
 
     out_dir = Path(cfg.splot.maps.out_dir, cfg.product_code)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +152,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     log.info("Gridded data merged")
 
     log.info("Writing to disk...")
-    xr_to_raster(gridded_trait, out_fn)
+    xr_to_raster(gridded_trait, out_fn, num_threads=int(n_cpus))
     log.info("Wrote %s.tif.", args.trait)
 
     log.info("Done!")

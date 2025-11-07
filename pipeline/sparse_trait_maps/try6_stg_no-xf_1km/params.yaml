@@ -1,0 +1,83 @@
+version: "2"
+project_root: "../../.."
+product_dir: "pipeline/sparse_trait_maps/try6_stg_no-xf_1km"
+trait_type: "try6"
+product_code: "try6_stg_no-xf_1km"
+
+model_res: "1km"
+PFT: "Shrub_Tree_Grass"
+random_seed: 42
+base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
+target_resolution: 1000 # Target resolution for model training
+extent: [-180, -90, 180, 90] # Extent of the final dataset
+crs: "EPSG:6933" # Equal Area Cylindrical projection
+
+nemo:
+  build_gbif_maps:
+    n_workers: 60 # 80 was throwing too many files open error...
+    threads_per_worker: 4
+    memory_limit: 15GB
+  build_splot_maps:
+    npartitions: 60  
+    dask:
+      n_workers: 40
+      threads_per_worker: 5
+      memory_limit: 40GB
+
+traits:
+  interim_out_dir: data/interim/traits/try6_no-xf/try6_no-xf.parquet
+  names:
+    - X4 # Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density
+    - X6 # Root rooting depth
+    - X13 # Leaf carbon (C) content per leaf dry mass
+    - X14 # Leaf nitrogen (N) content per leaf dry mass
+    - X15 # Leaf phosphorus (P) content per leaf dry mass
+    - X21 # Stem diameter
+    - X26 # Seed dry mass
+    - X27 # Seed length
+    - X46 # Leaf thickness
+    - X47 # Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)
+    - X50 # Leaf nitrogen (N) content per leaf area
+    - X55 # Leaf dry mass (single leaf)
+    - X78 # Leaf nitrogen (N) isotope signature (delta 15N)
+    - X95 # Seed germination rate (germination efficiency)
+    - X138 # Seed number per reproducton unit
+    - X144 # Leaf length
+    - X145 # Leaf width
+    - X146 # Leaf carbon/nitrogen (C/N) ratio
+    - X163 # Leaf fresh mass
+    - X169 # Stem conduit density (vessels and tracheids)
+    - X237 # Dispersal unit length
+    - X281 # Stem conduit diameter (vessels, tracheids)
+    - X282 # Wood vessel element length; stem conduit (vessel and tracheids) element length
+    - X289 # Wood fiber lengths
+    - X297 # Wood rays per millimetre (wood ray density)
+    - X614 # Fine root length per fine root dry mass (specific fine root length, SRL)
+    - X1080 # Root length per root dry mass (specific root length, SRL)
+    - X3106 # Plant height vegetative
+    - X3114 # Leaf area (in case of compound leaves undefined if leaf or leaflet, undefined if petiole is in- or e
+    - X3117 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is in- or exclu
+    - X3120 # Leaf water content per leaf dry mass (not saturated)
+
+
+gbif:
+  # raw_fp: data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
+  filtered:
+    out_dir: data/interim/gbif/filtered_occurrences
+    fp: gbif_filtered.parquet
+    report_fp: filter_gbif_report.md
+    density_plot_fp: gbif_filtering_density.png
+  maps:
+    out_dir: data/interim/gbif/maps
+    min_count: 10
+    max_count: 500
+
+splot:
+  raw:
+    dir: splot4-0
+  filtered:
+    out_dir: data/interim/splot/filtered_surveys
+    fp: splot_filtered.parquet
+    report_fp: filter_splot_report.md
+  maps:
+    out_dir: data/interim/splot/maps

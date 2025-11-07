@@ -1,0 +1,47 @@
+schema: '2.0'
+stages:
+  build_gbif_maps:
+    cmd: python ../../../stages/build_gbif_maps.py --params params.yaml --partitions
+      milan genoa --cpus 61 --mem 450GB --time 01:30:00
+    deps:
+    - path: ../../../data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
+      hash: md5
+      md5: 3f07282ef229875bacff48149b2e28a9.dir
+      size: 2277005028
+      nfiles: 523
+    - path: ../../../data/interim/traits/try6_no-xf/try6_no-xf.parquet
+      hash: md5
+      md5: f1966cc61a642f8748e51cdb04abef84
+      size: 10492423
+    - path: ../../../src/data/build_gbif_map.py
+      hash: md5
+      md5: a7fe643dd9185bc5610ea95843403dcb
+      size: 4824
+    outs:
+    - path: ../../../data/interim/gbif/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 76a0dc0833c8a802b3d98f0ffedf9160.dir
+      size: 3350236278
+      nfiles: 31
+  build_splot_maps:
+    cmd: python ../../../stages/build_splot_maps.py --params params.yaml --partitions
+      milan genoa --cpus 61 --mem 256GB --time 01:30:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      hash: md5
+      md5: 365278ea23f682c67d2244c470471b53
+      size: 144452091
+    - path: ../../../data/interim/traits/try6_no-xf/try6_no-xf.parquet
+      hash: md5
+      md5: f1966cc61a642f8748e51cdb04abef84
+      size: 10492423
+    - path: ../../../src/data/build_splot_map.py
+      hash: md5
+      md5: d54880ed83df729e665309208a776542
+      size: 6064
+    outs:
+    - path: ../../../data/interim/splot/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 9b883b91fab926435f82a05b5be60214.dir
+      size: 1213468374
+      nfiles: 31

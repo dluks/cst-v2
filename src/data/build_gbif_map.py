@@ -7,6 +7,7 @@ ensure locations sampled across multiple years contribute equally.
 """
 
 import argparse
+import os
 from pathlib import Path
 
 import dask.dataframe as dd
@@ -54,6 +55,12 @@ def main(args: argparse.Namespace | None = None) -> None:
     cfg = get_config(params_path=args.params)
 
     syscfg = cfg[detect_system()]["build_gbif_maps"]
+
+    # Enable GDAL multi-threading based on allocated CPUs
+    # This significantly speeds up raster writing operations
+    n_cpus = os.environ.get("SLURM_CPUS_PER_TASK", "1")
+    os.environ["GDAL_NUM_THREADS"] = n_cpus
+    log.info("Setting GDAL_NUM_THREADS=%s", n_cpus)
 
     npartitions = syscfg.get("npartitions", None)
 
@@ -103,7 +110,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         )
 
         log.info("Writing to disk...")
-        xr_to_raster(raster, out_fn)
+        xr_to_raster(raster, out_fn, num_threads=int(n_cpus))
         log.info("Wrote %s.tif.", args.trait)
 
     log.info("Done!")
