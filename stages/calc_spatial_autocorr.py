@@ -95,11 +95,13 @@ def main() -> None:
         get_config(params_path=params_path).spatial_autocorr.ranges_fp
     ).resolve()
 
-    traits = (
+    all_cols = (
         dd.read_parquet(get_y_fn(get_config(params_path=params_path)))
         .columns.difference(["x", "y", "source"])
         .to_list()
     )
+    # Filter out reliability columns
+    traits = [t for t in all_cols if not t.endswith("_reliability")]
     print(f"Found {len(traits)} traits to process: {', '.join(traits)}")
 
     # In debug mode, only process the first trait

@@ -103,9 +103,11 @@ def main() -> None:
         print(f"Processing specified traits: {', '.join(traits)}")
     else:
         y_fp = Path(project_root, cfg.train.Y.fp).resolve()
-        traits = (
+        all_cols = (
             dd.read_parquet(y_fp).columns.difference(["x", "y", "source"]).to_list()
         )
+        # Filter out reliability columns
+        traits = [t for t in all_cols if not t.endswith("_reliability")]
         print(f"Found {len(traits)} traits to process: {', '.join(traits)}")
 
     # Handle debug mode

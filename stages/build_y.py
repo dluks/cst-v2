@@ -16,6 +16,7 @@ Set USE_SLURM=false to use local execution by default, or use --local flag to ov
 import argparse
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -233,6 +234,9 @@ def run_slurm(
         trait_job_ids.append(job_id)
         print(f"Submitted job {job_id} for trait '{trait}'")
 
+        # Add small delay to avoid overwhelming the Slurm scheduler
+        time.sleep(0.5)
+
     print(f"\n{'=' * 60}")
     print(f"Submitted {len(trait_job_ids)} trait processing jobs")
 
@@ -296,6 +300,30 @@ def main() -> None:
     args = cli()
     params_path = Path(args.params).absolute() if args.params else None
     cfg = get_config(params_path=params_path)
+
+    # Check if Y.parquet and report already exist
+    out_fn = Path(cfg.train.Y.fp)
+    report_fp = out_fn.parent / "report.md"
+    figure_fp = out_fn.parent / "trait_distributions.png"
+
+    y_exists = out_fn.exists()
+    report_exists = report_fp.exists() and figure_fp.exists()
+
+    # Smart overwrite logic
+    if not args.overwrite and y_exists and report_exists:
+        print("All outputs already exist. Use --overwrite to regenerate.")
+        print(f"  Y data: {out_fn}")
+        print(f"  Report: {report_fp}")
+        print(f"  Figure: {figure_fp}")
+        return
+
+    if not args.overwrite and y_exists:
+        print(f"Y data already exists: {out_fn}")
+        print("Skipping trait processing. Will only generate report if needed.")
+        # Skip to merge step which will handle report generation
+        from src.features.merge_y_traits import main as merge_main
+        merge_main(args)
+        return
 
     # Get traits from configuration
     trait_names = cfg.traits.names

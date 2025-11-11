@@ -88,9 +88,17 @@ def prepare_xy_data(cfg) -> None:
     print("Loading CV splits...")
     cv_splits_dir = Path(cfg.train.cv_splits.dir_fp)
 
-    # Get all trait columns
-    trait_cols = labels.columns.difference(["x", "y", "source"]).to_list()
+    # Get all trait columns (excluding x, y, source, and reliability columns)
+    all_cols = labels.columns.difference(["x", "y", "source"]).to_list()
+    trait_cols = [col for col in all_cols if not col.endswith("_reliability")]
     print(f"Found {len(trait_cols)} traits: {', '.join(trait_cols)}")
+
+    # Check for reliability columns
+    reliability_cols = [col for col in all_cols if col.endswith("_reliability")]
+    if reliability_cols:
+        print(
+            f"Found {len(reliability_cols)} reliability weight columns: {', '.join(reliability_cols)}"
+        )
 
     # Read all CV split files and concatenate
     print("Loading CV split assignments...")
@@ -137,6 +145,43 @@ def prepare_xy_data(cfg) -> None:
         .reset_index()
     )
 
+    # Create a 10% holdout test set from sPlot records only
+    log.info("Creating 10% holdout test set from sPlot records only...")
+    import numpy as np
+
+    np.random.seed(cfg.random_seed)
+
+    # Initialize is_test column (all False by default)
+    xy_all["is_test"] = False
+
+    # Get indices of sPlot records only (source == "s")
+    splot_mask = xy_all["source"] == "s"
+    splot_indices = xy_all.index[splot_mask].to_numpy()
+    n_splot_samples = len(splot_indices)
+
+    if n_splot_samples == 0:
+        log.warning("No sPlot records found, skipping test set creation")
+    else:
+        # Select 10% of sPlot records for test set
+        test_set_size = int(n_splot_samples * 0.1)
+        test_splot_indices = np.random.choice(
+            splot_indices, size=test_set_size, replace=False
+        )
+
+        # Mark selected sPlot indices as test set
+        xy_all.loc[test_splot_indices, "is_test"] = True
+
+        n_total_samples = len(xy_all)
+        log.info(
+            f"Created test set: {test_set_size} sPlot samples "
+            f"({test_set_size / n_splot_samples * 100:.1f}% of sPlot, "
+            f"{test_set_size / n_total_samples * 100:.1f}% of total)"
+        )
+        log.info(
+            f"Train/CV set: {n_total_samples - test_set_size} samples "
+            f"({(n_total_samples - test_set_size) / n_total_samples * 100:.1f}% of total)"
+        )
+
     # Save to parquet (single file, not partitioned)
     log.info(f"Saving merged XY data to {output_path}...")
 
@@ -149,11 +194,18 @@ def prepare_xy_data(cfg) -> None:
 
     xy_all.to_parquet(output_path, compression="zstd", index=False, engine="pyarrow")
 
+    # Calculate final statistics
+    n_total = len(xy_all)
+    n_test = xy_all["is_test"].sum()
+    n_train_cv = n_total - n_test
+
     print(f"\n{'=' * 60}")
     print("✓ Successfully prepared XY data for all traits!")
     print(f"  Output: {output_path}")
     print(f"  Shape: {xy_all.shape}")
     print(f"  Traits: {len(trait_cols)}")
+    print(f"  Test set (sPlot only): {n_test} samples")
+    print(f"  Train/CV set: {n_train_cv} samples")
 
 
 def run_local(

@@ -281,7 +281,9 @@ def main(cfg: ConfigBox = get_config()) -> None:
     # Use only sPlot data to calculate spatial autocorrelation
     log.info("Reading sPlot features from %s...", y_fn)
     y_ddf = dd.read_parquet(y_fn).query("source == 's'").drop(columns=["source"])
-    y_cols = y_ddf.columns.difference(["x", "y"]).to_list()
+    all_cols = y_ddf.columns.difference(["x", "y"]).to_list()
+    # Filter out reliability columns
+    y_cols = [col for col in all_cols if not col.endswith("_reliability")]
 
     vgram_kwargs = {
         "n_max": 18000,

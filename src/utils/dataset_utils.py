@@ -361,9 +361,8 @@ def get_train_dir(config: ConfigBox = cfg) -> Path:
 def get_y_fn(config: ConfigBox = cfg) -> Path:
     """Get the path to the train file for a specific configuration."""
     if cfg.version == "2":
-        y_fn = (
-            Path(config.train.dir).resolve() / config.product_code / config.train.Y.fn
-        )
+        # Use the full path from config for version 2
+        y_fn = Path(config.train.Y.fp).resolve()
     else:
         y_fn = get_train_dir(config) / config.train.Y.fn
 

@@ -1,0 +1,74 @@
+schema: '2.0'
+stages:
+  build_y:
+    cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
+      genoa --time 01:00:00 --cpus 9 --mem 128GB --merge-cpus 9 --merge-mem 450GB
+      --overwrite
+    deps:
+    - path: ../../../data/interim/gbif/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 76a0dc0833c8a802b3d98f0ffedf9160.dir
+      size: 3350236278
+      nfiles: 31
+    - path: ../../../data/interim/splot/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 9b883b91fab926435f82a05b5be60214.dir
+      size: 1213468374
+      nfiles: 31
+    - path: ../../../src/features/build_y_trait.py
+      hash: md5
+      md5: 8d11736b7df0ebb5733785fcdb1973b5
+      size: 13986
+    - path: ../../../src/features/merge_y_traits.py
+      hash: md5
+      md5: 3460e661c8cb297c1cd0c2ff93c312e7
+      size: 13101
+    - path: ../../../stages/build_y.py
+      hash: md5
+      md5: 28e594b7ed0c899d45384f4a5ae53347
+      size: 11968
+      isexec: true
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        train.Y.fp: data/features/try6_q05_stg_pow-xf_1km/y_data/Y.parquet
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X21
+        - X26
+        - X27
+        - X46
+        - X47
+        - X50
+        - X55
+        - X78
+        - X95
+        - X138
+        - X144
+        - X145
+        - X146
+        - X163
+        - X169
+        - X237
+        - X281
+        - X282
+        - X289
+        - X297
+        - X614
+        - X1080
+        - X3106
+        - X3114
+        - X3117
+        - X3120
+        traits.power_transform: true
+        traits.transformer_dir: data/features/try6_q05_stg_pow-xf_1km/y_data/transformers
+    outs:
+    - path: ../../../data/features/try6_q05_stg_pow-xf_1km/y_data
+      hash: md5
+      md5: df7bf8a285c831156f6aa886a88c81be.dir
+      size: 252812391
+      nfiles: 65
