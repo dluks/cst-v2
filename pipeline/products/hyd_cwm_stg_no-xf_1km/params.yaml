@@ -889,10 +889,9 @@ trydb:
   interim:
     dir: try
     quantile_range: null  # Use [0.005, 0.995] for TRY5. No filtering needed for TRY6
-    transform: power # "log", "power" (yeo-johnson), null (no transformation)
+    transform: null # "log", "power" (yeo-johnson), null (no transformation) - NOTE: For hydraulic traits, see traits.transform instead
     already_norm: null
     filtered: traits.parquet
-    transformer_fn: power_transformer.pkl
     perform_pca: false # This will reduce the number of traits by projecting them onto the principal components
     pca_n_components: 4 # Fraction of variance to keep. If integer, this is the number of components.
     pca_fn: no_pca.pkl # Set to no_pca.pkl if perform_pca is false
@@ -936,7 +935,7 @@ train:
   spatial_autocorr: spatial_autocorr.parquet
   cv_splits:
     range_stat: "mean"
-    n_splits: 5
+    n_splits: 8
     n_sims: 200
     dir: skcv_splits
     dir_fp: data/features/hyd_cwm_stg_no-xf_1km/skcv_splits  # Full path to CV splits directory
@@ -958,6 +957,7 @@ processed:
 
 autogluon:
   included_model_types: ["GBM"]
+  excluded_model_types: ["KNN", "RF", "XT"]
   presets: "high"
   num_bag_folds: 5
   num_stack_levels: 1

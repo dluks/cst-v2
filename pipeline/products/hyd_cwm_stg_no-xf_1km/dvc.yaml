@@ -87,6 +87,7 @@ stages:
       --cpus 100
       --mem 64GB
       --time 00:20:00
+      --overwrite
     deps:
       - ${project_root}/stages/build_cv_splits.py
       - ${project_root}/src/features/build_cv_splits.py
@@ -104,7 +105,7 @@ stages:
     cmd: >-
       python ${project_root}/stages/prepare_xy_data.py
       --params params.yaml
-      --partition milan
+      --partition genoa
       --cpus 48
       --mem 256GB
       --time 01:00:00
@@ -149,18 +150,6 @@ stages:
       - ${project_root}/${models.dir_fp}:
           persist: true
 
-  # aggregate_cv_stats:
-  #   cmd: python ${project_root}/stages/aggregate_cv_stats.py --params params.yaml
-  #   deps:
-  #     - ${project_root}/stages/aggregate_cv_stats.py
-  #     - ${project_root}/${models.dir_fp}
-  #   params:
-  #     - train.eval_results
-  #     - train.feature_importance
-  #   outs:
-  #     - ${project_root}/${models.dir_fp}/aggregated_stats:
-  #         persist: false
-  
   # aoa:
   #   cmd: python src/analysis/aoa.py
   #   deps:
