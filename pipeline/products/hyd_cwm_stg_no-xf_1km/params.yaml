@@ -854,26 +854,10 @@ traits:
 
 
 gbif:
-  raw_fp: data/raw/all_tracheophyta_non-cult_2024-04-10/all_tracheophyta_non-cult_2024-04-10.parquet
-  filtered:
-    out_dir: data/interim/gbif/filtered_occurrences
-    fp: gbif_filtered.parquet
-    report_fp: filter_gbif_report.md
-    density_plot_fp: gbif_filtering_density.png
-  maps:
-    out_dir: data/interim/gbif/maps
-    min_count: 10
-    max_count: 500
+  maps_dir: data/interim/gbif/maps/hyd_stg_no-xf_1km
 
 splot:
-  raw:
-    dir: splot4-0
-  filtered:
-    out_dir: data/interim/splot/filtered_surveys
-    fp: splot_filtered.parquet
-    report_fp: filter_splot_report.md
-  maps:
-    out_dir: data/interim/splot/maps
+  maps_dir: data/interim/splot/maps/hyd_stg_no-xf_1km
 
 trydb:
   raw:

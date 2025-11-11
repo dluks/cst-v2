@@ -1,0 +1,56 @@
+version: "2"
+project_root: "../../.."
+product_dir: "pipeline/sparse_trait_maps/hyd_stg_no-xf_1km"
+trait_type: "hydraulic"
+product_code: "hyd_stg_no-xf_1km"
+
+model_res: "1km"
+PFT: "Shrub_Tree_Grass"
+random_seed: 42
+base_resolution: 1000 # Shared best resolution of all EO datasets (used for masking)
+target_resolution: 1000 # Target resolution for model training
+extent: [-180, -90, 180, 90] # Extent of the final dataset
+crs: "EPSG:6933" # Equal Area Cylindrical projection
+
+nemo:
+  build_gbif_maps:
+    n_workers: 60 # 80 was throwing too many files open error...
+    threads_per_worker: 4
+    memory_limit: 15GB
+  build_splot_maps:
+    npartitions: 60
+    dask:
+      n_workers: 40
+      threads_per_worker: 5
+      memory_limit: 40GB
+
+traits:
+  interim_out_dir: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+  names:
+    - gsmax
+    - P12
+    - P50
+    - P88
+    - rdmax
+    - WUE
+
+gbif:
+  filtered:
+    out_dir: data/interim/gbif/filtered_occurrences
+    fp: gbif_filtered.parquet
+    report_fp: filter_gbif_report.md
+    density_plot_fp: gbif_filtering_density.png
+  maps:
+    out_dir: data/interim/gbif/maps
+    min_count: 10
+    max_count: 500
+
+splot:
+  raw:
+    dir: splot4-0
+  filtered:
+    out_dir: data/interim/splot/filtered_surveys
+    fp: splot_filtered.parquet
+    report_fp: filter_splot_report.md
+  maps:
+    out_dir: data/interim/splot/maps

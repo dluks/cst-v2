@@ -2,42 +2,6 @@ params:
   - params.yaml
 
 stages:
-  ######################################################################################
-  # RES-IND., PFT-DEP. STAGES ----------------------------------------------------------
-  ######################################################################################
-
-  build_gbif_maps:
-    cmd: >-
-      python ${project_root}/stages/build_gbif_maps.py
-      --params params.yaml
-      --partitions milan genoa
-      --cpus 61
-      --mem 350GB
-      --time 00:30:00
-    deps:
-      - ${project_root}/src/data/build_gbif_map.py
-      - ${project_root}/data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
-      - ${project_root}/${traits.interim_out}
-    outs:
-      - ${project_root}/${gbif.maps.out_dir}/${product_code}:
-          persist: false 
-
-  build_splot_maps:
-    cmd: >-
-      python ${project_root}/stages/build_splot_maps.py
-      --params params.yaml
-      --partitions milan genoa
-      --cpus 2
-      --mem 256GB
-      --time 00:30:00
-    deps:
-      - ${project_root}/src/data/build_splot_map.py
-      - ${project_root}/data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
-      - ${project_root}/${traits.interim_out}
-    outs:
-      - ${project_root}/${splot.maps.out_dir}/${product_code}:
-          persist: false
-
   build_y:
     cmd: >-
       python ${project_root}/stages/build_y.py
@@ -48,12 +12,13 @@ stages:
       --mem 64GB
       --merge-cpus 9
       --merge-mem 400GB
+      --overwrite
     deps:
       - ${project_root}/stages/build_y.py
       - ${project_root}/src/features/build_y_trait.py
       - ${project_root}/src/features/merge_y_traits.py
-      - ${project_root}/${gbif.maps.out_dir}/${product_code}
-      - ${project_root}/${splot.maps.out_dir}/${product_code}
+      - ${project_root}/data/interim/gbif/maps/hyd_stg_no-xf_1km
+      - ${project_root}/data/interim/splot/maps/hyd_stg_no-xf_1km
     params:
       - traits.names
       - datasets.Y.trait_stat

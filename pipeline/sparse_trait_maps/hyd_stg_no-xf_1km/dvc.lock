@@ -1,0 +1,47 @@
+schema: '2.0'
+stages:
+  build_gbif_maps:
+    cmd: python ../../../stages/build_gbif_maps.py --params params.yaml --partitions
+      milan genoa --cpus 61 --mem 350GB --time 00:30:00
+    deps:
+    - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
+      hash: md5
+      md5: 330b94ea84f903a58649c786bb8682cd.dir
+      size: 391705722
+      nfiles: 523
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_gbif_map.py
+      hash: md5
+      md5: a7fe643dd9185bc5610ea95843403dcb
+      size: 4824
+    outs:
+    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_1km
+      hash: md5
+      md5: 971ea05d2420def035b7f1dba95643c9.dir
+      size: 344373162
+      nfiles: 6
+  build_splot_maps:
+    cmd: python ../../../stages/build_splot_maps.py --params params.yaml --partitions
+      milan genoa --cpus 2 --mem 256GB --time 00:30:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
+      hash: md5
+      md5: 7f9270d6cc21675857696f5e0ea873e4
+      size: 22533501
+    - path: ../../../data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
+      hash: md5
+      md5: ce042213e6761661343b8a30a72599d4
+      size: 2978137
+    - path: ../../../src/data/build_splot_map.py
+      hash: md5
+      md5: d54880ed83df729e665309208a776542
+      size: 6064
+    outs:
+    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
+      hash: md5
+      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
+      size: 130599118
+      nfiles: 6
