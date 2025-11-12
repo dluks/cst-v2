@@ -8,7 +8,7 @@ stages:
       --params params.yaml
       --partitions milan genoa
       --time 01:00:00
-      --cpus 4
+      --cpus 9
       --mem 64GB
       --merge-cpus 9
       --merge-mem 400GB
@@ -22,12 +22,12 @@ stages:
     params:
       - traits.names
       - datasets.Y.trait_stat
-      - train.dir
-      - train.Y.fn
-      - product_code
+      - train.Y.fp
+      - traits.power_transform
+      - traits.transformer_dir
     outs:
-      - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}:
-          persist: false
+      - ${project_root}/${train.dir}/${product_code}/y_data:
+          persist: true
 
   calculate_spatial_autocorr:
     cmd: >-
@@ -38,7 +38,7 @@ stages:
       --time 0:10:00
     deps:
       - ${project_root}/src/features/calc_spatial_autocorr_gpu.py
-      - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}
+      - ${project_root}/${train.Y.fp}
     params:
       - spatial_autocorr.ranges_fp
     outs:

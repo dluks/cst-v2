@@ -262,37 +262,35 @@ stages:
       nfiles: 6
   build_y:
     cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
-      genoa --time 01:00:00 --cpus 4 --mem 64GB --merge-cpus 9 --merge-mem 400GB
+      genoa --time 01:00:00 --cpus 9 --mem 64GB --merge-cpus 9 --merge-mem 400GB --overwrite
     deps:
-    - path: ../../../data/interim/gbif/maps/hyd_cwm_stg_no-xf_1km
+    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_1km
       hash: md5
       md5: 971ea05d2420def035b7f1dba95643c9.dir
       size: 344373162
       nfiles: 6
-    - path: ../../../data/interim/splot/maps/hyd_cwm_stg_no-xf_1km
+    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
       hash: md5
       md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
       size: 130599118
       nfiles: 6
     - path: ../../../src/features/build_y_trait.py
       hash: md5
-      md5: c057b54bd7270af40af44e16fc8f9f3e
-      size: 4649
+      md5: 8d11736b7df0ebb5733785fcdb1973b5
+      size: 13986
     - path: ../../../src/features/merge_y_traits.py
       hash: md5
-      md5: 266c3dd63c6228d4da83d9d9df48295e
-      size: 3387
+      md5: 6bb6f9892372c4c5ad688fb4486bf036
+      size: 13100
     - path: ../../../stages/build_y.py
       hash: md5
-      md5: 169c3889e2d00b91bd72b77043eaa14a
-      size: 10944
+      md5: 304840a474bb0b3ea6fa51dcb35512ef
+      size: 11921
       isexec: true
     params:
       params.yaml:
         datasets.Y.trait_stat: 1
-        product_code: hyd_cwm_stg_no-xf_1km
-        train.Y.fn: Y.parquet
-        train.dir: data/features
+        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
         traits.names:
         - gsmax
         - P12
@@ -300,12 +298,14 @@ stages:
         - P88
         - rdmax
         - WUE
+        traits.power_transform: false
+        traits.transformer_dir: data/features/hyd_cwm_stg_no-xf_1km/y_data/transformers
     outs:
-    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/y_data
       hash: md5
-      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
-      size: 36839305
-      nfiles: 1
+      md5: 689765b932347ee377df65d6c74d07a1.dir
+      size: 37191150
+      nfiles: 3
   calculate_spatial_autocorr:
     cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
       l40s --gpus 1 --time 0:10:00

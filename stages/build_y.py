@@ -24,15 +24,15 @@ from simple_slurm import Slurm
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
-    setup_environment,
-    determine_execution_mode,
-    setup_log_directory,
-    build_base_command,
+    PartitionDistributor,
     add_common_args,
     add_execution_args,
     add_partition_args,
+    build_base_command,
+    determine_execution_mode,
     resolve_partitions,
-    PartitionDistributor,
+    setup_environment,
+    setup_log_directory,
     wait_for_job_completion,
 )
 
@@ -109,7 +109,7 @@ def run_trait_job(
         "src.features.build_y_trait",
         params_path=params_path,
         overwrite=overwrite,
-        extra_args={"--trait": trait}
+        extra_args={"--trait": trait},
     )
 
     print(f"Running: {' '.join(cmd)}")
@@ -120,9 +120,7 @@ def run_trait_job(
 def run_merge_step(params_path: str | None, overwrite: bool) -> int:
     """Run the merge step to combine all trait files."""
     cmd = build_base_command(
-        "src.features.merge_y_traits",
-        params_path=params_path,
-        overwrite=overwrite
+        "src.features.merge_y_traits", params_path=params_path, overwrite=overwrite
     )
 
     print(f"\nRunning merge step: {' '.join(cmd)}")
@@ -211,7 +209,7 @@ def run_slurm(
             "src.features.build_y_trait",
             params_path=params_path,
             overwrite=overwrite,
-            extra_args={"--trait": trait}
+            extra_args={"--trait": trait},
         )
         command = " ".join(cmd_parts)
 
@@ -249,9 +247,7 @@ def run_slurm(
 
     # Construct merge command
     merge_cmd_parts = build_base_command(
-        "src.features.merge_y_traits",
-        params_path=params_path,
-        overwrite=overwrite
+        "src.features.merge_y_traits", params_path=params_path, overwrite=overwrite
     )
     merge_command = " ".join(merge_cmd_parts)
 
@@ -282,7 +278,7 @@ def run_slurm(
     merge_log = f"{log_dir.absolute()}/{merge_job_id}_merge_y.log"
     print(f"Monitor progress: tail -f {merge_log}")
 
-    success = wait_for_job_completion(merge_job_id, "merge", poll_interval=30)
+    success = wait_for_job_completion(merge_job_id, "merge")
 
     if success:
         print(f"\n{'=' * 60}")
@@ -322,6 +318,7 @@ def main() -> None:
         print("Skipping trait processing. Will only generate report if needed.")
         # Skip to merge step which will handle report generation
         from src.features.merge_y_traits import main as merge_main
+
         merge_main(args)
         return
 

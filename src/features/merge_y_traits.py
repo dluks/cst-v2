@@ -288,8 +288,8 @@ def main(args: argparse.Namespace | None = None) -> None:
     proj_root = os.environ.get("PROJECT_ROOT")
     if proj_root is None:
         raise ValueError("PROJECT_ROOT environment variable is not set")
-    tmp_dir = Path(proj_root) / cfg.tmp_dir / "y_traits"
-    out_fn = Path(cfg.train.dir, cfg.product_code, cfg.train.Y.fn)
+    tmp_dir = Path(proj_root).resolve() / cfg.tmp_dir / "y_traits"
+    out_fn = Path(cfg.train.Y.fp).resolve()
     report_fp = out_fn.parent / "report.md"
     figure_fp = out_fn.parent / "trait_distributions.png"
 
@@ -389,7 +389,8 @@ def main(args: argparse.Namespace | None = None) -> None:
 
         # Get trait columns (exclude x, y, source, and reliability columns)
         trait_cols = [
-            col for col in y_df_report.columns
+            col
+            for col in y_df_report.columns
             if col not in ["x", "y", "source"] and not col.endswith("_reliability")
         ]
 

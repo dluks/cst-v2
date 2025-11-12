@@ -19,7 +19,7 @@ base_resolution: 1000 # Shared best resolution of all EO datasets (used for mask
 target_resolution: 1000 # Target resolution for model training
 extent: [-180, -90, 180, 90] # Extent of the final dataset
 crs: "EPSG:6933" # Equal Area Cylindrical projection
-tmp_dir: tmp
+tmp_dir: tmp/hyd_cwm_stg_no-xf_1km
 raw_dir: data/raw
 interim_dir: data/interim
 processed_dir: data/processed
@@ -851,6 +851,15 @@ traits:
   interim_out: data/interim/traits/hydraulic_no-xf/hydraulic_no-xf.parquet
   trait_map_layers: ["mean", "std", "median", "q05", "q95", "count", "count_weighted"]
   target_trait_stat: "mean"
+  # Power transformation settings (disabled for hydraulic traits)
+  power_transform: false  # Disable Yeo-Johnson power transformation
+  transform_method: "yeo-johnson"  # Transformation method (not used when power_transform=false)
+  transformer_dir: "data/features/hyd_cwm_stg_no-xf_1km/y_data/transformers"  # Directory to save transformers
+  # Reliability weighting settings
+  use_reliability_weights: false  # Disable reliability weighting for hydraulic traits
+  reliability_transform: "sqrt"  # Transform count_weighted using sqrt before creating reliability weights
+  reliability_min: 0.1  # Minimum reliability weight (for normalization)
+  reliability_max: 1.0  # Maximum reliability weight (for normalization)
 
 
 gbif:
@@ -908,7 +917,7 @@ train:
   dir: data/features
   Y:
     fn: Y.parquet
-    fp: data/features/hyd_cwm_stg_no-xf_1km/Y.parquet  # Full path to Y file
+    fp: data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet  # Full path to Y file
   xy_data:
     fn: xy_all_traits.parquet
     fp: data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet  # Full path to merged XY data
@@ -918,7 +927,13 @@ train:
   trait_sets: ["splot", "gbif", "splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
   cv_splits:
+    # Spatial autocorrelation range configuration
+    range_mode: "all_traits"  # "per_trait" or "all_traits"
+    per_trait_stat: "mean"   # Which column from spatial_autocorr.parquet to use (mean, median, q05, q95, std)
+    all_traits_aggregation: "mean"  # For all_traits mode: how to aggregate stat across traits (mean, median, min, max)
+    # Deprecated (kept for backward compatibility):
     range_stat: "mean"
+    # CV split parameters
     n_splits: 8
     n_sims: 200
     dir: skcv_splits
