@@ -46,6 +46,7 @@ simple-slurm = "^0.3.6"
 
 [tool.poetry.group.cuda.dependencies]
 torch = { version = "^2.0.0", source = "pytorch-cu121" }
+cupy-cuda12x = "^13.6.0"
 # cudf-cu11 = { version = "24.10.*", source = "nvidia" }
 # cuml-cu11 = { version = "24.10.*", source = "nvidia" }
 # cupy-cuda11x = "^13.3.0"
