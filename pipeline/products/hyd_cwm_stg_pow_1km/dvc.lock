@@ -1,0 +1,48 @@
+schema: '2.0'
+stages:
+  build_y:
+    cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
+      genoa --time 01:00:00 --cpus 9 --mem 64GB --merge-cpus 9 --merge-mem 400GB --overwrite
+    deps:
+    - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_1km
+      hash: md5
+      md5: 971ea05d2420def035b7f1dba95643c9.dir
+      size: 344373162
+      nfiles: 6
+    - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
+      hash: md5
+      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
+      size: 130599118
+      nfiles: 6
+    - path: ../../../src/features/build_y_trait.py
+      hash: md5
+      md5: 8d11736b7df0ebb5733785fcdb1973b5
+      size: 13986
+    - path: ../../../src/features/merge_y_traits.py
+      hash: md5
+      md5: 6bb6f9892372c4c5ad688fb4486bf036
+      size: 13100
+    - path: ../../../stages/build_y.py
+      hash: md5
+      md5: 304840a474bb0b3ea6fa51dcb35512ef
+      size: 11921
+      isexec: true
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        train.Y.fp: data/features/hyd_cwm_stg_pow_1km/y_data/Y.parquet
+        traits.names:
+        - gsmax
+        - P12
+        - P50
+        - P88
+        - rdmax
+        - WUE
+        traits.power_transform: true
+        traits.transformer_dir: data/features/hyd_cwm_stg_pow_1km/y_data/transformers
+    outs:
+    - path: ../../../data/features/hyd_cwm_stg_pow_1km/y_data
+      hash: md5
+      md5: d35df88047d28c93e8e9a3682884c54c.dir
+      size: 37627403
+      nfiles: 15
