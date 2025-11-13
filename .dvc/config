@@ -5,3 +5,5 @@
     url = ssh://geos/mnt/gsdata/projects/panops/cit-sci-traits/dvc-cache
 ['remote "gcs"']
     url = gs://cit-sci-traits_dvc
+['remote "panops-data-registry"']
+    url = ssh://geos/mnt/gsdata/projects/panops/panops-data-registry
