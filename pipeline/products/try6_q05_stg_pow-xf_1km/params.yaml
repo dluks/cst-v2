@@ -930,9 +930,19 @@ train:
   trait_sets: ["splot_gbif"]
   spatial_autocorr: spatial_autocorr.parquet
   cv_splits:
+    # Spatial autocorrelation range configuration
+    # Option 1: Use custom range (highest priority, overrides all other settings)
+    custom_range: 700000  # Set to a value in meters (e.g., 600000 for 600 km) to use fixed range for all traits
+    # Option 2: Use statistics from spatial_autocorr.parquet
+    range_mode: "all_traits"  # "per_trait" or "all_traits"
+    per_trait_stat: "mean"   # Which column from spatial_autocorr.parquet to use (mean, median, q05, q95, std)
+    all_traits_aggregation: "min"  # For all_traits mode: how to aggregate stat across traits (mean, median, min, max)
+    # Deprecated (kept for backward compatibility):
     range_stat: "mean"
+    # CV split parameters
     n_splits: 8
     n_sims: 200
+    balance_weight: 0.6  # Weight for sample count balance in fold assignment (0.0=only count balance, 1.0=only KS test, 0.5=equal)
     dir: skcv_splits
     dir_fp: data/features/try6_q05_stg_pow-xf_1km/skcv_splits  # Full path to CV splits directory
   weights:

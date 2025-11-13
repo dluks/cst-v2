@@ -29,6 +29,7 @@ from src.pipeline.entrypoint_utils import (
     build_base_command,
     determine_execution_mode,
     setup_environment,
+    setup_log_directory,
     wait_for_job_completion,
 )
 
@@ -347,9 +348,8 @@ def run_slurm(
         print("Use --overwrite flag to overwrite existing files.")
         sys.exit(0)
 
-    # Create log directory
-    log_dir = Path("logs/calc_spatial_autocorr")
-    log_dir.mkdir(parents=True, exist_ok=True)
+    # Create log directory in product-specific location
+    log_dir = setup_log_directory("calc_spatial_autocorr")
 
     # Create temporary directory for individual trait results
     temp_dir = ranges_fp.parent / "tmp"

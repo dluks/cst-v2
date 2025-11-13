@@ -38,7 +38,7 @@ stages:
       --time 0:10:00
     deps:
       - ${project_root}/src/features/calc_spatial_autocorr_gpu.py
-      - ${project_root}/${train.dir}/${product_code}/${train.Y.fn}
+      - ${project_root}/${train.Y.fp}
     params:
       - spatial_autocorr.ranges_fp
     outs:
@@ -48,10 +48,11 @@ stages:
     cmd: >-
       python ${project_root}/stages/build_cv_splits.py
       --params params.yaml
-      --partitions genoa
+      --partitions genoa milan
       --cpus 100
       --mem 64GB
       --time 00:20:00
+      --overwrite
     deps:
       - ${project_root}/stages/build_cv_splits.py
       - ${project_root}/src/features/build_cv_splits.py

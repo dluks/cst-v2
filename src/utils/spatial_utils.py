@@ -1,6 +1,6 @@
 """Spatial utility functions."""
 
-from typing import Iterable
+from collections.abc import Iterable
 
 import cupy as cp
 import h3
@@ -116,9 +116,7 @@ def assign_hexagons(
 
     if dask:
         meta = df._meta.assign(hex_id=pd.Series(dtype="string"))
-        return df.map_partitions(
-            _assign_hex_to_df, meta=meta
-        )  # pyright: ignore[reportCallIssue]
+        return df.map_partitions(_assign_hex_to_df, meta=meta)  # pyright: ignore[reportCallIssue]
 
     return _assign_hex_to_df(df)
 
