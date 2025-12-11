@@ -77,7 +77,7 @@ def get_or_create_run_dir(
     trait_name: str,
     trait_set: str,
     debug: bool = False,
-    cfg: ConfigBox = None,
+    cfg: ConfigBox | None = None,
 ) -> Path:
     """
     Get or create the run directory for a trait and trait set.
@@ -101,6 +101,17 @@ def get_or_create_run_dir(
     training_dir.mkdir(parents=True, exist_ok=True)
 
     return training_dir
+
+
+def determine_presets(cfg_presets: list[str] | None, n_train_samples: int) -> list[str]:
+    if cfg_presets is None:
+        return (
+            ["extreme"]
+            if n_train_samples < 30000
+            else ["best"] + ["optimize_for_deployment"]
+        )
+    else:
+        return cfg_presets + ["optimize_for_deployment"]
 
 
 def train_cv_fold(
@@ -149,13 +160,20 @@ def train_cv_fold(
     cv_dir.mkdir(parents=True, exist_ok=True)
     fold_model_path = cv_dir / f"fold_{fold_id}"
 
+    # Columns to drop (not features)
+    cols_to_drop = ["x", "y", "source", "fold"]
+    if "is_test" in xy.columns:
+        cols_to_drop.append("is_test")
+    if f"{trait_name}_reliability" in xy.columns:
+        cols_to_drop.append(f"{trait_name}_reliability")
+
     # Prepare training and validation data
     train = TabularDataset(
         xy[xy["fold"] != fold_id]
         .pipe(filter_trait_set, trait_set)
         .dropna(subset=[trait_name])
         .pipe(assign_weights, w_gbif=cfg.train.weights.gbif)
-        .drop(columns=["x", "y", "source", "fold"])
+        .drop(columns=cols_to_drop)
         .reset_index(drop=True)
     )
     val = TabularDataset(
@@ -163,17 +181,15 @@ def train_cv_fold(
         .query("source == 's'")
         .dropna(subset=[trait_name])
         .assign(weights=1.0)
-        .drop(columns=["x", "y", "source", "fold"])
+        .drop(columns=cols_to_drop)
         .reset_index(drop=True)
     )
 
-    # Determine preset based on training set size
-    n_train_samples = len(train)
-    preset = "extreme" if n_train_samples < 30000 else "best"
+    presets = determine_presets(cfg.autogluon.presets, len(train))
     log.info(
-        "Using preset '%s' for %d training samples (fold %d)",
-        preset,
-        n_train_samples,
+        "Using presets '%s' for %d training samples (fold %d)",
+        presets,
+        len(train),
         fold_id,
     )
 
@@ -184,12 +200,13 @@ def train_cv_fold(
         path=str(fold_model_path),
     ).fit(
         train,
-        # num_gpus=cfg.autogluon.num_gpus,
-        # num_cpus=cfg.autogluon.num_cpus,
-        presets=preset,
-        time_limit=cfg.autogluon.cv_fit_time_limit,
+        presets=presets,
+        included_model_types=cfg.autogluon.included_model_types,
+        excluded_model_types=cfg.autogluon.excluded_model_types,
+        time_limit=cfg.autogluon.cv_fit_time_limit * 3600,  # Convert hours to seconds
         num_bag_folds=cfg.autogluon.num_bag_folds,
         num_stack_levels=cfg.autogluon.num_stack_levels,
+        dynamic_stacking=cfg.autogluon.dynamic_stacking,
     )
 
     # Calculate feature importance
@@ -223,7 +240,7 @@ def train_cv_fold(
         feature_importance = predictor.feature_importance(
             val,
             features=datasets,
-            time_limit=cfg.autogluon.FI_time_limit,
+            time_limit=cfg.autogluon.FI_time_limit * 3600,  # Convert hours to seconds
             num_shuffle_sets=cfg.autogluon.FI_num_shuffle_sets,
         ).assign(fold=fold_id)
 
@@ -293,21 +310,26 @@ def train_full_model(
 
     full_model_path = training_dir / "full_model"
 
+    # Columns to drop (not features)
+    cols_to_drop = ["x", "y", "source", "fold"]
+    if "is_test" in xy.columns:
+        cols_to_drop.append("is_test")
+    if f"{trait_name}_reliability" in xy.columns:
+        cols_to_drop.append(f"{trait_name}_reliability")
+
     # Prepare training data
     train_full = TabularDataset(
         xy.pipe(filter_trait_set, trait_set)
         .dropna(subset=[trait_name])
         .pipe(assign_weights, w_gbif=cfg.train.weights.gbif)
-        .drop(columns=["x", "y", "source", "fold"])
+        .drop(columns=cols_to_drop)
     )
 
-    # Determine preset based on training set size
-    n_train_samples = len(train_full)
-    preset = "extreme" if n_train_samples < 30000 else "best"
+    presets = determine_presets(cfg.autogluon.presets, len(train_full))
     log.info(
-        "Using preset '%s' for %d training samples (full model)",
-        preset,
-        n_train_samples,
+        "Using presets '%s' for %d training samples (full model)",
+        presets,
+        len(train_full),
     )
 
     log.info("Training full model...")
@@ -317,12 +339,13 @@ def train_full_model(
         path=str(full_model_path),
     ).fit(
         train_full,
-        num_gpus=cfg.autogluon.num_gpus,
-        num_cpus=cfg.autogluon.num_cpus,
-        presets=preset,
-        time_limit=cfg.autogluon.full_fit_time_limit,
+        presets=presets,
+        included_model_types=cfg.autogluon.included_model_types,
+        excluded_model_types=cfg.autogluon.excluded_model_types,
+        time_limit=cfg.autogluon.full_fit_time_limit * 3600,  # Convert hours to seconds
         num_bag_folds=cfg.autogluon.num_bag_folds,
         num_stack_levels=cfg.autogluon.num_stack_levels,
+        dynamic_stacking=cfg.autogluon.dynamic_stacking,
     )
 
     predictor.save_space()
@@ -415,8 +438,7 @@ def main() -> None:
 
     if not xy_path.exists():
         log.error(
-            "XY data not found at %s. "
-            "Please run the prepare_xy_data stage first.",
+            "XY data not found at %s. Please run the prepare_xy_data stage first.",
             xy_path,
         )
         raise FileNotFoundError(
@@ -424,10 +446,10 @@ def main() -> None:
         )
 
     log.info("Loading pre-generated XY data for %s...", args.trait)
-    xy_all = pd.read_parquet(xy_path, engine="pyarrow")
+    xy_cols = dd.read_parquet(xy_path).columns.to_list()
 
     # Get trait column names to filter out other traits
-    all_traits = (
+    all_y_cols = (
         pd.read_parquet(Path(cfg.train.Y.fp), engine="pyarrow")
         .columns.difference(["x", "y", "source"])
         .to_list()
@@ -437,23 +459,33 @@ def main() -> None:
     # Keep: x, y, source, trait value, trait-specific fold column, and all features
     # Exclude: other trait values and other fold columns
     fold_col = f"{args.trait}_fold"
+    reliability_col = f"{args.trait}_reliability"
     cols_to_exclude = set()
 
-    # Exclude other trait values
-    for trait in all_traits:
-        if trait != args.trait:
-            cols_to_exclude.add(trait)
+    # Exclude other trait values and their reliability columns
+    cols_to_exclude.update(col for col in all_y_cols if col != args.trait)
+    cols_to_exclude.update(
+        col
+        for col in all_y_cols
+        if col.endswith("_reliability") and col != reliability_col
+    )
 
-    # Exclude other fold columns
-    for col in xy_all.columns:
-        if col.endswith("_fold") and col != fold_col:
-            cols_to_exclude.add(col)
+    # Exclude other fold columns which only exist in the xy_data dataframe
+    cols_to_exclude.update(
+        col for col in xy_cols if col.endswith("_fold") and col != fold_col
+    )
 
     # Select columns to keep
-    cols_to_keep = [col for col in xy_all.columns if col not in cols_to_exclude]
+    cols_to_keep = [col for col in xy_cols if col not in cols_to_exclude]
 
     # Filter and rename fold column
-    xy = xy_all[cols_to_keep].rename(columns={fold_col: "fold"}).reset_index(drop=True)
+    xy = (
+        pd.read_parquet(xy_path, engine="pyarrow", columns=cols_to_keep)
+        .rename(columns={fold_col: "fold"})
+        .reset_index(drop=True)
+    )
+
+    log.info("All loaded columns: %s", xy.columns.to_list())
 
     log.info("Loaded data shape: %s", xy.shape)
 
