@@ -86,10 +86,10 @@ This project uses Data Version Control (DVC) to manage data dependencies and pip
 1. Install dependencies (using conda or poetry as preferred)
     ```shell
     # Using conda
-    conda env create -f environment.yml
+    conda env create -f environment.yml python=3.11
     conda activate cit-sci-traits
 
-    # OR using poetry
+    # AND using poetry (install poetry first with `pipx` )
     poetry install
     ```
 
