@@ -1,3 +1,12 @@
+"""
+DEPRECATED: This file uses the old global transformation system (cfg.trydb.interim.transform).
+
+The new system uses per-trait transformers with metadata JSON files stored in
+cfg.traits.transformer_dir. See src/models/calculate_cv_stats.py for the updated implementation.
+
+This file is kept for reference only and should not be used in production.
+"""
+
 import argparse
 import pickle
 import shutil
