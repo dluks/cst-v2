@@ -3,9 +3,10 @@ Utility functions for entry point scripts.
 
 This module provides common functionality for stage entry points including:
 - Environment setup and execution mode determination
-- Slurm job management (status checking, waiting)
+- Slurm job management (status checking, waiting, automatic retries)
 - Command building and argument parsing helpers
 - Log directory management
+- Multi-partition job distribution
 """
 
 import argparse
@@ -110,6 +111,145 @@ def check_job_status(job_id: int | str) -> str:
         return "UNKNOWN"
 
 
+def check_job_exists_by_name(job_name: str) -> tuple[bool, str | None, str | None]:
+    """
+    Check if a job with the given name exists in the Slurm queue.
+
+    Args:
+        job_name: Exact job name to check for
+
+    Returns:
+        Tuple of (exists, job_id, state) where:
+        - exists: True if job found in PENDING/RUNNING/CONFIGURING state
+        - job_id: Job ID if found, None otherwise
+        - state: Job state if found, None otherwise
+    """
+    try:
+        # Query for jobs with this exact name
+        result = subprocess.run(
+            ["squeue", "-n", job_name, "-h", "-o", "%i %T"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0 and result.stdout.strip():
+            # Parse output (format: "job_id state")
+            lines = result.stdout.strip().split("\n")
+            if lines:
+                parts = lines[0].split()
+                if len(parts) >= 2:
+                    job_id = parts[0]
+                    state = parts[1]
+                    # Only return True if job is in active states
+                    if state in ["PENDING", "RUNNING", "CONFIGURING"]:
+                        return True, job_id, state
+
+        return False, None, None
+
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not check for existing job '{job_name}': {e}")
+        return False, None, None
+
+
+def get_existing_job_names(user: str | None = None) -> dict[str, tuple[str, str]]:
+    """
+    Get all job names currently in the Slurm queue for a user.
+
+    Args:
+        user: Username to filter by. If None, uses current user ($USER)
+
+    Returns:
+        Dictionary mapping job_name -> (job_id, state) for all jobs
+        in PENDING, RUNNING, or CONFIGURING states
+    """
+    try:
+        # Build squeue command
+        cmd = ["squeue", "-h", "-o", "%i %T %j"]
+        if user:
+            cmd.extend(["-u", user])
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        jobs = {}
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
+                parts = line.split(None, 2)  # Split on whitespace, max 3 parts
+                if len(parts) >= 3:
+                    job_id = parts[0]
+                    state = parts[1]
+                    job_name = parts[2]
+                    # Only include active jobs
+                    if state in ["PENDING", "RUNNING", "CONFIGURING"]:
+                        jobs[job_name] = (job_id, state)
+
+        return jobs
+
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not get existing jobs: {e}")
+        return {}
+
+
+def submit_job_with_retry(
+    slurm: "Slurm",
+    command: str,
+    max_retries: int = 5,
+    base_wait_time: int = 5,
+    delay_after_submit: float = 0.5,
+) -> int:
+    """
+    Submit a Slurm job with retry logic for temporary submission failures.
+
+    Handles "Resource temporarily unavailable" and other transient Slurm errors
+    with exponential backoff retry strategy. Adds a configurable delay after
+    successful submission to prevent overwhelming the scheduler.
+
+    Args:
+        slurm: Configured Slurm object ready for submission
+        command: Command string to execute
+        max_retries: Maximum number of submission attempts (default: 5)
+        base_wait_time: Base wait time in seconds for exponential backoff (default: 5)
+        delay_after_submit: Time to wait after successful submission in seconds (default: 0.5)
+
+    Returns:
+        Job ID of the successfully submitted job
+
+    Raises:
+        SystemExit: If all retry attempts fail
+    """
+    job_id = None
+
+    for attempt in range(max_retries):
+        try:
+            job_id = slurm.sbatch(command)
+            # Add delay after successful submission to avoid overwhelming scheduler
+            if delay_after_submit > 0:
+                time.sleep(delay_after_submit)
+            return job_id
+        except (AssertionError, Exception) as e:
+            error_msg = str(e)
+
+            if attempt < max_retries - 1:
+                # Exponential backoff: 5s, 10s, 20s, 40s, 80s
+                wait_time = base_wait_time * (2**attempt)
+                print(f"  Submission attempt {attempt + 1}/{max_retries} failed: {error_msg}")
+                print(f"  Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print(f"\n✗ Failed to submit job after {max_retries} attempts")
+                print(f"  Last error: {error_msg}")
+                sys.exit(1)
+
+    # Should never reach here, but just in case
+    print("\n✗ Failed to submit job")
+    sys.exit(1)
+
+
 def wait_for_job_completion(
     job_id: int | str, job_name: str = "", poll_interval: int = 5
 ) -> bool:
@@ -165,6 +305,62 @@ def wait_for_job_completion(
                 )
                 return True
             time.sleep(poll_interval)
+
+
+def is_node_failure(job_id: int | str) -> bool:
+    """
+    Check if a job failed due to node issues (e.g., node crash, immediate cancellation).
+
+    Node failures are identified by:
+    - Job state is FAILED or CANCELLED
+    - Elapsed time is very short (< 1 minute)
+    - This suggests the job never ran or was killed immediately due to node issues
+
+    Args:
+        job_id: Slurm job ID
+
+    Returns:
+        True if the job appears to have failed due to node issues and is retryable
+    """
+    try:
+        result = subprocess.run(
+            ["sacct", "-j", str(job_id), "--format=JobID,State,ExitCode,Elapsed", "-P"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode != 0:
+            return False
+
+        lines = result.stdout.strip().split("\n")
+        if len(lines) < 2:
+            return False
+
+        # Parse the main job line (not .batch or .extern)
+        for line in lines[1:]:
+            parts = line.split("|")
+            if len(parts) >= 4 and "." not in parts[0]:  # Main job line
+                state = parts[1]
+                elapsed = parts[3]
+
+                # Node failure indicators:
+                # 1. FAILED or CANCELLED state
+                # 2. Very short elapsed time (00:00:00 or a few seconds)
+                if state in ["FAILED", "CANCELLED"]:
+                    # Check if elapsed time is very short (less than 1 minute)
+                    time_parts = elapsed.split(":")
+                    if len(time_parts) >= 2:
+                        if elapsed.startswith("00:00:") or (
+                            time_parts[0] == "00" and int(time_parts[1]) == 0
+                        ):
+                            return True
+
+        return False
+
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not check job {job_id} for node failure: {e}")
+        return False
 
 
 def setup_log_directory(stage_name: str) -> Path:
@@ -369,6 +565,31 @@ def add_execution_args(
             action="store_true",
             help="Don't wait for Slurm job to complete (submit and exit).",
         )
+
+
+def add_retry_args(
+    parser: argparse.ArgumentParser, max_retries_default: int = 2
+) -> None:
+    """
+    Add automatic retry arguments to an argument parser.
+
+    Adds --max-retries argument for automatic resubmission of failed jobs
+    due to node issues.
+
+    Args:
+        parser: ArgumentParser instance to add arguments to
+        max_retries_default: Default maximum number of retries
+    """
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=max_retries_default,
+        help=(
+            f"Maximum number of times to automatically retry failed jobs due to "
+            f"node issues (default: {max_retries_default}). Set to 0 to disable "
+            f"automatic retries. Only applies to Slurm execution with job waiting enabled."
+        ),
+    )
 
 
 # ====================
