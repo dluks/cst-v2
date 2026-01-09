@@ -240,6 +240,11 @@ def load_xy_data(trait_id: str, trait_set: str, cfg: ConfigBox) -> pd.DataFrame:
     This function uses the pre-prepared XY data from the prepare_xy_data stage,
     eliminating redundant data loading and merging.
 
+    Note: For CV validation, we always use splot-only data regardless of the
+    trait_set, as splot data is more reliable and represents the patterns we
+    want the model to learn. This matches the validation data used during
+    fold training in autogluon.py.
+
     Args:
         trait_id: Trait identifier (column name in Y data)
         trait_set: Trait set name (splot, gbif, or splot_gbif)
@@ -251,18 +256,13 @@ def load_xy_data(trait_id: str, trait_set: str, cfg: ConfigBox) -> pd.DataFrame:
     log.info(f"Loading pre-prepared XY data for {trait_id}...")
     xy_all = pd.read_parquet(Path(cfg.train.xy_data.fp))
 
-    # Filter for the specific trait and source
-    # Map trait_set to source filter
-    source_filter = {
-        "splot": ["s"],
-        "gbif": ["g"],
-        "splot_gbif": ["s", "g"],
-    }
-
-    if trait_set not in source_filter:
+    # Validate trait_set
+    valid_trait_sets = {"splot", "gbif", "splot_gbif"}
+    if trait_set not in valid_trait_sets:
         raise ValueError(f"Unknown trait_set: {trait_set}")
 
-    sources = source_filter[trait_set]
+    # Always use splot-only data for CV validation to match training validation
+    sources = ["s"]
 
     # Get fold column name for this trait
     fold_col = f"{trait_id}_fold"
@@ -312,7 +312,7 @@ def load_xy_data(trait_id: str, trait_set: str, cfg: ConfigBox) -> pd.DataFrame:
         )
     )
 
-    log.info(f"Loaded {len(xy_trait)} samples for {trait_id} ({trait_set})")
+    log.info(f"Loaded {len(xy_trait)} splot samples for {trait_id} ({trait_set})")
     return xy_trait
 
 
