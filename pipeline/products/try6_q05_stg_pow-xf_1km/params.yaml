@@ -830,32 +830,32 @@ traits:
     - X13 # Leaf carbon (C) content per leaf dry mass
     - X14 # Leaf nitrogen (N) content per leaf dry mass
     - X15 # Leaf phosphorus (P) content per leaf dry mass
-    - X21 # Stem diameter
-    - X26 # Seed dry mass
-    - X27 # Seed length
+    # - X21 # Stem diameter
+    # - X26 # Seed dry mass
+    # - X27 # Seed length
     - X46 # Leaf thickness
-    - X47 # Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)
+    # - X47 # Leaf dry mass per leaf fresh mass (leaf dry matter content, LDMC)
     - X50 # Leaf nitrogen (N) content per leaf area
     - X55 # Leaf dry mass (single leaf)
     - X78 # Leaf nitrogen (N) isotope signature (delta 15N)
-    - X95 # Seed germination rate (germination efficiency)
+    # - X95 # Seed germination rate (germination efficiency)
     - X138 # Seed number per reproducton unit
-    - X144 # Leaf length
+    # - X144 # Leaf length
     - X145 # Leaf width
     - X146 # Leaf carbon/nitrogen (C/N) ratio
-    - X163 # Leaf fresh mass
+    # - X163 # Leaf fresh mass
     - X169 # Stem conduit density (vessels and tracheids)
     - X237 # Dispersal unit length
     - X281 # Stem conduit diameter (vessels, tracheids)
-    - X282 # Wood vessel element length; stem conduit (vessel and tracheids) element length
-    - X289 # Wood fiber lengths
-    - X297 # Wood rays per millimetre (wood ray density)
-    - X614 # Fine root length per fine root dry mass (specific fine root length, SRL)
-    - X1080 # Root length per root dry mass (specific root length, SRL)
-    - X3106 # Plant height vegetative
+    # - X282 # Wood vessel element length; stem conduit (vessel and tracheids) element length
+    # - X289 # Wood fiber lengths
+    # - X297 # Wood rays per millimetre (wood ray density)
+    # - X614 # Fine root length per fine root dry mass (specific fine root length, SRL)
+    # - X1080 # Root length per root dry mass (specific root length, SRL)
+    # - X3106 # Plant height vegetative
     - X3114 # Leaf area (in case of compound leaves undefined if leaf or leaflet, undefined if petiole is in- or e
     - X3117 # Leaf area per leaf dry mass (specific leaf area, SLA or 1/LMA): undefined if petiole is in- or exclu
-    - X3120 # Leaf water content per leaf dry mass (not saturated)
+    # - X3120 # Leaf water content per leaf dry mass (not saturated)
   # transform: null
   # pfts: data/raw/try_pfts.parquet
   # pfts_threshold: 0.60
@@ -940,9 +940,9 @@ train:
     # Deprecated (kept for backward compatibility):
     range_stat: "mean"
     # CV split parameters
-    n_splits: 8
+    n_splits: 6
     n_sims: 200
-    balance_weight: 0.6  # Weight for sample count balance in fold assignment (0.0=only count balance, 1.0=only KS test, 0.5=equal)
+    balance_weight: 0  # Weight for sample count balance in fold assignment (0.0=only count balance, 1.0=only KS test, 0.5=equal)
     dir: skcv_splits
     dir_fp: data/features/try6_q05_stg_pow-xf_1km/skcv_splits  # Full path to CV splits directory
   weights:
@@ -962,19 +962,19 @@ processed:
   splot_corr: splot_correlation.csv
 
 autogluon:
-  excluded_model_types: ["KNN", "RF", "XT"]
-  presets: "high"
-  num_bag_folds: 5
-  num_stack_levels: 1
+  included_model_types: ["GBM", "CAT"]
+  excluded_model_types: null # ["KNN", "RF", "XT", "NN_TORCH"]
+  presets: ["high"] # Set to null to determine preset based on training set size
+  dynamic_stacking: true
+  num_bag_folds: null
+  num_stack_levels: null
   save_bag_folds: true
   refit_full: false
   set_best_to_refit_full: false
-  cv_fit_time_limit: 7200
-  full_fit_time_limit: 12600 # 3.5 hours per trait
-  num_gpus: 2
-  num_cpus: 74
+  cv_fit_time_limit: 6 # Hours
+  full_fit_time_limit: 6 # Hours
   feature_importance: true
-  FI_time_limit: 1800
+  FI_time_limit: 2 # Hours
   FI_num_shuffle_sets: 10
 
 models:
