@@ -14,6 +14,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -28,8 +29,10 @@ from src.pipeline.entrypoint_utils import (
     add_common_args,
     add_partition_args,
     add_resource_args,
+    add_retry_args,
     build_base_command,
     determine_execution_mode,
+    is_node_failure,
     resolve_partitions,
     setup_environment,
     wait_for_job_completion,
@@ -77,6 +80,10 @@ def cli() -> argparse.Namespace:
         default=None,
         help="Specific trait(s) to process. If not specified, processes all traits.",
     )
+
+    # Add retry arguments
+    add_retry_args(parser, max_retries_default=2)
+
     return parser.parse_args()
 
 
@@ -149,6 +156,7 @@ def main() -> None:
             args.mem,
             wait=not args.no_wait,
             traits=traits,
+            max_retries=args.max_retries,
         )
 
 
@@ -256,6 +264,69 @@ def run_local(
     print("\n✓ CV splits building completed successfully!")
 
 
+def resubmit_failed_trait(
+    trait: str,
+    params_path: str | None,
+    debug: bool,
+    overwrite: bool,
+    partition: str,
+    time_limit: str,
+    cpus: int,
+    mem: str,
+    log_dir: Path,
+) -> int:
+    """
+    Resubmit a failed trait job.
+
+    Args:
+        trait: Trait name
+        params_path: Path to parameters file
+        debug: Enable debug mode
+        overwrite: Overwrite existing splits
+        partition: Slurm partition to use
+        time_limit: Time limit for job
+        cpus: Number of CPUs
+        mem: Memory allocation
+        log_dir: Directory for log files
+
+    Returns:
+        New job ID
+    """
+    # Construct command
+    extra_args: dict[str, str | None] = {
+        "--trait": trait,
+    }
+
+    if debug:
+        extra_args["--debug"] = None
+
+    if overwrite:
+        extra_args["--overwrite"] = None
+
+    cmd_parts = build_base_command(
+        "src.features.build_cv_splits",
+        params_path=params_path,
+        overwrite=False,
+        extra_args=extra_args,
+    )
+    command = " ".join(cmd_parts)
+
+    # Create Slurm job configuration with retry suffix
+    slurm = Slurm(
+        job_name=f"cv_{trait[:12]}_retry",
+        output=str(log_dir / f"%j_{trait}_retry.log"),
+        error=str(log_dir / f"%j_{trait}_retry.err"),
+        time=time_limit,
+        cpus_per_task=cpus,
+        mem=mem,
+        partition=partition,
+    )
+
+    # Submit the job
+    job_id = slurm.sbatch(command)
+    return job_id
+
+
 def run_slurm(
     params_path: str | None,
     debug: bool,
@@ -266,6 +337,7 @@ def run_slurm(
     mem: str,
     wait: bool,
     traits: list[str],
+    max_retries: int = 2,
 ) -> None:
     """Submit separate Slurm jobs for each trait."""
     print(f"\nSubmitting {len(traits)} Slurm jobs (one per trait)...")
@@ -321,6 +393,9 @@ def run_slurm(
         trait_to_job[job_id] = trait
         print(f"  Submitted job {job_id} for trait: {trait}")
 
+        # Add delay to avoid overwhelming Slurm scheduler
+        time.sleep(0.5)
+
     print(f"\nSubmitted {len(job_ids)} jobs")
     print(f"Logs directory: {log_dir.absolute()}")
 
@@ -332,33 +407,133 @@ def run_slurm(
             print(f"  {partition}: {count} jobs")
 
     if wait:
-        # Wait for all jobs to complete
-        print(f"\nWaiting for {len(job_ids)} jobs to complete...")
-        successful = []
-        failed = []
+        # Wait for all jobs to complete with retry logic
+        if max_retries > 0:
+            print(f"\nWaiting for {len(traits)} jobs to complete...")
+            print(f"Will automatically retry failed jobs up to {max_retries} times")
 
-        for job_id in job_ids:
-            trait = trait_to_job[job_id]
-            success = wait_for_job_completion(job_id)
+            retry_count = 0
+            while retry_count <= max_retries:
+                print(f"\n--- Attempt {retry_count + 1}/{max_retries + 1} ---")
 
-            if success:
-                successful.append(trait)
-            else:
-                failed.append(trait)
-                print(f"✗ Job {job_id} ({trait}) failed. Check logs:")
-                print(f"  {log_dir.absolute()}/{job_id}_{trait}.err")
+                # Wait for all jobs
+                successful_jobs = []
+                failed_jobs = []
 
-        # Report results
-        print(f"\n{'=' * 60}")
-        print(f"Completed: {len(successful)}/{len(traits)} traits")
-        if failed:
-            print(f"Failed: {len(failed)} traits: {', '.join(failed)}")
-            print("✗ Some jobs failed")
-            sys.exit(1)
+                for job_id in list(job_ids):
+                    if job_id not in trait_to_job:
+                        continue
 
-        print("\n✓ CV splits building completed successfully!")
+                    trait = trait_to_job[job_id]
+                    success = wait_for_job_completion(job_id)
+
+                    if success:
+                        successful_jobs.append((job_id, trait))
+                    else:
+                        failed_jobs.append((job_id, trait))
+                        print(f"✗ Job {job_id} ({trait}) failed")
+
+                # Check if any failures are due to node issues and can be retried
+                retryable_jobs = []
+                permanent_failures = []
+
+                for job_id, trait in failed_jobs:
+                    if is_node_failure(job_id):
+                        retryable_jobs.append((job_id, trait))
+                    else:
+                        permanent_failures.append((job_id, trait))
+
+                # Report status
+                print(f"\nRound {retry_count + 1} results:")
+                print(f"  Successful: {len(successful_jobs)}")
+                print(f"  Failed (retryable - node issues): {len(retryable_jobs)}")
+                print(f"  Failed (permanent - code/data issues): {len(permanent_failures)}")
+
+                # If we have permanent failures, abort
+                if permanent_failures:
+                    print("\n⚠️  Permanent failures detected. These jobs failed due to code or data issues:")
+                    for job_id, trait in permanent_failures:
+                        print(f"  - Job {job_id}: {trait}")
+                        print(f"    Check logs: {log_dir.absolute()}/{job_id}_{trait}.err")
+                    print("\n✗ Cannot proceed with automatic retry. Please fix the issues and rerun.")
+                    sys.exit(1)
+
+                # If no retryable jobs, we're done
+                if not retryable_jobs:
+                    print(f"\n✓ All jobs completed successfully!")
+                    break
+
+                # If we've exhausted retries, abort
+                if retry_count >= max_retries:
+                    print(f"\n✗ Maximum retries ({max_retries}) exhausted. Still have {len(retryable_jobs)} failed jobs.")
+                    for job_id, trait in retryable_jobs:
+                        print(f"  - Job {job_id}: {trait}")
+                    sys.exit(1)
+
+                # Resubmit failed jobs
+                print(f"\n🔄 Resubmitting {len(retryable_jobs)} failed jobs (node failures)...")
+                retry_count += 1
+
+                for old_job_id, trait in retryable_jobs:
+                    # Get partition for this job
+                    partition = distributor.get_next()
+
+                    # Resubmit the job
+                    new_job_id = resubmit_failed_trait(
+                        trait,
+                        params_path,
+                        debug,
+                        overwrite,
+                        partition,
+                        time_limit,
+                        cpus,
+                        mem,
+                        log_dir,
+                    )
+
+                    # Update tracking
+                    trait_to_job[new_job_id] = trait
+                    del trait_to_job[old_job_id]
+                    job_ids.remove(old_job_id)
+                    job_ids.append(new_job_id)
+
+                    partition_info = f" [{partition}]" if len(distributor) > 1 else ""
+                    print(f"  Resubmitted job {new_job_id} for: {trait}{partition_info} (retry {retry_count})")
+
+            # Final report
+            print(f"\n{'=' * 60}")
+            print(f"Completed: {len(traits)}/{len(traits)} traits")
+            print("\n✓ CV splits building completed successfully!")
+        else:
+            # No retries enabled, wait for all jobs (original behavior)
+            print(f"\nWaiting for {len(job_ids)} jobs to complete...")
+            successful = []
+            failed = []
+
+            for job_id in job_ids:
+                trait = trait_to_job[job_id]
+                success = wait_for_job_completion(job_id)
+
+                if success:
+                    successful.append(trait)
+                else:
+                    failed.append(trait)
+                    print(f"✗ Job {job_id} ({trait}) failed. Check logs:")
+                    print(f"  {log_dir.absolute()}/{job_id}_{trait}.err")
+
+            # Report results
+            print(f"\n{'=' * 60}")
+            print(f"Completed: {len(successful)}/{len(traits)} traits")
+            if failed:
+                print(f"Failed: {len(failed)} traits: {', '.join(failed)}")
+                print("✗ Some jobs failed")
+                sys.exit(1)
+
+            print("\n✓ CV splits building completed successfully!")
     else:
         print("\nJobs submitted. Not waiting for completion (--no-wait flag set).")
+        if max_retries > 0:
+            print("⚠️  Note: Automatic retry is only available when waiting for jobs (without --no-wait).")
         print("To check status later, run this script again with --wait flag.")
 
 

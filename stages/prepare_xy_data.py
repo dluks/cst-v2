@@ -13,6 +13,7 @@ Set USE_SLURM=false to use local execution by default, or use --local flag to ov
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 import dask.dataframe as dd
@@ -24,7 +25,9 @@ from src.pipeline.entrypoint_utils import (
     add_resource_args,
     build_base_command,
     determine_execution_mode,
+    get_existing_job_names,
     setup_environment,
+    submit_job_with_retry,
     wait_for_job_completion,
 )
 
@@ -242,6 +245,36 @@ def run_slurm(
     log_dir = Path("logs/prepare_xy_data") / product_code
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    # Create job name
+    job_name = "prep_xy_data"
+
+    # Check if job already exists in queue
+    print("Checking for existing jobs in queue...")
+    existing_jobs = get_existing_job_names()
+    
+    if job_name in existing_jobs:
+        existing_job_id, existing_state = existing_jobs[job_name]
+        print(
+            f"Job '{job_name}' already in queue "
+            f"(job {existing_job_id}, state {existing_state})"
+        )
+        
+        if wait:
+            # Wait for the existing job to complete
+            print(f"\nWaiting for existing job {existing_job_id} to complete...")
+            success = wait_for_job_completion(existing_job_id)
+
+            if success:
+                print("\n✓ XY data preparation completed successfully!")
+            else:
+                print(f"✗ Job {existing_job_id} failed. Check logs:")
+                print(f"  {log_dir.absolute()}/{existing_job_id}_prepare_xy.err")
+                sys.exit(1)
+        else:
+            print(f"\nJob already running. To check status: squeue -j {existing_job_id}")
+        
+        return
+
     # Construct command
     cmd_parts = build_base_command(
         "stages.prepare_xy_data",
@@ -252,9 +285,6 @@ def run_slurm(
     # Add --local flag to force local execution in the Slurm job
     cmd_parts.append("--local")
     command = " ".join(cmd_parts)
-
-    # Create job name
-    job_name = "prep_xy_data"
 
     # Create Slurm job configuration
     slurm = Slurm(
@@ -267,8 +297,8 @@ def run_slurm(
         partition=partition,
     )
 
-    # Submit the job
-    job_id = slurm.sbatch(command)
+    # Submit the job with retry logic for temporary Slurm failures
+    job_id = submit_job_with_retry(slurm, command, max_retries=5)
     print(f"  Submitted job {job_id}")
     print(f"Logs directory: {log_dir.absolute()}")
 
