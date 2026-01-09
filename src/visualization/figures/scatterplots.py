@@ -14,8 +14,6 @@ from src.utils.dataset_utils import get_latest_run, get_trait_models_dir
 from src.utils.plotting_utils import add_trait_name, add_trait_set_abbr
 from src.utils.trait_utils import get_trait_number_from_id
 
-CFG = get_config()
-
 
 def cli() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -27,7 +25,10 @@ def cli() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main(args: argparse.Namespace = cli()) -> None:
+def main(args: argparse.Namespace | None = None) -> None:
+    if args is None:
+        args = cli()
+
     log.info("Preparing data...")
     data = prep_data(trait_set=args.ts)
     log.info("Plotting data...")
@@ -43,7 +44,8 @@ def main(args: argparse.Namespace = cli()) -> None:
 
 
 def prep_data(trait_set: str) -> pd.DataFrame:
-    keep_traits = [f"X{t}" for t in CFG.datasets.Y.traits]  # noqa: F841
+    cfg = get_config()
+    keep_traits = [f"X{t}" for t in cfg.datasets.Y.traits]  # noqa: F841
     return (
         pd.read_parquet("results/all_results.parquet")
         .query("resolution == '1km' and transform == 'power'")
