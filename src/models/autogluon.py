@@ -160,20 +160,23 @@ def train_cv_fold(
     cv_dir.mkdir(parents=True, exist_ok=True)
     fold_model_path = cv_dir / f"fold_{fold_id}"
 
-    # Columns to drop (not features)
+    # Columns to drop (not features) - keep reliability column for weighting
     cols_to_drop = ["x", "y", "source", "fold"]
     if "is_test" in xy.columns:
         cols_to_drop.append("is_test")
-    if f"{trait_name}_reliability" in xy.columns:
-        cols_to_drop.append(f"{trait_name}_reliability")
+
+    reliability_col = f"{trait_name}_reliability"
+    drop_cols = cols_to_drop.copy()
+    if reliability_col in xy.columns:
+        drop_cols.append(reliability_col)
 
     # Prepare training and validation data
     train = TabularDataset(
         xy[xy["fold"] != fold_id]
         .pipe(filter_trait_set, trait_set)
         .dropna(subset=[trait_name])
-        .pipe(assign_weights, w_gbif=cfg.train.weights.gbif)
-        .drop(columns=cols_to_drop)
+        .pipe(assign_weights, trait_name=trait_name)
+        .drop(columns=drop_cols)
         .reset_index(drop=True)
     )
     val = TabularDataset(
@@ -181,7 +184,7 @@ def train_cv_fold(
         .query("source == 's'")
         .dropna(subset=[trait_name])
         .assign(weights=1.0)
-        .drop(columns=cols_to_drop)
+        .drop(columns=drop_cols)
         .reset_index(drop=True)
     )
 
@@ -310,19 +313,22 @@ def train_full_model(
 
     full_model_path = training_dir / "full_model"
 
-    # Columns to drop (not features)
+    # Columns to drop (not features) - keep reliability column for weighting
     cols_to_drop = ["x", "y", "source", "fold"]
     if "is_test" in xy.columns:
         cols_to_drop.append("is_test")
-    if f"{trait_name}_reliability" in xy.columns:
-        cols_to_drop.append(f"{trait_name}_reliability")
+
+    reliability_col = f"{trait_name}_reliability"
+    drop_cols = cols_to_drop.copy()
+    if reliability_col in xy.columns:
+        drop_cols.append(reliability_col)
 
     # Prepare training data
     train_full = TabularDataset(
         xy.pipe(filter_trait_set, trait_set)
         .dropna(subset=[trait_name])
-        .pipe(assign_weights, w_gbif=cfg.train.weights.gbif)
-        .drop(columns=cols_to_drop)
+        .pipe(assign_weights, trait_name=trait_name)
+        .drop(columns=drop_cols)
     )
 
     presets = determine_presets(cfg.autogluon.presets, len(train_full))
