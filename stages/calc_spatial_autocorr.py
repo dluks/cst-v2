@@ -13,6 +13,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
@@ -28,6 +29,8 @@ from src.pipeline.entrypoint_utils import (
     add_resource_args,
     build_base_command,
     determine_execution_mode,
+    get_available_slots,
+    print_qos_status,
     setup_environment,
     setup_log_directory,
     wait_for_job_completion,
@@ -196,7 +199,6 @@ def combine_results(temp_dir: Path, output_fp: Path, cfg, traits: list[str]) -> 
         print(f"✓ Removed temporary directory: {temp_dir}")
     except OSError:
         print(f"Note: Temporary directory not empty: {temp_dir}")
-
 
 
 def filter_completed_traits(
@@ -384,7 +386,7 @@ def run_slurm(
     traits: list[str],
     ranges_fp: Path,
 ) -> None:
-    """Submit separate Slurm jobs for each trait."""
+    """Submit separate Slurm jobs for each trait, respecting QOS limits."""
     print(f"\nSubmitting Slurm jobs for {len(traits)} traits...")
 
     # Get configuration
@@ -415,48 +417,72 @@ def run_slurm(
         print("\n✓ Spatial autocorrelation calculation completed successfully!")
         return
 
+    # Check QOS limits for batch submission
+    print_qos_status(partition)
+
     print(f"\nSubmitting {len(traits_to_process)} Slurm jobs...")
 
-    # Submit a job for each trait
+    # Submit jobs, respecting QOS limits
     job_ids = []
     trait_to_job = {}
+    traits_remaining = list(traits_to_process)
+    poll_interval = 10  # seconds to wait before checking for free slots
 
-    for trait in traits_to_process:
-        # Construct command for this trait
-        extra_args: dict[str, str | None] = {
-            "--trait": trait,
-            "--output-dir": str(temp_dir),
-        }
-        if debug:
-            extra_args["--debug"] = None
+    while traits_remaining:
+        # Check available slots
+        available_slots, _ = get_available_slots(partition)
 
-        cmd_parts = build_base_command(
-            "src.features.calc_spatial_autocorr_gpu",
-            params_path=params_path,
-            overwrite=True,
-            extra_args=extra_args,
-        )
-        command = " ".join(cmd_parts)
+        if available_slots == 0:
+            print(f"\nQueue limit reached. Waiting for slots to free up...")
+            print(f"  {len(traits_remaining)} traits remaining to submit")
+            time.sleep(poll_interval)
+            continue
 
-        # Create Slurm job configuration with GPU support
-        slurm = Slurm(
-            job_name=f"autocorr_{trait}",
-            output=str(log_dir / f"%j_{trait}.log"),
-            error=str(log_dir / f"%j_{trait}.err"),
-            time=time_limit,
-            cpus_per_task=cpus,
-            mem=mem,
-            partition=partition,
-            gres=f"gpu:{gpus}",
-        )
+        # Submit as many jobs as we have slots for
+        batch_size = min(available_slots, len(traits_remaining))
+        batch_traits = traits_remaining[:batch_size]
+        traits_remaining = traits_remaining[batch_size:]
 
-        # Submit the job
-        job_id = slurm.sbatch(command)
-        job_ids.append(job_id)
-        trait_to_job[job_id] = trait
-        print(f"  Submitted job {job_id} for trait: {trait}")
+        for trait in batch_traits:
+            # Construct command for this trait
+            extra_args: dict[str, str | None] = {
+                "--trait": trait,
+                "--output-dir": str(temp_dir),
+            }
+            if debug:
+                extra_args["--debug"] = None
 
-    print(f"\nSubmitted {len(job_ids)} jobs")
+            cmd_parts = build_base_command(
+                "src.features.calc_spatial_autocorr_gpu",
+                params_path=params_path,
+                overwrite=True,
+                extra_args=extra_args,
+            )
+            command = " ".join(cmd_parts)
+
+            # Create Slurm job configuration with GPU support
+            slurm = Slurm(
+                job_name=f"autocorr_{trait}",
+                output=str(log_dir / f"%j_{trait}.log"),
+                error=str(log_dir / f"%j_{trait}.err"),
+                time=time_limit,
+                cpus_per_task=cpus,
+                mem=mem,
+                partition=partition,
+                gres=f"gpu:{gpus}",
+            )
+
+            # Submit the job
+            job_id = slurm.sbatch(command)
+            job_ids.append(job_id)
+            trait_to_job[job_id] = trait
+            print(f"  Submitted job {job_id} for trait: {trait}")
+
+        if traits_remaining:
+            print(f"\n  Submitted batch of {batch_size} jobs, "
+                  f"{len(traits_remaining)} remaining...")
+
+    print(f"\nSubmitted {len(job_ids)} jobs total")
     print(f"Logs directory: {log_dir.absolute()}")
 
     if wait:

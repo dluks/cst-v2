@@ -363,6 +363,156 @@ def is_node_failure(job_id: int | str) -> bool:
         return False
 
 
+
+# ====================
+# QOS Limit Management
+# ====================
+
+
+def get_qos_for_partition(partition: str) -> str | None:
+    """
+    Get the QOS associated with a Slurm partition.
+
+    Args:
+        partition: Name of the Slurm partition
+
+    Returns:
+        QOS name if found, None otherwise
+    """
+    try:
+        result = subprocess.run(
+            ["scontrol", "show", "partition", partition],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.split("\n"):
+                if "QoS=" in line:
+                    # Extract QoS value from line like "   AllowQos=ALL ... QoS=gpu"
+                    for part in line.split():
+                        if part.startswith("QoS="):
+                            qos = part.split("=")[1]
+                            if qos and qos.lower() != "n/a":
+                                return qos
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not get QOS for partition {partition}: {e}")
+    return None
+
+
+def get_qos_submit_limit(qos: str) -> int | None:
+    """
+    Get the MaxSubmitJobsPerUser limit for a QOS.
+
+    Args:
+        qos: Name of the QOS
+
+    Returns:
+        Maximum jobs per user, or None if not found/unlimited
+    """
+    try:
+        result = subprocess.run(
+            ["sacctmgr", "show", "qos", qos, "format=MaxSubmitPU", "-n", "-P"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            limit_str = result.stdout.strip()
+            if limit_str and limit_str.isdigit():
+                return int(limit_str)
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not get submit limit for QOS {qos}: {e}")
+    return None
+
+
+def get_current_queue_count(qos: str) -> int:
+    """
+    Get the number of jobs currently in the queue for the current user in a QOS.
+
+    Args:
+        qos: Name of the QOS
+
+    Returns:
+        Number of jobs in the queue (pending + running)
+    """
+    try:
+        result = subprocess.run(
+            ["squeue", "-u", os.environ.get("USER", ""), "-q", qos, "--noheader"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            lines = [ln for ln in result.stdout.strip().split("\n") if ln]
+            return len(lines)
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"Warning: Could not get queue count for QOS {qos}: {e}")
+    return 0
+
+
+def get_available_slots(partition: str) -> tuple[int, str | None]:
+    """
+    Get the number of available job submission slots for a partition.
+
+    Args:
+        partition: Name of the Slurm partition
+
+    Returns:
+        Tuple of (available_slots, qos_name). If no limit is found, returns
+        (sys.maxsize, None) to indicate unlimited submissions.
+    """
+    qos = get_qos_for_partition(partition)
+    if not qos:
+        return sys.maxsize, None
+
+    limit = get_qos_submit_limit(qos)
+    if not limit:
+        return sys.maxsize, qos
+
+    current = get_current_queue_count(qos)
+    available = max(0, limit - current)
+    return available, qos
+
+
+def print_qos_status(partition: str) -> tuple[int, str | None]:
+    """
+    Print QOS status information and return available slots.
+
+    Args:
+        partition: Name of the Slurm partition
+
+    Returns:
+        Tuple of (available_slots, qos_name)
+    """
+    available_slots, qos = get_available_slots(partition)
+    if qos:
+        limit = get_qos_submit_limit(qos)
+        current = get_current_queue_count(qos)
+        print(f"\nQOS '{qos}' limit: {limit} jobs, currently queued: {current}")
+        print(f"Available slots: {available_slots}")
+    return available_slots, qos
+
+
+def wait_for_slot(partition: str, poll_interval: int = 10) -> int:
+    """
+    Wait until at least one job submission slot is available.
+
+    Args:
+        partition: Name of the Slurm partition
+        poll_interval: Seconds to wait between status checks
+
+    Returns:
+        Number of available slots
+    """
+    while True:
+        available, _ = get_available_slots(partition)
+        if available > 0:
+            return available
+        print(f"Queue limit reached. Waiting {poll_interval}s for slots to free up...")
+        time.sleep(poll_interval)
+
+
 def setup_log_directory(stage_name: str) -> Path:
     """
     Create log directory for a stage and return its path.
