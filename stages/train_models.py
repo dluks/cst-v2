@@ -21,6 +21,7 @@ import dask.dataframe as dd
 from simple_slurm import Slurm
 
 from src.conf.conf import get_config
+from src.models.run_utils import generate_run_id, get_latest_run_id
 
 # Setup environment and path
 from src.pipeline.entrypoint_utils import (
@@ -275,6 +276,7 @@ def run_single_task(
     resume: bool,
     overwrite: bool,
     product_code: str,
+    run_id: str | None = None,
 ) -> tuple[dict, bool]:
     """
     Run a single training task.
@@ -286,6 +288,8 @@ def run_single_task(
         sample: Fraction of data to sample
         resume: Resume from last run
         overwrite: Overwrite existing models
+        product_code: Product code for log directory
+        run_id: Run ID for this training session
 
     Returns:
         Tuple of (task, success)
@@ -302,6 +306,9 @@ def run_single_task(
             "--trait-set": trait_set,
         }
 
+        if run_id is not None:
+            extra_args["--run-id"] = run_id
+
         if overwrite:
             extra_args["--overwrite"] = None
 
@@ -317,6 +324,9 @@ def run_single_task(
             "--trait": trait,
             "--trait-set": trait_set,
         }
+
+        if run_id is not None:
+            extra_args["--run-id"] = run_id
 
         if fold is not None:
             extra_args["--fold"] = str(fold)
@@ -402,6 +412,24 @@ def run_local(
     cfg,
 ) -> None:
     """Run model training locally with parallel processing."""
+    # Generate or find run ID for this training session
+    training_tasks = [t for t in tasks if t["task_type"] in ["cv_fold", "full_model"]]
+    if training_tasks:
+        sample_trait = training_tasks[0]["trait"]
+        base_dir = Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
+        if overwrite:
+            run_id = generate_run_id()
+            print(f"\nCreating new run: {run_id}")
+        else:
+            run_id = get_latest_run_id(base_dir)
+            if run_id is None:
+                run_id = generate_run_id()
+                print(f"\nNo existing runs found. Creating new run: {run_id}")
+            else:
+                print(f"\nUsing existing run: {run_id}")
+    else:
+        run_id = generate_run_id()
+        print(f"\nCreating new run: {run_id}")
     print(f"\nRunning model training locally (max {max_parallel} tasks in parallel)...")
 
     # Separate tasks into training tasks and cv_stats tasks
@@ -427,6 +455,7 @@ def run_local(
                 resume,
                 overwrite,
                 product_code,
+                run_id,
             ): task
             for task in training_tasks
         }
@@ -471,6 +500,7 @@ def run_local(
                 resume,
                 overwrite,
                 product_code,
+                run_id,
             ): task
             for task in cv_stats_tasks
         }
@@ -627,6 +657,28 @@ def run_slurm(
     training_tasks = [t for t in tasks if t["task_type"] in ["cv_fold", "full_model"]]
     cv_stats_tasks = [t for t in tasks if t["task_type"] == "cv_stats"]
 
+    # Generate or find run ID for this training session
+    # All jobs in this session will use the same run_id
+    # Get one trait to determine the base directory for run ID lookup
+    if training_tasks:
+        sample_trait = training_tasks[0]["trait"]
+        base_dir = (
+            Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
+        )
+        if overwrite:
+            run_id = generate_run_id()
+            print(f"\nCreating new run: {run_id}")
+        else:
+            run_id = get_latest_run_id(base_dir)
+            if run_id is None:
+                run_id = generate_run_id()
+                print(f"\nNo existing runs found. Creating new run: {run_id}")
+            else:
+                print(f"\nUsing existing run: {run_id}")
+    else:
+        run_id = generate_run_id()
+        print(f"\nCreating new run: {run_id}")
+
     print(f"\nSubmitting {len(training_tasks)} training jobs...")
     print(f"Will submit {len(cv_stats_tasks)} CV stats jobs with dependencies...")
 
@@ -664,6 +716,7 @@ def run_slurm(
         extra_args: dict[str, str | None] = {
             "--trait": trait,
             "--trait-set": trait_set,
+            "--run-id": run_id,
         }
 
         if fold is not None:
@@ -910,8 +963,14 @@ def run_slurm(
                 partition_info = f" [{partition}]" if len(distributor) > 1 else ""
                 print(f"  Resubmitted job {new_job_id} for: {task_name}{partition_info} (retry {retry_count})")
 
-    # Now submit cv_stats jobs with dependencies on CV fold jobs
-    print(f"\nSubmitting {len(cv_stats_tasks)} CV stats jobs with dependencies...")
+    # Now submit cv_stats jobs
+    # If we already waited for training jobs (max_retries > 0 and wait=True),
+    # don't use dependencies since those jobs are already completed and gone from queue
+    training_already_completed = wait and max_retries > 0
+    if training_already_completed:
+        print(f"\nSubmitting {len(cv_stats_tasks)} CV stats jobs (training already completed)...")
+    else:
+        print(f"\nSubmitting {len(cv_stats_tasks)} CV stats jobs with dependencies...")
     skipped_cvstats_jobs = []
 
     for task in cv_stats_tasks:
@@ -922,7 +981,7 @@ def run_slurm(
         key = (trait, trait_set)
         dependency_job_ids = trait_set_fold_jobs.get(key, [])
 
-        if not dependency_job_ids:
+        if not dependency_job_ids and not training_already_completed:
             print(f"  Warning: No CV fold jobs found for {trait}/{trait_set}")
             continue
 
@@ -930,6 +989,7 @@ def run_slurm(
         extra_args: dict[str, str | None] = {
             "--trait": trait,
             "--trait-set": trait_set,
+            "--run-id": run_id,
         }
 
         if overwrite:
@@ -970,20 +1030,30 @@ def run_slurm(
         # Get partition using round-robin distribution
         partition = distributor.get_next()
 
-        # Create dependency string for Slurm
-        dependency_str = ":".join(str(jid) for jid in dependency_job_ids)
-
-        # Create Slurm job configuration with dependency
-        slurm = Slurm(
-            job_name=job_name,
-            output=str(log_dir / f"%j_{task_name}.log"),
-            error=str(log_dir / f"%j_{task_name}.err"),
-            time=time_limit,
-            cpus_per_task=cpus,
-            mem=mem,
-            partition=partition,
-            dependency=f"afterok:{dependency_str}",
-        )
+        # Create Slurm job configuration
+        # Only use dependencies if training jobs are still running (not already completed)
+        if training_already_completed:
+            slurm = Slurm(
+                job_name=job_name,
+                output=str(log_dir / f"%j_{task_name}.log"),
+                error=str(log_dir / f"%j_{task_name}.err"),
+                time=time_limit,
+                cpus_per_task=cpus,
+                mem=mem,
+                partition=partition,
+            )
+        else:
+            dependency_str = ":".join(str(jid) for jid in dependency_job_ids)
+            slurm = Slurm(
+                job_name=job_name,
+                output=str(log_dir / f"%j_{task_name}.log"),
+                error=str(log_dir / f"%j_{task_name}.err"),
+                time=time_limit,
+                cpus_per_task=cpus,
+                mem=mem,
+                partition=partition,
+                dependency=f"afterok:{dependency_str}",
+            )
 
         # Submit the job
         job_id = slurm.sbatch(command)
@@ -992,10 +1062,13 @@ def run_slurm(
 
         task_desc = f"{trait}/{trait_set}/cv_stats"
         partition_info = f" [{partition}]" if len(distributor) > 1 else ""
-        print(
-            f"  Submitted job {job_id} for: {task_desc}{partition_info} "
-            f"(depends on {len(dependency_job_ids)} fold jobs)"
-        )
+        if training_already_completed:
+            print(f"  Submitted job {job_id} for: {task_desc}{partition_info}")
+        else:
+            print(
+                f"  Submitted job {job_id} for: {task_desc}{partition_info} "
+                f"(depends on {len(dependency_job_ids)} fold jobs)"
+            )
 
         # Add delay to avoid overwhelming Slurm scheduler
         time.sleep(0.5)

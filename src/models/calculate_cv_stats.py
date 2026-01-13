@@ -23,6 +23,7 @@ from sklearn.preprocessing import PowerTransformer
 
 from src.conf.conf import get_config
 from src.conf.environment import log
+from src.models.run_utils import get_latest_run_id
 from src.utils.spatial_utils import lat_weights, weighted_pearson_r
 from src.visualization.figures.scatterplots import plot_observed_vs_predicted
 
@@ -493,6 +494,7 @@ def calculate_cv_stats_for_trait(
     cfg: ConfigBox,
     include_fold_results: bool = True,
     overwrite: bool = False,
+    run_id: str | None = None,
 ) -> None:
     """
     Calculate CV statistics for a specific trait and trait set.
@@ -503,12 +505,23 @@ def calculate_cv_stats_for_trait(
         cfg: Configuration object
         include_fold_results: Whether to calculate fold-wise statistics
         overwrite: Whether to overwrite existing CV stats
+        run_id: Run ID to use. If None, uses the most recent run.
     """
     log.info(f"Calculating CV statistics for {trait} ({trait_set})...")
 
     # Build path to model directory
     trait_models_dir = Path(cfg.models.dir_fp) / trait / cfg.train.arch
-    training_dir = trait_models_dir / trait_set
+
+    # Find run ID if not provided
+    if run_id is None:
+        run_id = get_latest_run_id(trait_models_dir)
+        if run_id is None:
+            raise FileNotFoundError(
+                f"No training runs found in: {trait_models_dir}"
+            )
+        log.info(f"Using run: {run_id}")
+
+    training_dir = trait_models_dir / run_id / trait_set
 
     if not training_dir.exists():
         raise FileNotFoundError(f"Training directory not found: {training_dir}")
@@ -922,6 +935,13 @@ def cli() -> argparse.Namespace:
         action="store_true",
         help="Overwrite existing CV stats.",
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        default=None,
+        help="Run ID to use (format: run_YYYYMMDD_HHMMSS). "
+        "If not specified, uses the most recent run.",
+    )
     return parser.parse_args()
 
 
@@ -938,6 +958,7 @@ def main(args: argparse.Namespace | None = None, cfg: ConfigBox | None = None) -
         cfg=cfg,
         include_fold_results=not args.no_fold_results,
         overwrite=args.overwrite,
+        run_id=args.run_id,
     )
 
 

@@ -1,7 +1,6 @@
 """Train a single AutoGluon model for a specific trait, trait set, and fold/full model."""
 
 import argparse
-import datetime
 from pathlib import Path
 
 import dask.dataframe as dd
@@ -11,14 +10,10 @@ from box import ConfigBox
 
 from src.conf.conf import get_config
 from src.conf.environment import activate_env, log
+from src.models.run_utils import generate_run_id, get_latest_run_id
 from src.utils.df_utils import pipe_log
 from src.utils.log_utils import set_dry_run_text, suppress_dask_logging
 from src.utils.training_utils import assign_weights, filter_trait_set
-
-
-def now() -> str:
-    """Get the current date and time."""
-    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def prep_full_xy(
@@ -76,31 +71,52 @@ def load_data(cfg: ConfigBox) -> tuple[dd.DataFrame, dd.DataFrame]:
 def get_or_create_run_dir(
     trait_name: str,
     trait_set: str,
+    run_id: str | None = None,
+    create_new_run: bool = False,
     debug: bool = False,
     cfg: ConfigBox | None = None,
-) -> Path:
+) -> tuple[Path, str]:
     """
     Get or create the run directory for a trait and trait set.
 
     Args:
         trait_name: Name of the trait
         trait_set: Name of the trait set (splot, gbif, or splot_gbif)
+        run_id: Explicit run ID to use. If None, behavior depends on create_new_run.
+        create_new_run: If True and run_id is None, create a new run ID.
+            If False and run_id is None, use the most recent existing run ID
+            (or create a new one if none exists).
         debug: Whether to use debug mode
         cfg: Configuration object
 
     Returns:
-        Path to the run directory for the trait set
+        Tuple of (path to the run directory, run_id used)
     """
     if cfg is None:
         cfg = get_config()
 
-    # Build path: models/{product_code}/{trait}/{arch}/{trait_set}
+    # Build path: models/{product_code}/{trait}/{arch}/{run_id}/{trait_set}
     trait_models_dir = Path(cfg.models.dir_fp) / trait_name / cfg.train.arch
-    runs_dir = trait_models_dir / "debug" if debug else trait_models_dir
-    training_dir = runs_dir / trait_set
+    base_dir = trait_models_dir / "debug" if debug else trait_models_dir
+
+    # Determine run ID
+    if run_id is None:
+        if create_new_run:
+            run_id = generate_run_id()
+            log.info("Creating new run: %s", run_id)
+        else:
+            # Try to find the most recent run
+            run_id = get_latest_run_id(base_dir)
+            if run_id is None:
+                run_id = generate_run_id()
+                log.info("No existing runs found. Creating new run: %s", run_id)
+            else:
+                log.info("Using existing run: %s", run_id)
+
+    training_dir = base_dir / run_id / trait_set
     training_dir.mkdir(parents=True, exist_ok=True)
 
-    return training_dir
+    return training_dir, run_id
 
 
 def determine_presets(cfg_presets: list[str] | None, n_train_samples: int) -> list[str]:
@@ -170,12 +186,14 @@ def train_cv_fold(
     if reliability_col in xy.columns:
         drop_cols.append(reliability_col)
 
+    # Assign sample weights prior to filtering fold data
+    xy = xy.pipe(assign_weights, trait_name=trait_name, use_reliability_weights=False)
+
     # Prepare training and validation data
     train = TabularDataset(
         xy[xy["fold"] != fold_id]
         .pipe(filter_trait_set, trait_set)
         .dropna(subset=[trait_name])
-        .pipe(assign_weights, trait_name=trait_name)
         .drop(columns=drop_cols)
         .reset_index(drop=True)
     )
@@ -402,6 +420,13 @@ def cli() -> argparse.Namespace:
     parser.add_argument(
         "-o", "--overwrite", action="store_true", help="Overwrite existing models"
     )
+    parser.add_argument(
+        "--run-id",
+        type=str,
+        default=None,
+        help="Run ID to use (format: run_YYYYMMDD_HHMMSS). "
+        "If not specified, uses most recent run or creates new one with --overwrite.",
+    )
     return parser.parse_args()
 
 
@@ -415,11 +440,22 @@ def main() -> None:
     cfg = get_config(Path(args.params).absolute() if args.params else None)
 
     # Get or create run directory
-    training_dir = get_or_create_run_dir(args.trait, args.trait_set, args.debug, cfg)
+    # If --overwrite is set and no explicit run_id, create a new run
+    # Otherwise, use the provided run_id or find the most recent one
+    training_dir, run_id = get_or_create_run_dir(
+        args.trait,
+        args.trait_set,
+        run_id=args.run_id,
+        create_new_run=args.overwrite and args.run_id is None,
+        debug=args.debug,
+        cfg=cfg,
+    )
+
+    log.info("Run ID: %s", run_id)
+    log.info("Training directory: %s", training_dir)
 
     # Check if model already exists
     if args.fold is not None:
-        fold_model_path = training_dir / "cv" / f"fold_{args.fold}"
         fold_complete_flag = training_dir / "cv" / f"cv_fold_{args.fold}_complete.flag"
         if fold_complete_flag.exists() and not args.overwrite:
             log.info(

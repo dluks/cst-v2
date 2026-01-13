@@ -67,6 +67,7 @@ def assign_weights(
     w_gbif: int | float | None = None,
     trait_name: str | None = None,
     splot_always_reliable: bool = True,
+    use_reliability_weights: bool = False,
 ) -> pd.DataFrame:
     """
     Assign weights to the DataFrame based on the source column.
@@ -111,7 +112,7 @@ def assign_weights(
         source_weights = np.where(df.source == "s", w_splot, w_gbif)
 
     # If trait_name is provided, check for reliability column
-    if trait_name is not None:
+    if trait_name is not None and use_reliability_weights:
         reliability_col = f"{trait_name}_reliability"
         if reliability_col in df.columns:
             if splot_always_reliable:
