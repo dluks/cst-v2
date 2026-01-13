@@ -426,20 +426,25 @@ def run_slurm(
     job_ids = []
     trait_to_job = {}
     traits_remaining = list(traits_to_process)
+    jobs_submitted_this_session = 0  # Track jobs we've submitted (squeue has delay)
     poll_interval = 10  # seconds to wait before checking for free slots
 
     while traits_remaining:
-        # Check available slots
+        # Check available slots, accounting for jobs we just submitted
+        # (squeue may not immediately reflect newly submitted jobs)
         available_slots, _ = get_available_slots(partition)
+        effective_slots = max(0, available_slots - jobs_submitted_this_session)
 
-        if available_slots == 0:
+        if effective_slots == 0:
+            # Reset counter - by now squeue should have caught up
+            jobs_submitted_this_session = 0
             print(f"\nQueue limit reached. Waiting for slots to free up...")
             print(f"  {len(traits_remaining)} traits remaining to submit")
             time.sleep(poll_interval)
             continue
 
         # Submit as many jobs as we have slots for
-        batch_size = min(available_slots, len(traits_remaining))
+        batch_size = min(effective_slots, len(traits_remaining))
         batch_traits = traits_remaining[:batch_size]
         traits_remaining = traits_remaining[batch_size:]
 
@@ -477,6 +482,9 @@ def run_slurm(
             job_ids.append(job_id)
             trait_to_job[job_id] = trait
             print(f"  Submitted job {job_id} for trait: {trait}")
+
+        # Track how many jobs we submitted this iteration
+        jobs_submitted_this_session += batch_size
 
         if traits_remaining:
             print(f"\n  Submitted batch of {batch_size} jobs, "
