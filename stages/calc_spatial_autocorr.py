@@ -198,6 +198,41 @@ def combine_results(temp_dir: Path, output_fp: Path, cfg, traits: list[str]) -> 
         print(f"Note: Temporary directory not empty: {temp_dir}")
 
 
+
+def filter_completed_traits(
+    traits: list[str], temp_dir: Path, overwrite: bool
+) -> tuple[list[str], list[str]]:
+    """
+    Filter out traits that already have results in the temp directory.
+
+    Args:
+        traits: List of all trait names to process
+        temp_dir: Directory containing individual trait parquet files
+        overwrite: If True, return all traits (don't skip any)
+
+    Returns:
+        Tuple of (traits_to_process, already_completed_traits)
+    """
+    if overwrite:
+        return traits, []
+
+    to_process = []
+    already_done = []
+
+    for trait in traits:
+        trait_fp = temp_dir / f"spatial_autocorr_{trait}.parquet"
+        if trait_fp.exists():
+            already_done.append(trait)
+        else:
+            to_process.append(trait)
+
+    if already_done:
+        print(f"\nSkipping {len(already_done)} traits with existing results:")
+        print(f"  {', '.join(already_done)}")
+        print("  (use --overwrite to reprocess all traits)")
+
+    return to_process, already_done
+
 def run_single_trait(
     trait: str,
     params_path: str | None,
@@ -287,8 +322,20 @@ def run_local(
     temp_dir = ranges_fp.parent / "tmp"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
+    # Filter out traits that already have results
+    traits_to_process, already_done = filter_completed_traits(
+        traits, temp_dir, overwrite
+    )
+
+    if not traits_to_process:
+        print("\nAll traits already processed!")
+        # Combine existing results
+        combine_results(temp_dir, ranges_fp, cfg, already_done)
+        print("\n✓ Spatial autocorrelation calculation completed successfully!")
+        return
+
     # Process traits in parallel
-    print(f"\nProcessing {len(traits)} traits with up to {max_parallel} workers...")
+    print(f"\nProcessing {len(traits_to_process)} traits with up to {max_parallel} workers...")
     successful = []
     failed = []
 
@@ -298,7 +345,7 @@ def run_local(
             executor.submit(
                 run_single_trait, trait, params_path, debug, temp_dir
             ): trait
-            for trait in traits
+            for trait in traits_to_process
         }
 
         # Wait for completion
@@ -311,14 +358,15 @@ def run_local(
 
     # Report results
     print(f"\n{'=' * 60}")
-    print(f"Completed: {len(successful)}/{len(traits)} traits")
+    print(f"Completed: {len(successful)}/{len(traits_to_process)} traits")
     if failed:
         print(f"Failed: {len(failed)} traits: {', '.join(failed)}")
         print("✗ Some traits failed to process")
         sys.exit(1)
 
-    # Combine results
-    combine_results(temp_dir, ranges_fp, cfg, successful)
+    # Combine results (include previously completed traits)
+    all_successful = already_done + successful
+    combine_results(temp_dir, ranges_fp, cfg, all_successful)
 
     print("\n✓ Spatial autocorrelation calculation completed successfully!")
 
@@ -337,7 +385,7 @@ def run_slurm(
     ranges_fp: Path,
 ) -> None:
     """Submit separate Slurm jobs for each trait."""
-    print(f"\nSubmitting {len(traits)} Slurm jobs (one per trait)...")
+    print(f"\nSubmitting Slurm jobs for {len(traits)} traits...")
 
     # Get configuration
     cfg = get_config(params_path=params_path)
@@ -355,11 +403,25 @@ def run_slurm(
     temp_dir = ranges_fp.parent / "tmp"
     temp_dir.mkdir(parents=True, exist_ok=True)
 
+    # Filter out traits that already have results
+    traits_to_process, already_done = filter_completed_traits(
+        traits, temp_dir, overwrite
+    )
+
+    if not traits_to_process:
+        print("\nAll traits already processed!")
+        # Combine existing results
+        combine_results(temp_dir, ranges_fp, cfg, already_done)
+        print("\n✓ Spatial autocorrelation calculation completed successfully!")
+        return
+
+    print(f"\nSubmitting {len(traits_to_process)} Slurm jobs...")
+
     # Submit a job for each trait
     job_ids = []
     trait_to_job = {}
 
-    for trait in traits:
+    for trait in traits_to_process:
         # Construct command for this trait
         extra_args: dict[str, str | None] = {
             "--trait": trait,
@@ -416,14 +478,15 @@ def run_slurm(
 
         # Report results
         print(f"\n{'=' * 60}")
-        print(f"Completed: {len(successful)}/{len(traits)} traits")
+        print(f"Completed: {len(successful)}/{len(traits_to_process)} traits")
         if failed:
             print(f"Failed: {len(failed)} traits: {', '.join(failed)}")
             print("✗ Some jobs failed")
             sys.exit(1)
 
-        # Combine results
-        combine_results(temp_dir, ranges_fp, cfg, successful)
+        # Combine results (include previously completed traits)
+        all_successful = already_done + successful
+        combine_results(temp_dir, ranges_fp, cfg, all_successful)
 
         print("\n✓ Spatial autocorrelation calculation completed successfully!")
     else:
