@@ -83,7 +83,7 @@ def get_or_create_run_dir(
         trait_name: Name of the trait
         trait_set: Name of the trait set (splot, gbif, or splot_gbif)
         run_id: Explicit run ID to use. If provided, this is used directly.
-        resume: If True and run_id is None, use most recent run (error if none).
+        resume: If True and run_id is None, use most recent run (create new if none).
             If False and run_id is None, create a new run.
         debug: Whether to use debug mode
         cfg: Configuration object
@@ -101,13 +101,13 @@ def get_or_create_run_dir(
     # Determine run ID
     if run_id is None:
         if resume:
-            # Resume: use most recent run (error if none)
+            # Resume: use most recent run (create new if none)
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                raise FileNotFoundError(
-                    f"--resume specified but no existing runs found in: {base_dir}"
-                )
-            log.info("Resuming run: %s", run_id)
+                run_id = generate_run_id()
+                log.info("No existing runs found. Creating new run: %s", run_id)
+            else:
+                log.info("Resuming run: %s", run_id)
         else:
             # Default: create new run
             run_id = generate_run_id()

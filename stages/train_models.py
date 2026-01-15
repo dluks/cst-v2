@@ -416,10 +416,10 @@ def run_local(
         if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                print("\nError: --resume specified but no existing runs found.")
-                print(f"  Looked in: {base_dir}")
-                sys.exit(1)
-            print(f"\nResuming run: {run_id}")
+                run_id = generate_run_id()
+                print(f"\nNo existing runs found. Creating new run: {run_id}")
+            else:
+                print(f"\nResuming run: {run_id}")
         else:
             run_id = generate_run_id()
             print(f"\nCreating new run: {run_id}")
@@ -661,10 +661,10 @@ def run_slurm(
         if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                print("\nError: --resume specified but no existing runs found.")
-                print(f"  Looked in: {base_dir}")
-                sys.exit(1)
-            print(f"\nResuming run: {run_id}")
+                run_id = generate_run_id()
+                print(f"\nNo existing runs found. Creating new run: {run_id}")
+            else:
+                print(f"\nResuming run: {run_id}")
         else:
             run_id = generate_run_id()
             print(f"\nCreating new run: {run_id}")
