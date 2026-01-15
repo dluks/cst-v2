@@ -337,16 +337,10 @@ def run_single_task(
         if sample < 1.0:
             extra_args["--sample"] = str(sample)
 
-        if resume:
-            extra_args["--resume"] = None
-
-        if overwrite:
-            extra_args["--overwrite"] = None
-
         cmd = build_base_command(
             "src.models.autogluon",
             params_path=params_path,
-            overwrite=False,  # Handled by --overwrite flag in extra_args
+            overwrite=False,
             extra_args=extra_args,
         )
 
@@ -413,20 +407,22 @@ def run_local(
 ) -> None:
     """Run model training locally with parallel processing."""
     # Generate or find run ID for this training session
+    # --resume: use most recent run ID (error if none exists)
+    # default: create a new run ID
     training_tasks = [t for t in tasks if t["task_type"] in ["cv_fold", "full_model"]]
     if training_tasks:
         sample_trait = training_tasks[0]["trait"]
         base_dir = Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
-        if overwrite:
-            run_id = generate_run_id()
-            print(f"\nCreating new run: {run_id}")
-        else:
+        if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                run_id = generate_run_id()
-                print(f"\nNo existing runs found. Creating new run: {run_id}")
-            else:
-                print(f"\nUsing existing run: {run_id}")
+                print("\nError: --resume specified but no existing runs found.")
+                print(f"  Looked in: {base_dir}")
+                sys.exit(1)
+            print(f"\nResuming run: {run_id}")
+        else:
+            run_id = generate_run_id()
+            print(f"\nCreating new run: {run_id}")
     else:
         run_id = generate_run_id()
         print(f"\nCreating new run: {run_id}")
@@ -591,10 +587,6 @@ def resubmit_failed_job(
             extra_args["--debug"] = None
         if sample < 1.0:
             extra_args["--sample"] = str(sample)
-        if resume:
-            extra_args["--resume"] = None
-        if overwrite:
-            extra_args["--overwrite"] = None
 
         cmd_parts = build_base_command(
             "src.models.autogluon",
@@ -659,22 +651,23 @@ def run_slurm(
 
     # Generate or find run ID for this training session
     # All jobs in this session will use the same run_id
-    # Get one trait to determine the base directory for run ID lookup
+    # --resume: use most recent run ID (error if none exists)
+    # default: create a new run ID
     if training_tasks:
         sample_trait = training_tasks[0]["trait"]
         base_dir = (
             Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
         )
-        if overwrite:
-            run_id = generate_run_id()
-            print(f"\nCreating new run: {run_id}")
-        else:
+        if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                run_id = generate_run_id()
-                print(f"\nNo existing runs found. Creating new run: {run_id}")
-            else:
-                print(f"\nUsing existing run: {run_id}")
+                print("\nError: --resume specified but no existing runs found.")
+                print(f"  Looked in: {base_dir}")
+                sys.exit(1)
+            print(f"\nResuming run: {run_id}")
+        else:
+            run_id = generate_run_id()
+            print(f"\nCreating new run: {run_id}")
     else:
         run_id = generate_run_id()
         print(f"\nCreating new run: {run_id}")
@@ -728,16 +721,10 @@ def run_slurm(
         if sample < 1.0:
             extra_args["--sample"] = str(sample)
 
-        if resume:
-            extra_args["--resume"] = None
-
-        if overwrite:
-            extra_args["--overwrite"] = None
-
         cmd_parts = build_base_command(
             "src.models.autogluon",
             params_path=params_path,
-            overwrite=False,  # Handled by --overwrite flag in extra_args
+            overwrite=False,
             extra_args=extra_args,
         )
         command = " ".join(cmd_parts)

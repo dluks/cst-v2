@@ -72,7 +72,7 @@ def get_or_create_run_dir(
     trait_name: str,
     trait_set: str,
     run_id: str | None = None,
-    create_new_run: bool = False,
+    resume: bool = False,
     debug: bool = False,
     cfg: ConfigBox | None = None,
 ) -> tuple[Path, str]:
@@ -82,10 +82,9 @@ def get_or_create_run_dir(
     Args:
         trait_name: Name of the trait
         trait_set: Name of the trait set (splot, gbif, or splot_gbif)
-        run_id: Explicit run ID to use. If None, behavior depends on create_new_run.
-        create_new_run: If True and run_id is None, create a new run ID.
-            If False and run_id is None, use the most recent existing run ID
-            (or create a new one if none exists).
+        run_id: Explicit run ID to use. If provided, this is used directly.
+        resume: If True and run_id is None, use most recent run (error if none).
+            If False and run_id is None, create a new run.
         debug: Whether to use debug mode
         cfg: Configuration object
 
@@ -101,17 +100,18 @@ def get_or_create_run_dir(
 
     # Determine run ID
     if run_id is None:
-        if create_new_run:
-            run_id = generate_run_id()
-            log.info("Creating new run: %s", run_id)
-        else:
-            # Try to find the most recent run
+        if resume:
+            # Resume: use most recent run (error if none)
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
-                run_id = generate_run_id()
-                log.info("No existing runs found. Creating new run: %s", run_id)
-            else:
-                log.info("Using existing run: %s", run_id)
+                raise FileNotFoundError(
+                    f"--resume specified but no existing runs found in: {base_dir}"
+                )
+            log.info("Resuming run: %s", run_id)
+        else:
+            # Default: create new run
+            run_id = generate_run_id()
+            log.info("Creating new run: %s", run_id)
 
     training_dir = base_dir / run_id / trait_set
     training_dir.mkdir(parents=True, exist_ok=True)
@@ -414,18 +414,21 @@ def cli() -> argparse.Namespace:
     parser.add_argument(
         "-s", "--sample", type=float, default=1.0, help="Fraction of data to sample"
     )
-    parser.add_argument("-r", "--resume", action="store_true", help="Resume training")
     parser.add_argument("-d", "--debug", action="store_true", help="Debug mode")
     parser.add_argument("-n", "--dry-run", action="store_true", help="Dry run")
-    parser.add_argument(
-        "-o", "--overwrite", action="store_true", help="Overwrite existing models"
-    )
     parser.add_argument(
         "--run-id",
         type=str,
         default=None,
         help="Run ID to use (format: run_YYYYMMDD_HHMMSS). "
-        "If not specified, uses most recent run or creates new one with --overwrite.",
+        "If not specified, creates a new run.",
+    )
+    parser.add_argument(
+        "-r",
+        "--resume",
+        action="store_true",
+        help="Resume training from most recent run. "
+        "If --run-id is provided, this flag is ignored.",
     )
     return parser.parse_args()
 
@@ -440,13 +443,14 @@ def main() -> None:
     cfg = get_config(Path(args.params).absolute() if args.params else None)
 
     # Get or create run directory
-    # If --overwrite is set and no explicit run_id, create a new run
-    # Otherwise, use the provided run_id or find the most recent one
+    # If --run-id is provided, use it directly
+    # If --resume is set (and no --run-id), use most recent run
+    # Otherwise, create a new run
     training_dir, run_id = get_or_create_run_dir(
         args.trait,
         args.trait_set,
         run_id=args.run_id,
-        create_new_run=args.overwrite and args.run_id is None,
+        resume=args.resume,
         debug=args.debug,
         cfg=cfg,
     )
@@ -454,12 +458,12 @@ def main() -> None:
     log.info("Run ID: %s", run_id)
     log.info("Training directory: %s", training_dir)
 
-    # Check if model already exists
+    # Check if model already exists (skip if already trained)
     if args.fold is not None:
         fold_complete_flag = training_dir / "cv" / f"cv_fold_{args.fold}_complete.flag"
-        if fold_complete_flag.exists() and not args.overwrite:
+        if fold_complete_flag.exists():
             log.info(
-                "Fold %d model for %s/%s already trained. Use --overwrite to retrain.",
+                "Fold %d model for %s/%s already trained. Skipping.",
                 args.fold,
                 args.trait,
                 args.trait_set,
@@ -467,9 +471,9 @@ def main() -> None:
             return
     else:
         full_model_complete_flag = training_dir / "full_model_complete.flag"
-        if full_model_complete_flag.exists() and not args.overwrite:
+        if full_model_complete_flag.exists():
             log.info(
-                "Full model for %s/%s already trained. Use --overwrite to retrain.",
+                "Full model for %s/%s already trained. Skipping.",
                 args.trait,
                 args.trait_set,
             )
