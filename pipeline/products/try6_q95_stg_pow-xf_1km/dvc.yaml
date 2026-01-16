@@ -1,0 +1,181 @@
+params:
+  - params.yaml
+
+stages:
+  build_y:
+    cmd: >-
+      python ${project_root}/stages/build_y.py
+      --params params.yaml
+      --partitions milan genoa
+      --time 01:00:00
+      --cpus 9
+      --mem 128GB
+      --merge-cpus 9
+      --merge-mem 450GB
+      --overwrite
+    deps:
+      - ${project_root}/stages/build_y.py
+      - ${project_root}/src/features/build_y_trait.py
+      - ${project_root}/src/features/merge_y_traits.py
+      - ${project_root}/data/interim/gbif/maps/try6_stg_no-xf_1km
+      - ${project_root}/data/interim/splot/maps/try6_stg_no-xf_1km
+    params:
+      - traits.names
+      - datasets.Y.trait_stat
+      - train.Y.fp
+      - traits.power_transform
+      - traits.transformer_dir
+    outs:
+      - ${project_root}/${train.dir}/${product_code}/y_data:
+          persist: true
+
+  calculate_spatial_autocorr:
+    cmd: >-
+      python ${project_root}/stages/calc_spatial_autocorr.py
+      --params params.yaml
+      --partition l40s
+      --gpus 1
+      --time 0:10:00
+    deps:
+      - ${project_root}/src/features/calc_spatial_autocorr_gpu.py
+      - ${project_root}/${train.Y.fp}
+    params:
+      - spatial_autocorr.ranges_fp
+    outs:
+      - ${project_root}/${spatial_autocorr.ranges_fp}
+
+  build_cv_splits:
+    cmd: >-
+      python ${project_root}/stages/build_cv_splits.py
+      --params params.yaml
+      --partitions genoa milan
+      --cpus 100
+      --mem 64GB
+      --time 00:20:00
+      --overwrite
+    deps:
+      - ${project_root}/stages/build_cv_splits.py
+      - ${project_root}/src/features/build_cv_splits.py
+      - ${project_root}/${train.Y.fp}
+      - ${project_root}/${spatial_autocorr.ranges_fp}
+    params:
+      - train.cv_splits
+      - train.Y.fp
+      - spatial_autocorr.ranges_fp
+    outs:
+      - ${project_root}/${train.cv_splits.dir_fp}:
+          persist: true
+
+  prepare_xy_data:
+    cmd: >-
+      python ${project_root}/stages/prepare_xy_data.py
+      --params params.yaml
+      --partition genoa
+      --cpus 48
+      --mem 256GB
+      --time 01:00:00
+    deps:
+      - ${project_root}/stages/prepare_xy_data.py
+      - ${project_root}/${train.predict.fp}
+      - ${project_root}/${train.Y.fp}
+      - ${project_root}/${train.cv_splits.dir_fp}
+    params:
+      - train.xy_data.fp
+      - train.Y.fp
+      - train.predict.fp
+      - train.cv_splits.dir_fp
+    outs:
+      - ${project_root}/${train.xy_data.fp}:
+          persist: true
+
+  train_models:
+    cmd: >-
+      python ${project_root}/stages/train_models.py
+      --params params.yaml
+      --trait-sets splot_gbif
+      --partitions genoa milan
+      --cpus 98
+      --mem 80GB
+      --time 12:00:00 
+      --overwrite
+    deps:
+      - ${project_root}/stages/train_models.py
+      - ${project_root}/src/models/autogluon.py
+      - ${project_root}/${train.xy_data.fp}
+      - ${project_root}/${train.cv_splits.dir_fp}
+    params:
+      - train.arch
+      - train.trait_sets
+      - train.cv_splits.n_splits
+      - train.weights
+      - train.eval_results
+      - train.feature_importance
+      - autogluon
+      - models.dir_fp
+    outs:
+      - ${project_root}/${models.dir_fp}:
+          persist: true
+
+  inference:
+    cmd: >-
+      python ${project_root}/stages/inference.py
+      --params params.yaml
+      --trait-sets splot_gbif
+      --partitions genoa milan
+      --predict-cpus 56
+      --predict-mem 64GB
+      --predict-time 02:00:00
+      --aoa-cpus 112
+      --aoa-mem 128GB
+      --aoa-gpus 1
+      --aoa-time 04:00:00
+      --final-cpus 28
+      --final-mem 32GB
+      --final-time 01:00:00
+      --overwrite
+    deps:
+      - ${project_root}/stages/inference.py
+      - ${project_root}/src/models/predict_single_trait.py
+      - ${project_root}/src/analysis/aoa_single_trait.py
+      - ${project_root}/src/data/build_final_product_single_trait.py
+      - ${project_root}/${train.predict.fp}
+      - ${project_root}/${models.dir_fp}
+      - ${project_root}/reference/trait_mapping.json
+      - ${project_root}/reference/trait_stat_mapping.json
+    params:
+      - train.trait_sets
+      - predict
+      - cov
+      - aoa
+      - public
+      - traits.transformer_dir
+    outs:
+      - ${project_root}/${processed.dir}/${product_code}/predict:
+          persist: true
+      - ${project_root}/${processed.dir}/${product_code}/cov:
+          persist: true
+      - ${project_root}/${processed.dir}/${product_code}/aoa:
+          persist: true
+      - ${project_root}/${processed.dir}/${product_code}/public:
+          persist: true
+
+  # aggregate_all_stats:
+  #   cmd: python src/models/multires_stats.py -mfc
+  #   deps:
+  #     - src/models/multires_stats.py
+  #     - ${models.dir}/${PFT}/${model_res}
+  #   params:
+  #     - analysis
+  
+  # aggregate_aoa:
+  #   cmd: python src/analysis/multires_aoa.py
+  #   deps:
+  #     - src/analysis/multires_aoa.py
+  #     - ${processed.dir}/${PFT}/${model_res}/${aoa.dir}
+  
+  # other_product_splot_correlation:
+  #   cmd: python src/analysis/other_product_splot_correlation.py
+  #   deps:
+  #     - src/analysis/other_product_splot_correlation.py
+  #     - ${interim_dir}/other_trait_maps
+  #     - ${interim_dir}/${splot.interim.dir}/${splot.interim.traits}/${PFT}/${model_res}
