@@ -818,7 +818,8 @@ datasets:
     modis: modis_sur_refl_monthly_avg_1km
     soilgrids: soilgrids_v2-0_1km
     vodca: vodca_mean-p5-p95_1km
-    worldclim: wc2-1_30s_bio
+    worldclim: wc2-
+    alos: 
   Y:
     fd_mode: false
     trait_stats: ["mean", "std", "median", "q05", "q95", "count"]  # non-FD metrics
@@ -933,13 +934,13 @@ train:
     # Option 2: Use statistics from spatial_autocorr.parquet
     range_mode: "all_traits"  # "per_trait" or "all_traits"
     per_trait_stat: "mean"   # Which column from spatial_autocorr.parquet to use (mean, median, q05, q95, std)
-    all_traits_aggregation: "mean"  # For all_traits mode: how to aggregate stat across traits (mean, median, min, max)
+    all_traits_aggregation: "min"  # For all_traits mode: how to aggregate stat across traits (mean, median, min, max)
     # Deprecated (kept for backward compatibility):
     range_stat: "mean"
     # CV split parameters
-    n_splits: 8
+    n_splits: 6
     n_sims: 200
-    balance_weight: 0.5  # Weight for sample count balance in fold assignment (0.0=only count balance, 1.0=only KS test, 0.5=equal)
+    balance_weight: 0  # Weight for sample count balance in fold assignment (0.0=only count balance, 1.0=only KS test, 0.5=equal)
     dir: skcv_splits
     dir_fp: data/features/hyd_cwm_stg_pow_1km/skcv_splits  # Full path to CV splits directory
   weights:
@@ -959,20 +960,19 @@ processed:
   splot_corr: splot_correlation.csv
 
 autogluon:
-  included_model_types: ["GBM"]
-  excluded_model_types: ["KNN", "RF", "XT"]
-  presets: "high"
-  num_bag_folds: 5
-  num_stack_levels: 1
+  included_model_types: ["GBM", "CAT", "XGB"]
+  excluded_model_types: null # ["KNN", "RF", "XT", "NN_TORCH"]
+  preset: null # Set to null to determine preset based on training set size
+  dynamic_stacking: false
+  num_bag_folds: null
+  num_stack_levels: null
   save_bag_folds: true
   refit_full: false
   set_best_to_refit_full: false
-  cv_fit_time_limit: 7200
-  full_fit_time_limit: 12600 # 3.5 hours per trait
-  num_gpus: 2
-  num_cpus: 74
+  cv_fit_time_limit: 12 # Hours
+  full_fit_time_limit: 12 # Hours
   feature_importance: true
-  FI_time_limit: 1800
+  FI_time_limit: 3 # Hours
   FI_num_shuffle_sets: 10
 
 models:

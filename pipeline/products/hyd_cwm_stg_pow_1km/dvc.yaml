@@ -93,10 +93,10 @@ stages:
       python ${project_root}/stages/train_models.py
       --params params.yaml
       --trait-sets splot_gbif
-      --partitions genoa
-      --cpus 96
-      --mem 384GB
-      --time 04:00:00
+      --partitions genoa milan
+      --cpus 98
+      --mem 64GB
+      --time 12:00:00
     deps:
       - ${project_root}/stages/train_models.py
       - ${project_root}/src/models/autogluon.py

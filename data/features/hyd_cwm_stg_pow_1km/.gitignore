@@ -1,1 +1,3 @@
 /y_data
+/spatial_autocorr.parquet
+/skcv_splits
