@@ -88,26 +88,40 @@ def main(args: argparse.Namespace | None = None) -> None:
             f"Target trait stat {cfg.traits.target_trait_stat} not found in trait map layers."
         )
 
-    # Get count_weighted band if reliability weighting is enabled
+    # Get count_weighted band if reliability weighting or min_count filtering is needed
     count_weighted_band = None
-    if cfg.traits.get("use_reliability_weights", False):
+
+    gbif_min_count = cfg.gbif.min_count
+
+    use_reliability_weights = cfg.traits.get("use_reliability_weights", False)
+
+    if use_reliability_weights or gbif_min_count is not None:
         try:
             count_weighted_band = (
                 cfg.traits.trait_map_layers.index("count_weighted") + 1
             )
             log.info("Count_weighted band: %d", count_weighted_band)
+            if gbif_min_count is not None:
+                log.info("GBIF minimum count threshold: %.1f", gbif_min_count)
         except ValueError:
             log.warning(
-                "count_weighted not found in trait map layers, reliability weighting disabled"
+                "count_weighted not found in trait map layers, "
+                "reliability weighting and min_count filtering disabled"
             )
+            gbif_min_count = None
 
-    # Load GBIF map
+    # Load GBIF map (with optional min_count filtering)
     trait_fp = Path(cfg.gbif.maps_dir, f"{args.trait}.tif")
     gbif_df = load_trait_map(
-        "gbif", trait_fp, args.trait, trait_stat_band, count_weighted_band
+        "gbif",
+        trait_fp,
+        args.trait,
+        trait_stat_band,
+        count_weighted_band,
+        min_count=gbif_min_count,
     )
 
-    # Load sPlot map
+    # Load sPlot map (no min_count filtering for sPlot)
     trait_fp = Path(cfg.splot.maps_dir, f"{args.trait}.tif")
     splot_df = load_trait_map(
         "splot", trait_fp, args.trait, trait_stat_band, count_weighted_band
@@ -164,6 +178,7 @@ def load_trait_map(
     trait_name: str,
     trait_stat_band: int,
     count_weighted_band: int | None = None,
+    min_count: float | None = None,
 ) -> pd.DataFrame | None:
     """
     Load a trait map and convert to dataframe.
@@ -174,6 +189,9 @@ def load_trait_map(
         trait_name: Trait name
         trait_stat_band: Band number for trait statistic (1-indexed)
         count_weighted_band: Band number for count_weighted (1-indexed), optional
+        min_count: Minimum count_weighted value required to include a cell.
+            Only applied when count_weighted_band is provided. Cells with
+            count_weighted below this threshold are excluded.
 
     Returns:
         DataFrame with columns: x, y, {trait}, source, count_weighted (optional)
@@ -220,6 +238,19 @@ def load_trait_map(
         .dropna(subset=[trait_name])
         .assign(source=source_code)
     ).compute()
+
+    # Apply minimum count filter if specified and count_weighted is available
+    if min_count is not None and "count_weighted" in df.columns:
+        n_before = len(df)
+        df = df[df["count_weighted"] >= min_count]
+        n_filtered = n_before - len(df)
+        if n_filtered > 0:
+            log.info(
+                "Filtered %d cells with count_weighted < %.1f (%.1f%% removed)",
+                n_filtered,
+                min_count,
+                100 * n_filtered / n_before,
+            )
 
     # Clean up xarray objects
     log.info("Cleaning up xarray objects...")

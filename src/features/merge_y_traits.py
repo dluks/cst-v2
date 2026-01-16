@@ -149,63 +149,36 @@ def _generate_figure(df: pd.DataFrame, trait_cols: list[str], figure_fp: Path) -
 
 
 def _build_report(
-    df: pd.DataFrame, trait_cols: list[str], report_fp: Path, figure_fp: Path
+    df_sampled: pd.DataFrame,
+    trait_cols: list[str],
+    report_fp: Path,
+    figure_fp: Path,
+    stats_df: pd.DataFrame,
+    total_samples: int,
 ) -> None:
     """
     Build a markdown report with trait statistics and distribution plots.
 
     Parameters
     ----------
-    df : pd.DataFrame
-        DataFrame containing trait data
+    df_sampled : pd.DataFrame
+        Sampled DataFrame for generating distribution plots
     trait_cols : list[str]
         List of trait column names
     report_fp : Path
         Path to save the report
     figure_fp : Path
         Path to the distribution figure
+    stats_df : pd.DataFrame
+        Pre-computed statistics DataFrame with columns:
+        Trait, Count, Mean, Std, Median, Min, Max, Missing
+    total_samples : int
+        Total number of samples in the full dataset
     """
     log.info("Building trait statistics report...")
 
-    # Generate figure first
-    _generate_figure(df, trait_cols, figure_fp)
-
-    # Calculate statistics for each trait
-    stats_rows = []
-    for trait in trait_cols:
-        trait_data = df[trait].dropna()
-        n_total = len(df)
-        n_valid = len(trait_data)
-        n_missing = n_total - n_valid
-
-        if n_valid > 0 and pd.api.types.is_numeric_dtype(trait_data):
-            stats_rows.append(
-                {
-                    "Trait": trait,
-                    "Count": n_valid,
-                    "Mean": trait_data.mean(),
-                    "Std": trait_data.std(),
-                    "Median": trait_data.median(),
-                    "Min": trait_data.min(),
-                    "Max": trait_data.max(),
-                    "Missing": n_missing,
-                }
-            )
-        else:
-            stats_rows.append(
-                {
-                    "Trait": trait,
-                    "Count": n_valid,
-                    "Mean": None,
-                    "Std": None,
-                    "Median": None,
-                    "Min": None,
-                    "Max": None,
-                    "Missing": n_missing,
-                }
-            )
-
-    stats_df = pd.DataFrame(stats_rows)
+    # Generate figure using sampled data
+    _generate_figure(df_sampled, trait_cols, figure_fp)
 
     # Build markdown report
     report_lines = [
@@ -213,7 +186,7 @@ def _build_report(
         "",
         "## Dataset Overview",
         "",
-        f"- **Total samples**: {len(df):,}",
+        f"- **Total samples**: {total_samples:,}",
         f"- **Total traits**: {len(trait_cols)}",
         f"- **Trait list**: {', '.join(trait_cols)}",
         "",
@@ -265,8 +238,8 @@ def _build_report(
             "this report.",
             "- Reliability weight columns (ending in `_reliability`) are preserved "
             "in the dataset but excluded from trait statistics.",
-            "- For very large datasets, statistics may be calculated from a random "
-            "sample for performance reasons.",
+            "- Distribution plots may be generated from a random sample for "
+            "performance reasons on large datasets.",
             "",
         ]
     )
@@ -371,26 +344,10 @@ def main(args: argparse.Namespace | None = None) -> None:
         log.info("Loading Y data for report generation...")
         y_df = dd.read_parquet(out_fn)
 
-        # Sample if dataset is very large for performance
-        REPORT_SAMPLE_SIZE = 50000
-        df_len = len(y_df)
-
-        if df_len > REPORT_SAMPLE_SIZE:
-            log.info(
-                "Dataset has %s rows. Sampling %s rows for report generation...",
-                f"{df_len:,}",
-                f"{REPORT_SAMPLE_SIZE:,}",
-            )
-            sample_frac = REPORT_SAMPLE_SIZE / df_len
-            y_df_report = y_df.sample(frac=sample_frac, random_state=42).compute()
-        else:
-            log.info("Converting to pandas for report generation...")
-            y_df_report = y_df.compute()
-
         # Get trait columns (exclude x, y, source, and reliability columns)
         trait_cols = [
             col
-            for col in y_df_report.columns
+            for col in y_df.columns
             if col not in ["x", "y", "source"] and not col.endswith("_reliability")
         ]
 
@@ -401,8 +358,65 @@ def main(args: argparse.Namespace | None = None) -> None:
                 "Found %d traits for report: %s", len(trait_cols), ", ".join(trait_cols)
             )
 
+            # Calculate statistics from full dataset using dask
+            log.info("Computing statistics from full dataset...")
+            total_samples = len(y_df)
+            stats_rows = []
+            for trait in trait_cols:
+                trait_series = y_df[trait]
+                n_valid = trait_series.count().compute()
+                n_missing = total_samples - n_valid
+
+                if n_valid > 0:
+                    stats_rows.append(
+                        {
+                            "Trait": trait,
+                            "Count": n_valid,
+                            "Mean": trait_series.mean().compute(),
+                            "Std": trait_series.std().compute(),
+                            "Median": trait_series.quantile(0.5).compute(),
+                            "Min": trait_series.min().compute(),
+                            "Max": trait_series.max().compute(),
+                            "Missing": n_missing,
+                        }
+                    )
+                else:
+                    stats_rows.append(
+                        {
+                            "Trait": trait,
+                            "Count": n_valid,
+                            "Mean": None,
+                            "Std": None,
+                            "Median": None,
+                            "Min": None,
+                            "Max": None,
+                            "Missing": n_missing,
+                        }
+                    )
+
+            stats_df = pd.DataFrame(stats_rows)
+            log.info("✓ Statistics computed for %d traits", len(trait_cols))
+
+            # Sample for distribution plots if dataset is very large
+            PLOT_SAMPLE_SIZE = 50000
+            df_len = total_samples
+
+            if df_len > PLOT_SAMPLE_SIZE:
+                log.info(
+                    "Dataset has %s rows. Sampling %s rows for distribution plots...",
+                    f"{df_len:,}",
+                    f"{PLOT_SAMPLE_SIZE:,}",
+                )
+                sample_frac = PLOT_SAMPLE_SIZE / df_len
+                y_df_sampled = y_df.sample(frac=sample_frac, random_state=42).compute()
+            else:
+                log.info("Converting to pandas for distribution plots...")
+                y_df_sampled = y_df.compute()
+
             # Generate report and plots
-            _build_report(y_df_report, trait_cols, report_fp, figure_fp)
+            _build_report(
+                y_df_sampled, trait_cols, report_fp, figure_fp, stats_df, total_samples
+            )
     else:
         log.info("Report and figure already exist, skipping generation.")
         log.info("  Report: %s", report_fp)
