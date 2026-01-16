@@ -1,0 +1,81 @@
+schema: '2.0'
+stages:
+  build_y:
+    cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
+      genoa --time 01:00:00 --cpus 9 --mem 128GB --merge-cpus 9 --merge-mem 450GB
+      --overwrite
+    deps:
+    - path: ../../../data/interim/gbif/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 76a0dc0833c8a802b3d98f0ffedf9160.dir
+      size: 3350236278
+      nfiles: 31
+    - path: ../../../data/interim/splot/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 9b883b91fab926435f82a05b5be60214.dir
+      size: 1213468374
+      nfiles: 31
+    - path: ../../../src/features/build_y_trait.py
+      hash: md5
+      md5: 8d11736b7df0ebb5733785fcdb1973b5
+      size: 13986
+    - path: ../../../src/features/merge_y_traits.py
+      hash: md5
+      md5: 6bb6f9892372c4c5ad688fb4486bf036
+      size: 13100
+    - path: ../../../stages/build_y.py
+      hash: md5
+      md5: 304840a474bb0b3ea6fa51dcb35512ef
+      size: 11921
+      isexec: true
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        train.Y.fp: data/features/try6_q95_stg_pow-xf_1km/y_data/Y.parquet
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X46
+        - X50
+        - X55
+        - X78
+        - X138
+        - X145
+        - X146
+        - X169
+        - X237
+        - X281
+        - X3114
+        - X3117
+        traits.power_transform: true
+        traits.transformer_dir: data/features/try6_q95_stg_pow-xf_1km/y_data/transformers
+    outs:
+    - path: ../../../data/features/try6_q95_stg_pow-xf_1km/y_data
+      hash: md5
+      md5: 4237ec9121041ad922ddcb3793445975.dir
+      size: 105486287
+      nfiles: 36
+  calculate_spatial_autocorr:
+    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
+      l40s --gpus 1 --time 0:10:00
+    deps:
+    - path: ../../../data/features/try6_q95_stg_pow-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: b08168e1bb06ff713f31483ba4a03484.dir
+      size: 104222411
+      nfiles: 1
+    - path: ../../../src/features/calc_spatial_autocorr_gpu.py
+      hash: md5
+      md5: fa5e532d1648ee806e500e659a7560e5
+      size: 37045
+    params:
+      params.yaml:
+        spatial_autocorr.ranges_fp: data/features/try6_q95_stg_pow-xf_1km/spatial_autocorr.parquet
+    outs:
+    - path: ../../../data/features/try6_q95_stg_pow-xf_1km/spatial_autocorr.parquet
+      hash: md5
+      md5: 78375b66d4f89274a3909bb772054762
+      size: 8397

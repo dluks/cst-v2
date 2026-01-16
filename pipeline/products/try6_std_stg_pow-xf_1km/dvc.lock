@@ -1,0 +1,157 @@
+schema: '2.0'
+stages:
+  build_y:
+    cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
+      genoa --time 01:00:00 --cpus 9 --mem 128GB --merge-cpus 9 --merge-mem 450GB
+      --overwrite
+    deps:
+    - path: ../../../data/interim/gbif/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 76a0dc0833c8a802b3d98f0ffedf9160.dir
+      size: 3350236278
+      nfiles: 31
+    - path: ../../../data/interim/splot/maps/try6_stg_no-xf_1km
+      hash: md5
+      md5: 9b883b91fab926435f82a05b5be60214.dir
+      size: 1213468374
+      nfiles: 31
+    - path: ../../../src/features/build_y_trait.py
+      hash: md5
+      md5: 8d11736b7df0ebb5733785fcdb1973b5
+      size: 13986
+    - path: ../../../src/features/merge_y_traits.py
+      hash: md5
+      md5: 6bb6f9892372c4c5ad688fb4486bf036
+      size: 13100
+    - path: ../../../stages/build_y.py
+      hash: md5
+      md5: 304840a474bb0b3ea6fa51dcb35512ef
+      size: 11921
+      isexec: true
+    params:
+      params.yaml:
+        datasets.Y.trait_stat: 1
+        train.Y.fp: data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X46
+        - X50
+        - X55
+        - X78
+        - X138
+        - X145
+        - X146
+        - X169
+        - X237
+        - X281
+        - X3114
+        - X3117
+        traits.power_transform: true
+        traits.transformer_dir: data/features/try6_std_stg_pow-xf_1km/y_data/transformers
+    outs:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/y_data
+      hash: md5
+      md5: eb0b36021c8f8f3dce9c3ef375f334e3.dir
+      size: 209594719
+      nfiles: 65
+  calculate_spatial_autocorr:
+    cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
+      l40s --gpus 1 --time 0:10:00
+    deps:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: 4afb767b385483cee50b9a9d646d6723.dir
+      size: 207638203
+      nfiles: 1
+    - path: ../../../src/features/calc_spatial_autocorr_gpu.py
+      hash: md5
+      md5: fa5e532d1648ee806e500e659a7560e5
+      size: 37045
+    params:
+      params.yaml:
+        spatial_autocorr.ranges_fp: data/features/try6_std_stg_pow-xf_1km/spatial_autocorr.parquet
+    outs:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/spatial_autocorr.parquet
+      hash: md5
+      md5: da7d0fa4fc04ce14acc3bff5fb00454a
+      size: 9389
+  build_cv_splits:
+    cmd: python ../../../stages/build_cv_splits.py --params params.yaml --partitions
+      genoa milan --cpus 100 --mem 64GB --time 00:20:00
+    deps:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/spatial_autocorr.parquet
+      hash: md5
+      md5: da7d0fa4fc04ce14acc3bff5fb00454a
+      size: 9389
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: 4afb767b385483cee50b9a9d646d6723.dir
+      size: 207638203
+      nfiles: 1
+    - path: ../../../src/features/build_cv_splits.py
+      hash: md5
+      md5: 6e012405cc7a7230599af2212d5d8a83
+      size: 24127
+    - path: ../../../stages/build_cv_splits.py
+      hash: md5
+      md5: d34f09cb62f6162c3be00460bf3d3c68
+      size: 16937
+      isexec: true
+    params:
+      params.yaml:
+        spatial_autocorr.ranges_fp: data/features/try6_std_stg_pow-xf_1km/spatial_autocorr.parquet
+        train.Y.fp: data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+        train.cv_splits:
+          custom_range: 700000
+          range_mode: all_traits
+          per_trait_stat: mean
+          all_traits_aggregation: min
+          range_stat: mean
+          n_splits: 10
+          n_sims: 200
+          balance_weight: 0.6
+          dir: skcv_splits
+          dir_fp: data/features/try6_std_stg_pow-xf_1km/skcv_splits
+    outs:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/skcv_splits
+      hash: md5
+      md5: 2d220da5bf2d522ff22ec637c5fb6474.dir
+      size: 101354304
+      nfiles: 62
+  prepare_xy_data:
+    cmd: python ../../../stages/prepare_xy_data.py --params params.yaml --partition
+      genoa --cpus 48 --mem 256GB --time 01:00:00
+    deps:
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
+      hash: md5
+      md5: 9c9a86422be1edfff220bad343985715
+      size: 28636601445
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/skcv_splits
+      hash: md5
+      md5: 2d220da5bf2d522ff22ec637c5fb6474.dir
+      size: 101354304
+      nfiles: 62
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: 4afb767b385483cee50b9a9d646d6723.dir
+      size: 207638203
+      nfiles: 1
+    - path: ../../../stages/prepare_xy_data.py
+      hash: md5
+      md5: 32e0ebb937560acd7291f75a0c72c23a
+      size: 11058
+    params:
+      params.yaml:
+        train.Y.fp: data/features/try6_std_stg_pow-xf_1km/y_data/Y.parquet
+        train.cv_splits.dir_fp: data/features/try6_std_stg_pow-xf_1km/skcv_splits
+        train.predict.fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
+        train.xy_data.fp: data/features/try6_std_stg_pow-xf_1km/xy_data/xy_all_traits.parquet
+    outs:
+    - path: ../../../data/features/try6_std_stg_pow-xf_1km/xy_data/xy_all_traits.parquet
+      hash: md5
+      md5: e51eb7d6faef198fe1b492c632d5713e
+      size: 545012529
