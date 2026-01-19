@@ -13,7 +13,7 @@ stages:
     deps:
       - ${project_root}/src/data/build_gbif_map.py
       - ${project_root}/data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
-      - ${project_root}/${traits.interim_out_dir}
+      - ${project_root}/${traits.interim_out}
     outs:
       - ${project_root}/${gbif.maps.out_dir}/${product_code}:
           persist: true
@@ -29,7 +29,7 @@ stages:
     deps:
       - ${project_root}/src/data/build_splot_map.py
       - ${project_root}/data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
-      - ${project_root}/${traits.interim_out_dir}
+      - ${project_root}/${traits.interim_out}
     outs:
       - ${project_root}/${splot.maps.out_dir}/${product_code}:
           persist: true
