@@ -25,7 +25,7 @@ nemo:
       memory_limit: 40GB
 
 traits:
-  interim_out_dir: data/interim/traits/try6_no-xf/try6_no-xf.parquet
+  interim_out: data/interim/traits/try6_no-xf/try6_no-xf.parquet
   names:
     - X4 # Stem specific density (SSD, stem dry mass per stem fresh volume) or wood density
     - X6 # Root rooting depth

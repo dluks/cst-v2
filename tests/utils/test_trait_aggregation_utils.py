@@ -129,7 +129,7 @@ def test_cw_stats(sample_trait_data_single_plot):
 
     # Check output structure
     assert isinstance(result, pd.Series)
-    assert list(result.index) == ["cwm", "cw_std", "cw_med", "cw_q05", "cw_q95"]
+    assert list(result.index) == ["cwm", "cw_std", "cw_med", "cw_q02", "cw_q05", "cw_q25", "cw_q75", "cw_q95", "cw_q98"]
 
     # Check types of output values
     for val in result:

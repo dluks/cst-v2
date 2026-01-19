@@ -20,8 +20,8 @@ stages:
     outs:
     - path: ../../../data/interim/gbif/maps/try6_stg_no-xf_1km
       hash: md5
-      md5: 76a0dc0833c8a802b3d98f0ffedf9160.dir
-      size: 3350236278
+      md5: ae6fdad3b90fdee461d5ae4bf34ad45c.dir
+      size: 4006865062
       nfiles: 31
   build_splot_maps:
     cmd: python ../../../stages/build_splot_maps.py --params params.yaml --partitions
@@ -37,11 +37,11 @@ stages:
       size: 10492423
     - path: ../../../src/data/build_splot_map.py
       hash: md5
-      md5: d54880ed83df729e665309208a776542
-      size: 6064
+      md5: 99a911181d84ebebb6ef582baf11bbed
+      size: 6098
     outs:
     - path: ../../../data/interim/splot/maps/try6_stg_no-xf_1km
       hash: md5
-      md5: 9b883b91fab926435f82a05b5be60214.dir
-      size: 1213468374
+      md5: 725e2d231925de7e784f05db06a7124c.dir
+      size: 1392784590
       nfiles: 31

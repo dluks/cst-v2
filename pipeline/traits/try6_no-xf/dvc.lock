@@ -23,8 +23,8 @@ stages:
       size: 18777
     - path: ../../../src/utils/df_utils.py
       hash: md5
-      md5: e0b471b0453adf5af018e3cb0a29dc81
-      size: 27027
+      md5: 531a094c166ac0dc6c86c97945ea84fc
+      size: 27597
     - path: ../../../src/utils/match_pfts.py
       hash: md5
       md5: ee5981393c5d3da2a6bd566118e30452
@@ -36,6 +36,6 @@ stages:
     outs:
     - path: ../../../data/interim/traits/try6_no-xf
       hash: md5
-      md5: ff027b0cd3174bcc3246a3d24a7495ce.dir
-      size: 12113015
-      nfiles: 4
+      md5: 905fc54c536f9dc8210239c877eaaf98.dir
+      size: 12112995
+      nfiles: 3

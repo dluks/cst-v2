@@ -381,6 +381,8 @@ def agg_df(
         "median",
         "q02",
         "q05",
+        "q25",
+        "q75",
         "q95",
         "q98",
         "count",
@@ -450,6 +452,12 @@ def agg_df(
 
                 if "q05" in requested_funcs:
                     results[f"{col}_q05"] = _weighted_quantile(values, w, 0.05)
+
+                if "q25" in requested_funcs:
+                    results[f"{col}_q25"] = _weighted_quantile(values, w, 0.25)
+
+                if "q75" in requested_funcs:
+                    results[f"{col}_q75"] = _weighted_quantile(values, w, 0.75)
 
                 if "q95" in requested_funcs:
                     results[f"{col}_q95"] = _weighted_quantile(values, w, 0.95)
@@ -523,8 +531,12 @@ def agg_df(
             "mean": "mean",
             "std": "std",
             "median": lambda x: x.quantile(0.5, interpolation="nearest"),
+            "q02": lambda x: x.quantile(0.02, interpolation="nearest"),
             "q05": lambda x: x.quantile(0.05, interpolation="nearest"),
+            "q25": lambda x: x.quantile(0.25, interpolation="nearest"),
+            "q75": lambda x: x.quantile(0.75, interpolation="nearest"),
             "q95": lambda x: x.quantile(0.95, interpolation="nearest"),
+            "q98": lambda x: x.quantile(0.98, interpolation="nearest"),
             "range": lambda x: x.quantile(0.98, interpolation="nearest")
             - x.quantile(0.02, interpolation="nearest"),
             "count": "count",
