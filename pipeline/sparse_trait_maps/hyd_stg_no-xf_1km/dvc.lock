@@ -37,8 +37,8 @@ stages:
       size: 2978137
     - path: ../../../src/data/build_splot_map.py
       hash: md5
-      md5: d54880ed83df729e665309208a776542
-      size: 6064
+      md5: 99a911181d84ebebb6ef582baf11bbed
+      size: 6098
     outs:
     - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
       hash: md5
