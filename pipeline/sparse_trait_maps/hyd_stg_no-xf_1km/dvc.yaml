@@ -10,6 +10,7 @@ stages:
       --cpus 61
       --mem 350GB
       --time 00:30:00
+      --overwrite
     deps:
       - ${project_root}/src/data/build_gbif_map.py
       - ${project_root}/data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
@@ -26,6 +27,7 @@ stages:
       --cpus 2
       --mem 256GB
       --time 00:30:00
+      --overwrite
     deps:
       - ${project_root}/src/data/build_splot_map.py
       - ${project_root}/data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet

@@ -262,26 +262,27 @@ stages:
       nfiles: 6
   build_y:
     cmd: python ../../../stages/build_y.py --params params.yaml --partitions milan
-      genoa --time 01:00:00 --cpus 9 --mem 64GB --merge-cpus 9 --merge-mem 400GB --overwrite
+      genoa --time 01:00:00 --cpus 9 --mem 128GB --merge-cpus 9 --merge-mem 450GB
+      --overwrite
     deps:
     - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_1km
       hash: md5
-      md5: 971ea05d2420def035b7f1dba95643c9.dir
-      size: 344373162
+      md5: 5e4684beb558985817c5d1b9ea04aae1.dir
+      size: 378065712
       nfiles: 6
     - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
       hash: md5
-      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
-      size: 130599118
+      md5: 738cc8727002ed7b1a13767379b15248.dir
+      size: 138505192
       nfiles: 6
     - path: ../../../src/features/build_y_trait.py
       hash: md5
-      md5: 8d11736b7df0ebb5733785fcdb1973b5
-      size: 13986
+      md5: 0c07999e094f7f0504806e36e42c69de
+      size: 15226
     - path: ../../../src/features/merge_y_traits.py
       hash: md5
-      md5: 6bb6f9892372c4c5ad688fb4486bf036
-      size: 13100
+      md5: 1c4b89e711b6fe1d80b62201dcf5ab96
+      size: 14029
     - path: ../../../stages/build_y.py
       hash: md5
       md5: 304840a474bb0b3ea6fa51dcb35512ef
@@ -290,6 +291,7 @@ stages:
     params:
       params.yaml:
         datasets.Y.trait_stat: 1
+        gbif.min_count: 10
         train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
         traits.names:
         - gsmax
@@ -303,17 +305,17 @@ stages:
     outs:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/y_data
       hash: md5
-      md5: 689765b932347ee377df65d6c74d07a1.dir
-      size: 37191150
+      md5: 391f8f0acce012f551a2bddac4b6c49b.dir
+      size: 40240676
       nfiles: 3
   calculate_spatial_autocorr:
     cmd: python ../../../stages/calc_spatial_autocorr.py --params params.yaml --partition
       l40s --gpus 1 --time 0:10:00
     deps:
-    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
       hash: md5
-      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
-      size: 36839305
+      md5: 4c61ef59ce8ad1bd2022acffe7fbd38e.dir
+      size: 39886529
       nfiles: 1
     - path: ../../../src/features/calc_spatial_autocorr_gpu.py
       hash: md5
@@ -325,98 +327,99 @@ stages:
     outs:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/spatial_autocorr.parquet
       hash: md5
-      md5: 131fab3586396a3b7934454be968495d
-      size: 7595
+      md5: 38460054303c6a02a4b78d089ae29fd3
+      size: 7593
   build_cv_splits:
     cmd: python ../../../stages/build_cv_splits.py --params params.yaml --partitions
-      genoa --cpus 100 --mem 64GB --time 00:20:00 --overwrite
+      genoa milan --cpus 100 --mem 64GB --time 00:20:00 --overwrite
     deps:
-    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
-      hash: md5
-      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
-      size: 36839305
-      nfiles: 1
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/spatial_autocorr.parquet
       hash: md5
-      md5: 131fab3586396a3b7934454be968495d
-      size: 7595
+      md5: 38460054303c6a02a4b78d089ae29fd3
+      size: 7593
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: 4c61ef59ce8ad1bd2022acffe7fbd38e.dir
+      size: 39886529
+      nfiles: 1
     - path: ../../../src/features/build_cv_splits.py
       hash: md5
-      md5: 4ea783b027bdaa5599b44e1d87fdf4a8
-      size: 17884
+      md5: 6e012405cc7a7230599af2212d5d8a83
+      size: 24127
     - path: ../../../stages/build_cv_splits.py
       hash: md5
-      md5: 61895615548060e6d2df74d3537da99e
-      size: 10568
+      md5: d34f09cb62f6162c3be00460bf3d3c68
+      size: 16937
       isexec: true
     params:
       params.yaml:
         spatial_autocorr.ranges_fp: data/features/hyd_cwm_stg_no-xf_1km/spatial_autocorr.parquet
-        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
+        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
         train.cv_splits:
+          custom_range: 700000
+          range_mode: all_traits
+          per_trait_stat: mean
+          all_traits_aggregation: min
           range_stat: mean
-          n_splits: 8
+          n_splits: 6
           n_sims: 200
+          balance_weight: 0
           dir: skcv_splits
           dir_fp: data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
     outs:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
-      md5: 22ab831e391d1b83c652ab2a9251e022.dir
-      size: 20077496
+      md5: f18e9711f7f5c08086516a62c1227bca.dir
+      size: 19753066
       nfiles: 12
   train_models:
     cmd: python ../../../stages/train_models.py --params params.yaml --trait-sets
-      splot_gbif --partitions genoa --cpus 96 --mem 384GB --time 04:00:00
+      splot_gbif --partitions genoa milan --cpus 98 --mem 80GB --time 3:00:00 --resume
     deps:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
-      md5: 22ab831e391d1b83c652ab2a9251e022.dir
-      size: 20077496
+      md5: f18e9711f7f5c08086516a62c1227bca.dir
+      size: 19753066
       nfiles: 12
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
       hash: md5
-      md5: 7c8100f81e47ac77d155aaa7de831202
-      size: 193297610
+      md5: 9e5b023c4473cc5a49cc45291053c559
+      size: 180287865
     - path: ../../../src/models/autogluon.py
       hash: md5
-      md5: f0bba42c885dddb9da3909f472ffc786
-      size: 20357
+      md5: f3e50a70671d0d975344a7b0b98dc42b
+      size: 18011
     - path: ../../../stages/train_models.py
       hash: md5
-      md5: c8db4acf1667b5054ee23bafaed708e6
-      size: 22979
+      md5: e43bbfde089ad7a9fd6f42a54a464705
+      size: 39888
       isexec: true
     params:
       params.yaml:
         autogluon:
           included_model_types:
           - GBM
+          - CAT
           excluded_model_types:
-          - KNN
-          - RF
-          - XT
-          presets: high
-          num_bag_folds: 5
-          num_stack_levels: 1
+          presets:
+          - medium
+          dynamic_stacking: true
+          num_bag_folds:
+          num_stack_levels:
           save_bag_folds: true
           refit_full: false
           set_best_to_refit_full: false
-          cv_fit_time_limit: 7200
-          full_fit_time_limit: 12600
-          num_gpus: 2
-          num_cpus: 74
+          cv_fit_time_limit: 1
+          full_fit_time_limit: 1
           feature_importance: true
-          FI_time_limit: 1800
+          FI_time_limit: 0.5
           FI_num_shuffle_sets: 10
         models.dir_fp: models/hyd_cwm_stg_no-xf_1km
         train.arch: autogluon
-        train.cv_splits.n_splits: 8
+        train.cv_splits.n_splits: 6
         train.eval_results: evaluation_results.csv
         train.feature_importance: feature_importance.csv
         train.trait_sets:
-        - splot
-        - gbif
         - splot_gbif
         train.weights:
           fn: feature_weights.parquet
@@ -426,9 +429,9 @@ stages:
     outs:
     - path: ../../../models/hyd_cwm_stg_no-xf_1km
       hash: md5
-      md5: 60c0d112b3d97264d6c14905cfe0c50f.dir
-      size: 359813294523
-      nfiles: 10387
+      md5: f89733bee6217ce565d5227c40ee659b.dir
+      size: 367011275652
+      nfiles: 10876
   aoa:
     cmd: python src/analysis/aoa.py
     deps:
@@ -609,32 +612,32 @@ stages:
     cmd: python ../../../stages/prepare_xy_data.py --params params.yaml --partition
       genoa --cpus 48 --mem 256GB --time 01:00:00
     deps:
-    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
-      hash: md5
-      md5: 661e3c9dfd58cda6b4bc0983d7727786.dir
-      size: 36839305
-      nfiles: 1
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
-      md5: 22ab831e391d1b83c652ab2a9251e022.dir
-      size: 20077496
+      md5: f18e9711f7f5c08086516a62c1227bca.dir
+      size: 19753066
       nfiles: 12
+    - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
+      hash: md5
+      md5: 4c61ef59ce8ad1bd2022acffe7fbd38e.dir
+      size: 39886529
+      nfiles: 1
     - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
       hash: md5
       md5: 9c9a86422be1edfff220bad343985715
       size: 28636601445
     - path: ../../../stages/prepare_xy_data.py
       hash: md5
-      md5: bc7dcf268c9a48d4c6bbd97d8a84a566
-      size: 8740
+      md5: 32e0ebb937560acd7291f75a0c72c23a
+      size: 11058
     params:
       params.yaml:
-        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/Y.parquet
+        train.Y.fp: data/features/hyd_cwm_stg_no-xf_1km/y_data/Y.parquet
         train.cv_splits.dir_fp: data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
         train.predict.fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
         train.xy_data.fp: data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
     outs:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/xy_data/xy_all_traits.parquet
       hash: md5
-      md5: 7c8100f81e47ac77d155aaa7de831202
-      size: 193297610
+      md5: 9e5b023c4473cc5a49cc45291053c559
+      size: 180287865

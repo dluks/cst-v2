@@ -2,7 +2,7 @@ schema: '2.0'
 stages:
   build_gbif_maps:
     cmd: python ../../../stages/build_gbif_maps.py --params params.yaml --partitions
-      milan genoa --cpus 61 --mem 350GB --time 00:30:00
+      milan genoa --cpus 61 --mem 350GB --time 00:30:00 --overwrite
     deps:
     - path: ../../../data/interim/gbif/filtered_occurrences/hydraulic/gbif_filtered.parquet
       hash: md5
@@ -20,12 +20,12 @@ stages:
     outs:
     - path: ../../../data/interim/gbif/maps/hyd_stg_no-xf_1km
       hash: md5
-      md5: 971ea05d2420def035b7f1dba95643c9.dir
-      size: 344373162
+      md5: 5e4684beb558985817c5d1b9ea04aae1.dir
+      size: 378065712
       nfiles: 6
   build_splot_maps:
     cmd: python ../../../stages/build_splot_maps.py --params params.yaml --partitions
-      milan genoa --cpus 2 --mem 256GB --time 00:30:00
+      milan genoa --cpus 2 --mem 256GB --time 00:30:00 --overwrite
     deps:
     - path: ../../../data/interim/splot/filtered_surveys/hydraulic/splot_filtered.parquet
       hash: md5
@@ -42,6 +42,6 @@ stages:
     outs:
     - path: ../../../data/interim/splot/maps/hyd_stg_no-xf_1km
       hash: md5
-      md5: dea9718fdd6e8dd91c2786c498dcb8db.dir
-      size: 130599118
+      md5: 738cc8727002ed7b1a13767379b15248.dir
+      size: 138505192
       nfiles: 6
