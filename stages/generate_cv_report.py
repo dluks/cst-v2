@@ -125,8 +125,8 @@ def collect_all_results(
     """
     all_results = []
 
-    # Find all trait directories
-    trait_dirs = sorted([d for d in models_dir.iterdir() if d.is_dir() and d.name.startswith("X")])
+    # Find all trait directories (any subdirectory is considered a trait)
+    trait_dirs = sorted([d for d in models_dir.iterdir() if d.is_dir()])
 
     for trait_dir in trait_dirs:
         trait_name = trait_dir.name
@@ -450,8 +450,8 @@ def main():
     if args.run_id:
         run_id = args.run_id
     else:
-        # Find latest run from any trait
-        trait_dirs = [d for d in models_dir.iterdir() if d.is_dir() and d.name.startswith("X")]
+        # Find latest run from any trait (any subdirectory is considered a trait)
+        trait_dirs = [d for d in models_dir.iterdir() if d.is_dir()]
         if not trait_dirs:
             raise ValueError(f"No trait directories found in {models_dir}")
 
