@@ -412,17 +412,18 @@ def run_local(
     training_tasks = [t for t in tasks if t["task_type"] in ["cv_fold", "full_model"]]
     if training_tasks:
         sample_trait = training_tasks[0]["trait"]
-        base_dir = Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
+        base_dir = project_root / cfg.models.dir_fp / sample_trait / cfg.train.arch
+        print(f"\nSearching for existing runs in: {base_dir}")
         if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
                 run_id = generate_run_id()
-                print(f"\nNo existing runs found. Creating new run: {run_id}")
+                print(f"No existing runs found. Creating new run: {run_id}")
             else:
-                print(f"\nResuming run: {run_id}")
+                print(f"Found existing run. Resuming: {run_id}")
         else:
             run_id = generate_run_id()
-            print(f"\nCreating new run: {run_id}")
+            print(f"Creating new run: {run_id}")
     else:
         run_id = generate_run_id()
         print(f"\nCreating new run: {run_id}")
@@ -656,18 +657,19 @@ def run_slurm(
     if training_tasks:
         sample_trait = training_tasks[0]["trait"]
         base_dir = (
-            Path(cfg.models.dir_fp) / sample_trait / cfg.train.arch
+            project_root / cfg.models.dir_fp / sample_trait / cfg.train.arch
         )
+        print(f"\nSearching for existing runs in: {base_dir}")
         if resume:
             run_id = get_latest_run_id(base_dir)
             if run_id is None:
                 run_id = generate_run_id()
-                print(f"\nNo existing runs found. Creating new run: {run_id}")
+                print(f"No existing runs found. Creating new run: {run_id}")
             else:
-                print(f"\nResuming run: {run_id}")
+                print(f"Found existing run. Resuming: {run_id}")
         else:
             run_id = generate_run_id()
-            print(f"\nCreating new run: {run_id}")
+            print(f"Creating new run: {run_id}")
     else:
         run_id = generate_run_id()
         print(f"\nCreating new run: {run_id}")
