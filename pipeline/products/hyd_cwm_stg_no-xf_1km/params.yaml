@@ -211,17 +211,17 @@ processed:
 autogluon:
   included_model_types: ["GBM", "CAT"]
   excluded_model_types: null # ["KNN", "RF", "XT", "NN_TORCH"]
-  presets: ["medium"] # Set to null to determine preset based on training set size
+  presets: null # Set to null to determine preset based on training set size
   dynamic_stacking: true
   num_bag_folds: null
   num_stack_levels: null
   save_bag_folds: true
   refit_full: false
   set_best_to_refit_full: false
-  cv_fit_time_limit: 1 # Hours
-  full_fit_time_limit: 1 # Hours
+  cv_fit_time_limit: 18 # Hours
+  full_fit_time_limit: 18 # Hours
   feature_importance: true
-  FI_time_limit: 0.5 # Hours
+  FI_time_limit: 3 # Hours
   FI_num_shuffle_sets: 10
 
 models:

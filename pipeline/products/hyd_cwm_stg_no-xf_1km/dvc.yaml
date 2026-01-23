@@ -95,9 +95,8 @@ stages:
       --trait-sets splot_gbif
       --partitions genoa milan
       --cpus 98
-      --mem 80GB
-      --time 3:00:00
-      --resume
+      --mem 100GB
+      --time 20:00:00
     deps:
       - ${project_root}/stages/train_models.py
       - ${project_root}/src/models/autogluon.py
