@@ -374,7 +374,7 @@ stages:
       nfiles: 12
   train_models:
     cmd: python ../../../stages/train_models.py --params params.yaml --trait-sets
-      splot_gbif --partitions genoa milan --cpus 98 --mem 80GB --time 3:00:00 --resume
+      splot_gbif --partitions genoa milan --cpus 10 --mem 10GB --time 00:30:00 --resume
     deps:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
@@ -391,8 +391,8 @@ stages:
       size: 18011
     - path: ../../../stages/train_models.py
       hash: md5
-      md5: e43bbfde089ad7a9fd6f42a54a464705
-      size: 39888
+      md5: 10d5aba0216184f05dfac1f606ea7bb5
+      size: 40052
       isexec: true
     params:
       params.yaml:
@@ -402,17 +402,16 @@ stages:
           - CAT
           excluded_model_types:
           presets:
-          - medium
           dynamic_stacking: true
           num_bag_folds:
           num_stack_levels:
           save_bag_folds: true
           refit_full: false
           set_best_to_refit_full: false
-          cv_fit_time_limit: 1
-          full_fit_time_limit: 1
+          cv_fit_time_limit: 18
+          full_fit_time_limit: 18
           feature_importance: true
-          FI_time_limit: 0.5
+          FI_time_limit: 3
           FI_num_shuffle_sets: 10
         models.dir_fp: models/hyd_cwm_stg_no-xf_1km
         train.arch: autogluon
@@ -429,9 +428,9 @@ stages:
     outs:
     - path: ../../../models/hyd_cwm_stg_no-xf_1km
       hash: md5
-      md5: f89733bee6217ce565d5227c40ee659b.dir
-      size: 367011275652
-      nfiles: 10876
+      md5: 2fb35f047d3b90fb0681ef33f0ac1b06.dir
+      size: 834581517109
+      nfiles: 17386
   aoa:
     cmd: python src/analysis/aoa.py
     deps:
