@@ -1,0 +1,42 @@
+params:
+  - params.yaml
+
+stages:
+  harmonize_eo_data:
+    cmd: python ${project_root}/stages/harmonize_eo_data.py --params params.yaml --partitions genoa milan --cpus 16 --mem 64GB --time 00:30:00
+    deps:
+      - ${project_root}/src/data/harmonize_eo_file.py
+      - ${project_root}/src/data/calculate_modis_ndvi.py
+      - ${project_root}/src/data/prune_worldclim_vars.py
+      - ${project_root}/data/raw/ALOS_CHILI
+      - ${project_root}/data/raw/ETH_GlobalCanopyHeight_2020_v1_1km
+      - ${project_root}/data/raw/modis_sur_refl_monthly_avg_1km
+      - ${project_root}/data/raw/soilgrids_v2-0_1km
+      - ${project_root}/data/raw/vodca_mean-p5-p95_1km
+      - ${project_root}/data/raw/wc2-1_30s_bio
+      - ${project_root}/data/raw/esa_worldcover_v100_1km
+    params:
+      - model_res
+      - landcover_mask
+      - datasets
+      - base_resolution
+      - target_resolution
+      - interim.out_dir
+      - worldclim.bio_vars
+    outs:
+      - ${project_root}/${interim.out_dir}:
+          persist: true
+
+  build_predict:
+    cmd: python ${project_root}/stages/build_predict.py --params params.yaml --partition genoa --cpus 61 --mem 700GB --time 02:00:00
+    deps:
+      - ${project_root}/src/features/build_predict.py
+      - ${project_root}/${interim.out_dir}
+    params:
+      - datasets
+      - interim.out_dir
+      - x_dir
+      - x_fn
+    outs:
+      - ${project_root}/${x_dir}:
+          persist: true
