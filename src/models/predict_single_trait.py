@@ -22,10 +22,8 @@ from src.utils.dask_utils import close_dask, df_to_dd, init_dask
 from src.utils.dataset_utils import (
     get_cov_dir,
     get_predict_dir,
-    get_predict_imputed_fn,
-    get_predict_mask_fn,
 )
-from src.utils.df_utils import pipe_log, rasterize_points
+from src.utils.df_utils import rasterize_points
 from src.utils.raster_utils import pack_xr, xr_to_raster
 
 
@@ -205,44 +203,25 @@ def predict_dask(
 
 
 def load_predict_data(
-    tmp_predict_fn: Path, batches: int = 1
+    predict_fp: Path, batches: int = 1
 ) -> pd.DataFrame | dd.DataFrame:
-    """Load masked predict data from disk or mask imputed features.
+    """Load predict data from disk.
 
     Args:
-        tmp_predict_fn: Path to store/load masked predict data
+        predict_fp: Path to predict features parquet file
         batches: Number of batches (1 = pandas, >1 = Dask)
 
     Returns:
-        DataFrame with masked features and x, y coordinates
+        DataFrame with features and x, y coordinates
     """
-    log.info("Checking for existing masked predict data...")
-    if not tmp_predict_fn.exists():
-        log.info("No existing masked predict data found. Masking imputed features...")
-        predict = (
-            dd.read_parquet(get_predict_imputed_fn())
-            .pipe(pipe_log, "Reading imputed predict features...")
-            .compute()
-            .reset_index(drop=True)
-            .pipe(pipe_log, "Setting index to ['y', 'x']")
-            .set_index(["y", "x"])
-            .pipe(pipe_log, "Reading mask and masking imputed features...")
-            .mask(
-                dd.read_parquet(get_predict_mask_fn()).compute().set_index(["y", "x"])
-            )
-            .reset_index()
-        )
-
-        log.info("Writing masked predict data to disk for later usage...")
-        predict.to_parquet(tmp_predict_fn, compression="zstd")
-
-    else:
-        log.info("Found existing masked predict data. Reading...")
+    log.info("Loading predict data from %s...", predict_fp)
+    if not predict_fp.exists():
+        raise FileNotFoundError(f"Predict data not found: {predict_fp}")
 
     return (
-        pd.read_parquet(tmp_predict_fn)
+        pd.read_parquet(predict_fp)
         if batches == 1
-        else dd.read_parquet(tmp_predict_fn).repartition(npartitions=batches)
+        else dd.read_parquet(predict_fp).repartition(npartitions=batches)
     )
 
 
@@ -255,6 +234,7 @@ def predict_single_trait(
     res: int | float,
     crs: str,
     predict_cfg: ConfigBox,
+    dask_dashboard: str,
     overwrite: bool = False,
     mode: Literal["predict", "cov"] = "predict",
 ) -> Path:
@@ -269,6 +249,7 @@ def predict_single_trait(
         res: Spatial resolution
         crs: Coordinate reference system
         predict_cfg: Prediction configuration
+        dask_dashboard: Dask dashboard address
         overwrite: Whether to overwrite existing output
         mode: Either "predict" for standard prediction or "cov" for CoV calculation
 
@@ -292,11 +273,14 @@ def predict_single_trait(
     if not autogluon_dir.exists():
         raise FileNotFoundError(f"AutoGluon directory not found: {autogluon_dir}")
 
-    # Get latest run directory (highest number)
-    run_dirs = [d for d in autogluon_dir.iterdir() if d.is_dir() and d.stem.isdigit()]
+    # Get latest run directory (pattern: run_YYYYMMDD_HHMMSS)
+    run_dirs = [
+        d for d in autogluon_dir.iterdir()
+        if d.is_dir() and d.name.startswith("run_")
+    ]
     if not run_dirs:
         raise FileNotFoundError(f"No run directories found in: {autogluon_dir}")
-    latest_run = max(run_dirs, key=lambda d: int(d.stem))
+    latest_run = max(run_dirs, key=lambda d: d.name)
 
     # Find trait_set directory
     trait_set_dir = latest_run / trait_set
@@ -341,7 +325,7 @@ def predict_single_trait(
         os.environ["LOKY_MAX_CPU_COUNT"] = num_cpus
 
         client, _ = init_dask(
-            dashboard_address=get_config().dask_dashboard,
+            dashboard_address=dask_dashboard,
             n_workers=predict_cfg.n_workers,
             threads_per_worker=1,
         )
@@ -404,34 +388,29 @@ def main(args: argparse.Namespace, cfg: ConfigBox | None = None) -> Path:
     if not args.verbose:
         log.setLevel("WARNING")
 
-    models_dir = cfg.models_dir
+    models_dir = Path(cfg.models.dir_fp)
     mode: Literal["predict", "cov"] = "cov" if args.cov else "predict"
     out_dir = get_cov_dir(cfg) if args.cov else get_predict_dir(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Load predict data
-    tmp_predict_fn = Path(out_dir / "predict.parquet")
-    predict_data = load_predict_data(tmp_predict_fn, predict_cfg.batches)
+    predict_fp = Path(cfg.train.predict.fp)
+    predict_data = load_predict_data(predict_fp, predict_cfg.batches)
 
     # Run prediction
-    try:
-        out_fn = predict_single_trait(
-            trait=args.trait,
-            trait_set=args.trait_set,
-            predict_data=predict_data,
-            models_dir=models_dir,
-            out_dir=out_dir,
-            res=cfg.target_resolution,
-            crs=cfg.crs,
-            predict_cfg=predict_cfg,
-            overwrite=args.overwrite,
-            mode=mode,
-        )
-    finally:
-        # Clean up temporary predict data if we created it
-        if tmp_predict_fn.exists():
-            log.info("Cleaning up temporary predict data...")
-            tmp_predict_fn.unlink()
+    out_fn = predict_single_trait(
+        trait=args.trait,
+        trait_set=args.trait_set,
+        predict_data=predict_data,
+        models_dir=models_dir,
+        out_dir=out_dir,
+        res=cfg.target_resolution,
+        crs=cfg.crs,
+        predict_cfg=predict_cfg,
+        dask_dashboard=cfg.dask_dashboard,
+        overwrite=args.overwrite,
+        mode=mode,
+    )
 
     log.info("Done!")
     return out_fn

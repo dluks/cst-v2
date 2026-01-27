@@ -98,12 +98,12 @@ def main(args: argparse.Namespace) -> None:
         ddf = eo_ds_to_ddf(ds, thresh=cfg.missing_val_thresh)
 
         log.info("Computing partitions...")
-        df = compute_partitions(ddf).reset_index(drop=True).set_index(["y", "x"])
+        df = compute_partitions(ddf).reset_index(drop=True)
 
         log.info("Closing Dask client...")
         close_dask(client)
 
-        log.info("Saving DataFrame to disk...")
+        log.info("Saving DataFrame to disk (x, y as columns for prediction)...")
         df.to_parquet(out_fp, compression="zstd", compression_level=19)
 
     # Generate report if it doesn't exist or overwrite is True
