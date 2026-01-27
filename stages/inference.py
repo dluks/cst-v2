@@ -13,28 +13,32 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 import dask.dataframe as dd
 from simple_slurm import Slurm
 
-from src.conf.conf import get_config
-
-# Setup environment and path
+# Setup environment and path FIRST
 from src.pipeline.entrypoint_utils import (
     PartitionDistributor,
     add_common_args,
+    add_execution_args,
     add_partition_args,
-    add_resource_args,
     build_base_command,
     determine_execution_mode,
+    get_existing_job_names,
     resolve_partitions,
     setup_environment,
+    setup_log_directory,
     wait_for_job_completion,
 )
 
 project_root = setup_environment()
+
+# Import config AFTER setup_environment
+from src.conf.conf import get_config  # noqa: E402
 
 
 def cli() -> argparse.Namespace:
@@ -433,12 +437,57 @@ def run_local(
         sys.exit(1)
 
 
+def get_task_resources(task_type: str, args: argparse.Namespace) -> dict:
+    """Get resource requirements for a task type.
+
+    Args:
+        task_type: Type of task (predict, cov, aoa, final)
+        args: Command-line arguments with resource specifications
+
+    Returns:
+        Dictionary with time, cpus, mem, and gres keys
+    """
+    if task_type in ("predict", "cov"):
+        return {
+            "time": args.predict_time,
+            "cpus": args.predict_cpus,
+            "mem": args.predict_mem,
+            "gres": None,
+        }
+    elif task_type == "aoa":
+        return {
+            "time": args.aoa_time,
+            "cpus": args.aoa_cpus,
+            "mem": args.aoa_mem,
+            "gres": f"gpu:{args.aoa_gpus}" if args.aoa_gpus != "0" else None,
+        }
+    elif task_type == "final":
+        return {
+            "time": args.final_time,
+            "cpus": args.final_cpus,
+            "mem": args.final_mem,
+            "gres": None,
+        }
+    else:
+        raise ValueError(f"Unknown task type: {task_type}")
+
+
+# Task type to module path mapping
+TASK_MODULES = {
+    "predict": "src.models.predict_single_trait",
+    "cov": "src.models.predict_single_trait",
+    "aoa": "src.analysis.aoa_single_trait",
+    "final": "src.data.build_final_product_single_trait",
+}
+
+
 def run_slurm(
     params_path: str | None,
     overwrite: bool,
     partitions: list[str],
     tasks: list[dict],
     args: argparse.Namespace,
+    cfg,
     no_wait: bool,
 ) -> None:
     """Submit all inference tasks to Slurm.
@@ -449,137 +498,186 @@ def run_slurm(
         partitions: List of Slurm partitions to use
         tasks: List of task dictionaries
         args: Command-line arguments with resource specifications
+        cfg: Configuration object
         no_wait: Whether to wait for jobs to complete
     """
     print(f"\n{'='*80}")
     print("SLURM SUBMISSION")
     print(f"{'='*80}\n")
 
-    # Distribute tasks across partitions
+    # Setup log directory
+    log_dir = setup_log_directory("inference")
+    product_log_dir = log_dir / cfg.product_code
+    product_log_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Logs will be written to: {product_log_dir.absolute()}")
+
+    # Initialize partition distributor
     distributor = PartitionDistributor(partitions)
 
-    # Group tasks by type for dependency management
-    predict_jobs = []
-    cov_jobs = []
-    aoa_jobs = []
-    final_jobs = []
+    # Check for existing jobs in queue
+    print("\nChecking for existing jobs in queue...")
+    existing_jobs = get_existing_job_names()
+    if existing_jobs:
+        print(f"Found {len(existing_jobs)} existing jobs in queue")
+    else:
+        print("No existing jobs found in queue")
+
+    # Track jobs by trait/trait_set for dependencies
+    job_tracker: dict[tuple[str, str], dict[str, int]] = {}
+    skipped_jobs = []
 
     for task in tasks:
         trait = task["trait"]
         trait_set = task["trait_set"]
         task_type = task["task_type"]
-        partition = distributor.next_partition()
 
-        # Build command based on task type
-        if task_type == "predict":
-            script_path = "src/models/predict_single_trait.py"
-            cmd_args = ["--trait", trait, "--trait-set", trait_set]
-            time = args.predict_time
-            cpus = args.predict_cpus
-            mem = args.predict_mem
-            gres = None
-        elif task_type == "cov":
-            script_path = "src/models/predict_single_trait.py"
-            cmd_args = ["--trait", trait, "--trait-set", trait_set, "--cov"]
-            time = args.predict_time
-            cpus = args.predict_cpus
-            mem = args.predict_mem
-            gres = None
-        elif task_type == "aoa":
-            script_path = "src/analysis/aoa_single_trait.py"
-            cmd_args = ["--trait", trait, "--trait-set", trait_set]
-            time = args.aoa_time
-            cpus = args.aoa_cpus
-            mem = args.aoa_mem
-            gres = f"gpu:{args.aoa_gpus}"
-        elif task_type == "final":
-            script_path = "src/data/build_final_product_single_trait.py"
-            cmd_args = ["--trait", trait, "--trait-set", trait_set, "--dest", args.dest]
-            time = args.final_time
-            cpus = args.final_cpus
-            mem = args.final_mem
-            gres = None
-        else:
-            raise ValueError(f"Unknown task type: {task_type}")
-
-        # Add common options
-        if overwrite:
-            cmd_args.append("--overwrite")
-        if params_path:
-            cmd_args.extend(["--params", params_path])
-
-        # Build full command
-        base_cmd = build_base_command(script_path, cmd_args)
-
-        # Create Slurm job
-        job_name = f"{task_type}_{trait}_{trait_set}"
-        slurm = Slurm(
-            job_name=job_name,
-            output=f"logs/{job_name}_%j.out",
-            error=f"logs/{job_name}_%j.err",
-            partition=partition,
-            time=time,
-            cpus_per_task=cpus,
-            mem=mem,
-            gres=gres,
+        # Build job name (include product_code to avoid conflicts)
+        job_name = (
+            f"inf_{task_type[:4]}_{trait[:8]}_{cfg.product_code[:12]}_{trait_set[:4]}"
         )
 
-        # Determine dependencies
+        # Check if job already exists in queue
+        if job_name in existing_jobs:
+            existing_job_id, existing_state = existing_jobs[job_name]
+            print(
+                f"  Skipping {task_type}/{trait}/{trait_set}: "
+                f"job already in queue ({existing_state})"
+            )
+            skipped_jobs.append((job_name, existing_job_id, existing_state))
+            # Track for dependencies
+            key = (trait, trait_set)
+            if key not in job_tracker:
+                job_tracker[key] = {}
+            job_tracker[key][task_type] = int(existing_job_id)
+            continue
+
+        # Build extra_args for build_base_command
+        extra_args: dict[str, str | None] = {
+            "--trait": trait,
+            "--trait-set": trait_set,
+        }
+        if task_type == "cov":
+            extra_args["--cov"] = None
+        if task_type == "final":
+            extra_args["--dest"] = args.dest
+
+        # Build command using module path
+        cmd_parts = build_base_command(
+            TASK_MODULES[task_type],
+            params_path=params_path,
+            overwrite=overwrite,
+            extra_args=extra_args,
+        )
+        command = " ".join(cmd_parts)
+
+        # Get resources for task type
+        resources = get_task_resources(task_type, args)
+
+        # Determine dependencies for final tasks
         dependency = None
         if task_type == "final":
-            # Final product depends on predict, cov, and aoa for the same trait/trait_set
-            dep_jobs = []
-            for job_info in predict_jobs + cov_jobs + aoa_jobs:
-                if job_info["trait"] == trait and job_info["trait_set"] == trait_set:
-                    dep_jobs.append(str(job_info["job_id"]))
-            if dep_jobs:
-                dependency = f"afterok:{':'.join(dep_jobs)}"
+            key = (trait, trait_set)
+            if key in job_tracker:
+                dep_job_ids = list(job_tracker[key].values())
+                if dep_job_ids:
+                    dependency = "afterok:" + ":".join(str(j) for j in dep_job_ids)
+
+        # Get partition using round-robin distribution
+        partition = distributor.get_next()
+
+        # Build Slurm job kwargs (only include optional params if they have values)
+        slurm_kwargs = {
+            "job_name": job_name,
+            "output": str(product_log_dir / f"%j_{task_type}_{trait}_{trait_set}.log"),
+            "error": str(product_log_dir / f"%j_{task_type}_{trait}_{trait_set}.err"),
+            "partition": partition,
+            "time": resources["time"],
+            "cpus_per_task": resources["cpus"],
+            "mem": resources["mem"],
+        }
+        if resources["gres"]:
+            slurm_kwargs["gres"] = resources["gres"]
+        if dependency:
+            slurm_kwargs["dependency"] = dependency
+
+        # Create Slurm job
+        slurm = Slurm(**slurm_kwargs)
 
         # Submit job
-        if dependency:
-            job_id = slurm.sbatch(base_cmd, dependency=dependency)
-        else:
-            job_id = slurm.sbatch(base_cmd)
+        job_id = slurm.sbatch(command)
 
+        # Track job for dependencies
+        key = (trait, trait_set)
+        if key not in job_tracker:
+            job_tracker[key] = {}
+        job_tracker[key][task_type] = job_id
+
+        # Print submission info
+        dep_info = ""
+        if dependency:
+            n_deps = len(dependency.split(":")) - 1
+            dep_info = f" (depends on {n_deps} jobs)"
+        partition_info = f" [{partition}]" if len(distributor) > 1 else ""
         print(
-            f"Submitted {task_type} for {trait} ({trait_set}): "
-            f"Job ID {job_id} on {partition}"
-            + (f" with dependency {dependency}" if dependency else "")
+            f"  Submitted {task_type}/{trait}/{trait_set}: "
+            f"job {job_id}{partition_info}{dep_info}"
         )
 
-        # Store job info
-        job_info = {
-            "job_id": job_id,
-            "trait": trait,
-            "trait_set": trait_set,
-            "task_type": task_type,
-        }
+        # Small delay to avoid overwhelming scheduler
+        time.sleep(0.5)
 
-        if task_type == "predict":
-            predict_jobs.append(job_info)
-        elif task_type == "cov":
-            cov_jobs.append(job_info)
-        elif task_type == "aoa":
-            aoa_jobs.append(job_info)
-        elif task_type == "final":
-            final_jobs.append(job_info)
+    # Collect all job IDs for summary
+    all_job_ids = []
+    task_counts = {"predict": 0, "cov": 0, "aoa": 0, "final": 0}
+    for trait_jobs in job_tracker.values():
+        for task_type, job_id in trait_jobs.items():
+            all_job_ids.append(job_id)
+            task_counts[task_type] += 1
 
-    all_jobs = predict_jobs + cov_jobs + aoa_jobs + final_jobs
-    all_job_ids = [str(job["job_id"]) for job in all_jobs]
+    num_submitted = len(all_job_ids) - len(skipped_jobs)
+    print(f"\n{'='*60}")
+    print(f"Submitted {num_submitted} new jobs")
+    if skipped_jobs:
+        print(f"Skipped {len(skipped_jobs)} jobs already in queue")
+    print(f"  - Predict: {task_counts['predict']}")
+    print(f"  - CoV: {task_counts['cov']}")
+    print(f"  - AoA: {task_counts['aoa']}")
+    print(f"  - Final: {task_counts['final']}")
 
-    print(f"\nSubmitted {len(all_jobs)} jobs")
-    print(f"  - Predict: {len(predict_jobs)}")
-    print(f"  - CoV: {len(cov_jobs)}")
-    print(f"  - AoA: {len(aoa_jobs)}")
-    print(f"  - Final: {len(final_jobs)}")
+    # Show partition distribution if using multiple partitions
+    if len(distributor) > 1:
+        summary = distributor.get_summary()
+        print("\nJob distribution across partitions:")
+        for partition, count in summary.items():
+            print(f"  {partition}: {count} jobs")
 
     if not no_wait:
         print("\nWaiting for jobs to complete...")
-        wait_for_job_completion(all_job_ids)
-        print("All jobs completed!")
+        # Wait for final jobs (they depend on others, so waiting for them waits for all)
+        final_job_ids = [
+            job_tracker[key]["final"]
+            for key in job_tracker
+            if "final" in job_tracker[key]
+        ]
+        if final_job_ids:
+            for job_id in final_job_ids:
+                success = wait_for_job_completion(job_id, poll_interval=10)
+                if not success:
+                    print(f"✗ Job {job_id} failed. Check logs in {product_log_dir}")
+                    sys.exit(1)
+            print("\n✓ All jobs completed successfully!")
+        else:
+            # No final jobs, wait for all submitted jobs
+            for job_id in all_job_ids:
+                success = wait_for_job_completion(job_id, poll_interval=10)
+                if not success:
+                    print(f"✗ Job {job_id} failed. Check logs in {product_log_dir}")
+                    sys.exit(1)
+            print("\n✓ All jobs completed successfully!")
     else:
         print("\nJobs submitted. Not waiting for completion (--no-wait specified).")
-        print(f"Job IDs: {', '.join(all_job_ids)}")
+        print("Monitor with: squeue -u $USER")
+        print(f"Logs: {product_log_dir.absolute()}")
 
 
 def main() -> None:
@@ -654,6 +752,7 @@ def main() -> None:
             partitions,
             tasks,
             args,
+            cfg,
             args.no_wait,
         )
 
