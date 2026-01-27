@@ -391,7 +391,7 @@ def main(args: argparse.Namespace, cfg: ConfigBox | None = None) -> Path:
         Path to output file
     """
     if cfg is None:
-        cfg = get_config()
+        cfg = get_config(params_path=getattr(args, "params", None))
 
     predict_cfg = cfg.predict[detect_system()]
 
