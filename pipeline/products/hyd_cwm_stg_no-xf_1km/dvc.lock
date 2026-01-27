@@ -374,7 +374,7 @@ stages:
       nfiles: 12
   train_models:
     cmd: python ../../../stages/train_models.py --params params.yaml --trait-sets
-      splot_gbif --partitions genoa milan --cpus 10 --mem 10GB --time 00:30:00 --resume
+      splot_gbif --partitions genoa milan --cpus 98 --mem 100GB --time 20:00:00
     deps:
     - path: ../../../data/features/hyd_cwm_stg_no-xf_1km/skcv_splits
       hash: md5
