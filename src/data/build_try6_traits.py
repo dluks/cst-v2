@@ -9,6 +9,7 @@ transformed dataset and the fitted transformer for downstream use.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import pickle
 import zipfile
@@ -87,11 +88,10 @@ def main(args: argparse.Namespace) -> None:
     )
 
     if cfg.traits.transform == "power":
-        # Transform traits
-        df, transformer = _power_transform(df, cfg.traits.names)
-        _save_outputs(df=df, out_fp=out_fp, transformer=transformer)
-    else:
-        _save_outputs(df=df, out_fp=out_fp)
+        # Transform traits (saves per-trait transformers to out_dir/transformers/)
+        df = _power_transform(df, cfg.traits.names, out_fp.parent)
+
+    _save_outputs(df=df, out_fp=out_fp)
 
     # Generate report
     log.info("Generating trait statistics report...")
@@ -310,50 +310,172 @@ def _aggregate_species_traits(
 
 
 def _power_transform(
-    df: pd.DataFrame, traits: list[str]
-) -> tuple[pd.DataFrame, PowerTransformer]:
-    """Apply Yeo-Johnson power transform to traits and return the result.
+    df: pd.DataFrame,
+    traits: list[str],
+    out_dir: Path,
+    method: str = "yeo-johnson",
+    cv_threshold: float = 0.15,
+) -> pd.DataFrame:
+    """Apply Yeo-Johnson power transform per trait following build_y_trait.py pattern.
 
-    The transformer is fit jointly across the trait columns and applied to
-    those columns only. Returns the transformed DataFrame (same columns) and the
-    fitted transformer.
+    Each trait is transformed independently. Traits with low coefficient of variation
+    (CV < cv_threshold) are skipped since they have narrow relative variation that
+    won't benefit from transformation.
+
+    Per-trait transformer pickles and metadata JSON files are saved to out_dir/transformers/.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with trait columns
+    traits : list[str]
+        List of trait column names to transform
+    out_dir : Path
+        Output directory (transformers saved to out_dir/transformers/)
+    method : str
+        Transformation method (default: "yeo-johnson")
+    cv_threshold : float
+        Minimum coefficient of variation required for transformation (default: 0.15)
+
+    Returns
+    -------
+    pd.DataFrame
+        DataFrame with transformed trait values
     """
-    for col in traits:
-        if col not in df.columns:
-            raise ValueError(f"Expected trait column '{col}' not found")
-
-    # Separate speciesname and harmonization columns from traits
-    trait_values = df[traits]
-    log.info("Applying Yeo-Johnson to %d traits", len(traits))
-    pt = PowerTransformer(method="yeo-johnson")
-    transformed = pt.fit_transform(trait_values)
+    transformer_dir = out_dir / "transformers"
+    transformer_dir.mkdir(parents=True, exist_ok=True)
 
     df_t = df.copy()
-    df_t[traits] = transformed
+    transformed_count = 0
+    skipped_count = 0
 
-    log.info("Transformation lambdas: %s", pt.lambdas_[:5].tolist() + ["..."])
+    for trait in traits:
+        if trait not in df.columns:
+            log.warning("Trait %s not found in DataFrame, skipping", trait)
+            continue
 
-    return df_t, pt
+        # Get non-NaN values
+        valid_mask = df[trait].notna()
+        values = df.loc[valid_mask, trait]
+
+        if len(values) < 10:
+            log.warning(
+                "Skipping %s: insufficient non-NaN values (%d)", trait, len(values)
+            )
+            continue
+
+        # Calculate original statistics
+        orig_mean = values.mean()
+        orig_std = values.std()
+        orig_min = values.min()
+        orig_max = values.max()
+        cv = orig_std / abs(orig_mean) if orig_mean != 0 else float("inf")
+
+        log.info("%s: Mean=%.4f, Std=%.4f, CV=%.4f", trait, orig_mean, orig_std, cv)
+
+        # Skip transformation if CV is too low
+        if cv < cv_threshold:
+            log.info(
+                "Skipping %s: CV=%.4f < %.2f (narrow relative variation)",
+                trait,
+                cv,
+                cv_threshold,
+            )
+            metadata = {
+                "trait": trait,
+                "transformed": False,
+                "reason": "low_cv",
+                "cv": float(cv),
+                "cv_threshold": cv_threshold,
+                "orig_mean": float(orig_mean),
+                "orig_std": float(orig_std),
+                "orig_min": float(orig_min),
+                "orig_max": float(orig_max),
+            }
+            _save_transformer_metadata(transformer_dir, trait, metadata)
+            skipped_count += 1
+            continue
+
+        # Fit transformer for this trait
+        pt = PowerTransformer(method=method, standardize=False)
+        transformed = pt.fit_transform(values.values.reshape(-1, 1))
+
+        # Apply to dataframe
+        df_t.loc[valid_mask, trait] = transformed.ravel()
+
+        # Calculate transformed statistics
+        trans_vals = df_t.loc[valid_mask, trait]
+        trans_mean = trans_vals.mean()
+        trans_std = trans_vals.std()
+        trans_min = trans_vals.min()
+        trans_max = trans_vals.max()
+
+        log.info(
+            "%s transformed: λ=%.4f, Mean=%.4f→%.4f, Std=%.4f→%.4f",
+            trait,
+            pt.lambdas_[0],
+            orig_mean,
+            trans_mean,
+            orig_std,
+            trans_std,
+        )
+
+        # Save transformer pickle
+        pkl_path = transformer_dir / f"{trait}_transformer.pkl"
+        with open(pkl_path, "wb") as f:
+            pickle.dump(pt, f)
+
+        # Save metadata
+        metadata = {
+            "trait": trait,
+            "transformed": True,
+            "method": method,
+            "cv": float(cv),
+            "lambda": float(pt.lambdas_[0]),
+            "orig_mean": float(orig_mean),
+            "orig_std": float(orig_std),
+            "orig_min": float(orig_min),
+            "orig_max": float(orig_max),
+            "trans_mean": float(trans_mean),
+            "trans_std": float(trans_std),
+            "trans_min": float(trans_min),
+            "trans_max": float(trans_max),
+        }
+        _save_transformer_metadata(transformer_dir, trait, metadata)
+        transformed_count += 1
+
+    log.info(
+        "Power transformation complete: %d traits transformed, %d skipped (low CV)",
+        transformed_count,
+        skipped_count,
+    )
+
+    return df_t
 
 
-def _save_outputs(
-    df: pd.DataFrame, out_fp: Path, transformer: PowerTransformer | None = None
+def _save_transformer_metadata(
+    transformer_dir: Path, trait: str, metadata: dict
 ) -> None:
-    """Save transformed traits as parquet and transformer as pickle to out_dir."""
+    """Save trait transformation metadata as JSON."""
+    meta_path = transformer_dir / f"{trait}_metadata.json"
+    with open(meta_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+    log.info("Saved metadata: %s", meta_path.name)
+
+
+def _save_outputs(df: pd.DataFrame, out_fp: Path) -> None:
+    """Save traits as parquet to out_dir.
+
+    Note: Per-trait transformers are saved separately by _power_transform() in the
+    transformers/ subdirectory.
+    """
     out_dir = out_fp.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if transformer is not None and isinstance(transformer, PowerTransformer):
-        transformer_fp = out_fp.with_suffix(".pkl")
-        with open(transformer_fp, "wb") as f:
-            pickle.dump(transformer, f)
-        log.info("Saved PowerTransformer to %s", transformer_fp)
-
-    # Save data (speciesname + transformed traits + harmonization columns)
+    # Save data (speciesname + traits + harmonization columns)
     df.to_parquet(out_fp, index=False, compression="zstd")
     log.info(
-        "Saved %s TRY6 traits to %s (%d species, %d columns)",
-        "transformed" if transformer is not None else "untransformed",
+        "Saved TRY6 traits to %s (%d species, %d columns)",
         out_fp,
         df.shape[0],
         df.shape[1],
