@@ -15,6 +15,12 @@ import xarray as xr
 from affine import Affine
 
 from src.conf.environment import log
+from src.utils.moment_utils import (
+    effective_sample_size,
+    weighted_kurtosis,
+    weighted_skewness,
+    weighted_variance,
+)
 from src.utils.raster_utils import create_sample_raster
 
 
@@ -338,6 +344,8 @@ def agg_df(
     n_min: int = 1,
     n_max: int | None = None,
     weights: str | None = None,
+    unique_col: str | None = None,
+    min_unique: int = 1,
 ) -> pd.DataFrame:
     """
     Aggregate a DataFrame by specified columns and apply aggregation functions.
@@ -357,7 +365,7 @@ def agg_df(
     funcs : dict of str to Any, list of str, or None, optional
         When weights are provided: a list of function names to compute
         (e.g., ["mean", "std", "count"]). Supported: "mean", "std", "median",
-        "q02", "q05", "q95", "q98", "count", "count_weighted".
+        "q02", "q05", "q95", "q98", "count", "count_weighted", "n_species".
         When weights are not provided: a dict where keys are result column names
         and values are aggregation functions, or a list of function names.
         If None, all default functions are computed.
@@ -368,6 +376,13 @@ def agg_df(
     weights : str, optional
         Column name containing weights. When provided, weighted statistics are computed
         automatically. Default is None.
+    unique_col : str, optional
+        Column name to count unique values (e.g., species). When provided with
+        min_unique > 1, groups with fewer unique values will have NaN for all
+        moment statistics (variance, skewness, kurtosis). Default is None.
+    min_unique : int, optional
+        Minimum unique values required for moment computation. Only applies when
+        unique_col is provided. Default is 1.
 
     Returns:
     --------
@@ -378,6 +393,10 @@ def agg_df(
     SUPPORTED_WEIGHTED_FUNCS = {
         "mean",
         "std",
+        "variance",
+        "skewness",
+        "kurtosis",
+        "n_eff",
         "median",
         "q02",
         "q05",
@@ -387,6 +406,7 @@ def agg_df(
         "q98",
         "count",
         "count_weighted",
+        "n_species",
     }
 
     if n_max is not None:
@@ -433,9 +453,19 @@ def agg_df(
             """Compute requested weighted statistics for a group."""
             results = {}
 
+            # Check unique species count if unique_col is provided
+            n_unique = None
+            if unique_col is not None and unique_col in group.columns:
+                n_unique = group[unique_col].nunique()
+
             for col in data:
                 values = group[col].values
                 w = group[weights].values
+
+                # Check if we have enough unique species for moment computation
+                has_enough_unique = (
+                    n_unique is None or n_unique >= min_unique
+                )
 
                 # Only compute requested statistics
                 if "mean" in requested_funcs:
@@ -470,6 +500,35 @@ def agg_df(
 
                 if "count_weighted" in requested_funcs:
                     results[f"{col}_count_weighted"] = w.sum()
+
+                if "n_species" in requested_funcs:
+                    results[f"{col}_n_species"] = n_unique if n_unique is not None else np.nan
+
+                # Statistical moments (from moment_utils)
+                # These require min_unique species to be meaningful
+                if "variance" in requested_funcs:
+                    if has_enough_unique:
+                        results[f"{col}_variance"] = weighted_variance(values, w)
+                    else:
+                        results[f"{col}_variance"] = np.nan
+
+                if "skewness" in requested_funcs:
+                    if has_enough_unique:
+                        results[f"{col}_skewness"] = weighted_skewness(values, w)
+                    else:
+                        results[f"{col}_skewness"] = np.nan
+
+                if "kurtosis" in requested_funcs:
+                    # Raw kurtosis (beta_2, normal=3), not excess
+                    if has_enough_unique:
+                        results[f"{col}_kurtosis"] = weighted_kurtosis(
+                            values, w, excess=False
+                        )
+                    else:
+                        results[f"{col}_kurtosis"] = np.nan
+
+                if "n_eff" in requested_funcs:
+                    results[f"{col}_n_eff"] = effective_sample_size(w)
 
             return pd.Series(results)
 
@@ -567,6 +626,8 @@ def rasterize_points(
     n_max: int | None = None,
     already_row_col: bool = False,
     weights: str | None = None,
+    unique_col: str | None = None,
+    min_unique: int = 1,
 ) -> xr.Dataset:
     """
     Rasterizes point data from a DataFrame into a raster dataset.
@@ -601,6 +662,13 @@ def rasterize_points(
         Whether the data is already in row, column format, by default False.
     weights : str, optional
         Column name containing weights for weighted mean calculation, by default None.
+    unique_col : str, optional
+        Column name to count unique values (e.g., species). When provided with
+        min_unique > 1, cells with fewer unique values will have NaN for moment
+        statistics (variance, skewness, kurtosis). Default is None.
+    min_unique : int, optional
+        Minimum unique values required for moment computation. Only applies when
+        unique_col is provided. Default is 1.
 
     Returns:
     --------
@@ -658,6 +726,8 @@ def rasterize_points(
                 n_min=n_min,
                 n_max=n_max,
                 weights=weights,
+                unique_col=unique_col,
+                min_unique=min_unique,
             )
 
     if dask.is_dask_collection(grid_df):
