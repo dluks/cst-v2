@@ -127,11 +127,20 @@ def _process_gbif(cfg, trait: str):
     log.info("Joining GBIF with trait data...")
     gbif_traits = gbif.merge(trait_df, on="specieskey", how="inner")
 
+    # Filter out observations with NaN trait values
+    # (many species have NaN for specific traits in the TRY database)
+    before_filter = len(gbif_traits)
+    gbif_traits = gbif_traits.dropna(subset=[trait])
+
     if len(gbif_traits) == 0:
         log.error("No data after joining GBIF with trait %s.", trait)
         return None
 
-    log.info("Joined %d observations with trait values.", len(gbif_traits))
+    log.info(
+        "Joined %d observations with trait values (%d dropped due to NaN).",
+        len(gbif_traits),
+        before_filter - len(gbif_traits),
+    )
 
     # Reproject coordinates
     log.info("Reprojecting coordinates...")
@@ -149,10 +158,16 @@ def _process_gbif(cfg, trait: str):
         crs=cfg.crs,
         agg=True,
         funcs=[
-            "mean", "variance", "skewness", "kurtosis", "n_eff", "count", "n_species"
+            "mean",
+            "variance",
+            "skewness",
+            "kurtosis",
+            "n_eff",
+            "count",
+            "n_species",
         ],
         n_min=n_min,
-        n_max=cfg.gbif.maps.get("max_count", 500),
+        # n_max=cfg.gbif.maps.get("max_count", 500),
         weights="weight",
         unique_col="specieskey",
         min_unique=min_unique,
@@ -194,11 +209,20 @@ def _process_splot(cfg, trait: str):
         trait_df, left_on="speciesname", right_on="nameOutWCVP", how="inner"
     ).drop(columns=["nameOutWCVP"])
 
+    # Filter out observations with NaN trait values
+    # (many species have NaN for specific traits in the TRY database)
+    before_filter = len(splot_traits)
+    splot_traits = splot_traits.dropna(subset=[trait])
+
     if len(splot_traits) == 0:
         log.error("No data after joining sPlot with trait %s.", trait)
         return None
 
-    log.info("Joined %d observations with trait values.", len(splot_traits))
+    log.info(
+        "Joined %d observations with trait values (%d dropped due to NaN).",
+        len(splot_traits),
+        before_filter - len(splot_traits),
+    )
 
     # Get moment parameters
     min_abundance = cfg.moments.get("splot_min_abundance", 0.75)
@@ -225,7 +249,9 @@ def _process_splot(cfg, trait: str):
 
     # Expand abundances to pseudo-observations
     # Note: We do NOT normalize - plots contribute proportional to their trait coverage
-    log.info("Expanding abundances to pseudo-observations (multiplier=%d)...", multiplier)
+    log.info(
+        "Expanding abundances to pseudo-observations (multiplier=%d)...", multiplier
+    )
     pseudo_obs = _expand_abundances(
         splot_traits,
         trait_col=trait,
@@ -252,7 +278,13 @@ def _process_splot(cfg, trait: str):
         crs=cfg.crs,
         agg=True,
         funcs=[
-            "mean", "variance", "skewness", "kurtosis", "n_eff", "count", "n_species"
+            "mean",
+            "variance",
+            "skewness",
+            "kurtosis",
+            "n_eff",
+            "count",
+            "n_species",
         ],
         weights="weight",
         unique_col="speciesname",
@@ -300,8 +332,6 @@ def _filter_plots_by_abundance(
     filtered_df = df[df[plot_id_col].isin(valid_plots)].copy()
 
     return filtered_df
-
-
 
 
 def _expand_abundances(
