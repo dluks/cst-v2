@@ -1,0 +1,49 @@
+params:
+  - params.yaml
+
+stages:
+  build_gbif_maps:
+    cmd: >-
+      python ${project_root}/stages/build_moment_maps.py
+      --params params.yaml
+      --source gbif
+      --partitions milan genoa
+      --cpus 16
+      --mem 64GB
+      --time 01:00:00
+    deps:
+      - ${project_root}/src/data/build_moment_map.py
+      - ${project_root}/src/utils/moment_utils.py
+      - ${project_root}/data/interim/gbif/filtered_occurrences/${trait_type}/gbif_filtered.parquet
+      - ${project_root}/data/interim/traits/${trait_type}_pow-xf/${trait_type}_pow-xf.parquet
+    params:
+      - traits.names
+      - gbif.maps.out_dir
+      - gbif.maps.min_count
+      - gbif.maps.max_count
+      - moments
+    outs:
+      - ${project_root}/${gbif.maps.out_dir}/${product_code}:
+          persist: false
+
+  build_splot_maps:
+    cmd: >-
+      python ${project_root}/stages/build_moment_maps.py
+      --params params.yaml
+      --source splot
+      --partitions milan genoa
+      --cpus 16
+      --mem 64GB
+      --time 01:00:00
+    deps:
+      - ${project_root}/src/data/build_moment_map.py
+      - ${project_root}/src/utils/moment_utils.py
+      - ${project_root}/data/interim/splot/filtered_surveys/${trait_type}/splot_filtered.parquet
+      - ${project_root}/data/interim/traits/${trait_type}_pow-xf/${trait_type}_pow-xf.parquet
+    params:
+      - traits.names
+      - splot.maps.out_dir
+      - moments
+    outs:
+      - ${project_root}/${splot.maps.out_dir}/${product_code}:
+          persist: false
