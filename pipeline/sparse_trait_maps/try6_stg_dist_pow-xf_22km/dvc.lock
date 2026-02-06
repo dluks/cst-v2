@@ -1,0 +1,139 @@
+schema: '2.0'
+stages:
+  build_gbif_maps:
+    cmd: python ../../../stages/build_moment_maps.py --params params.yaml --source
+      gbif --partitions milan genoa --cpus 16 --mem 64GB --time 01:00:00
+    deps:
+    - path: ../../../data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
+      hash: md5
+      md5: 3f07282ef229875bacff48149b2e28a9.dir
+      size: 2277005028
+      nfiles: 523
+    - path: ../../../data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+      hash: md5
+      md5: 54ac228d3bd13c72802925f6e8401f2f
+      size: 13514924
+    - path: ../../../src/data/build_moment_map.py
+      hash: md5
+      md5: 2fd051b5b7d648c5e4dbedcdbbc958e9
+      size: 13816
+    - path: ../../../src/utils/moment_utils.py
+      hash: md5
+      md5: 0410f5466d710f80c1dfe3bee25b1149
+      size: 10230
+    params:
+      params.yaml:
+        gbif.maps.max_count: 500
+        gbif.maps.min_count: 10
+        gbif.maps.out_dir: data/interim/gbif/maps
+        moments:
+          n_min: 30
+          min_unique_species: 3
+          splot_min_abundance: 0.75
+          splot_abundance_multiplier: 100
+          kurtosis_excess: false
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X21
+        - X26
+        - X27
+        - X46
+        - X47
+        - X50
+        - X55
+        - X78
+        - X95
+        - X138
+        - X144
+        - X145
+        - X146
+        - X163
+        - X169
+        - X237
+        - X281
+        - X282
+        - X289
+        - X297
+        - X614
+        - X1080
+        - X3106
+        - X3114
+        - X3117
+        - X3120
+    outs:
+    - path: ../../../data/interim/gbif/maps/try6_stg_dist_pow-xf_22km
+      hash: md5
+      md5: f57a025f8b5f077be7c968fccfc90e3d.dir
+      size: 133264999
+      nfiles: 31
+  build_splot_maps:
+    cmd: python ../../../stages/build_moment_maps.py --params params.yaml --source
+      splot --partitions milan genoa --cpus 16 --mem 64GB --time 01:00:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      hash: md5
+      md5: 365278ea23f682c67d2244c470471b53
+      size: 144452091
+    - path: ../../../data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+      hash: md5
+      md5: 54ac228d3bd13c72802925f6e8401f2f
+      size: 13514924
+    - path: ../../../src/data/build_moment_map.py
+      hash: md5
+      md5: 2fd051b5b7d648c5e4dbedcdbbc958e9
+      size: 13816
+    - path: ../../../src/utils/moment_utils.py
+      hash: md5
+      md5: 0410f5466d710f80c1dfe3bee25b1149
+      size: 10230
+    params:
+      params.yaml:
+        moments:
+          n_min: 30
+          min_unique_species: 3
+          splot_min_abundance: 0.75
+          splot_abundance_multiplier: 100
+          kurtosis_excess: false
+        splot.maps.out_dir: data/interim/splot/maps
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X21
+        - X26
+        - X27
+        - X46
+        - X47
+        - X50
+        - X55
+        - X78
+        - X95
+        - X138
+        - X144
+        - X145
+        - X146
+        - X163
+        - X169
+        - X237
+        - X281
+        - X282
+        - X289
+        - X297
+        - X614
+        - X1080
+        - X3106
+        - X3114
+        - X3117
+        - X3120
+    outs:
+    - path: ../../../data/interim/splot/maps/try6_stg_dist_pow-xf_22km
+      hash: md5
+      md5: a36d9b249b4f6b3153d1228f991ab2f7.dir
+      size: 52728651
+      nfiles: 31
