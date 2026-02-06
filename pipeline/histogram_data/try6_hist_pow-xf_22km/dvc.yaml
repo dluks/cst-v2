@@ -4,12 +4,12 @@ params:
 stages:
   build_gbif_histograms:
     cmd: >-
-      python ${project_root}/stages/build_histogram_targets.py
+      uv run python ${project_root}/stages/build_histogram_targets.py
       --params params.yaml
       --source gbif
       --partitions milan genoa
       --cpus 16
-      --mem 64GB
+      --mem 256GB
       --time 02:00:00
     deps:
       - ${project_root}/src/data/build_histogram_targets.py
@@ -25,7 +25,7 @@ stages:
 
   build_splot_histograms:
     cmd: >-
-      python ${project_root}/stages/build_histogram_targets.py
+      uv run python ${project_root}/stages/build_histogram_targets.py
       --params params.yaml
       --source splot
       --partitions milan genoa

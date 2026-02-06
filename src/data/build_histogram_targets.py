@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 
 import dask.dataframe as dd
@@ -62,11 +63,17 @@ def main(args: argparse.Namespace | None = None) -> None:
     args = cli() if args is None else args
     cfg = get_config(params_path=args.params)
 
+    # Get project root for resolving paths
+    proj_root = os.environ.get("PROJECT_ROOT")
+    if proj_root is None:
+        raise ValueError("PROJECT_ROOT environment variable is not set")
+    proj_root = Path(proj_root)
+
     source = args.source
     log.info("Building histogram targets from %s data", source.upper())
 
     # Output directory
-    out_dir = Path(cfg.output.dir) / source
+    out_dir = proj_root / cfg.output.dir / source
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if outputs already exist
@@ -76,8 +83,9 @@ def main(args: argparse.Namespace | None = None) -> None:
         return
 
     # Load trait data (species-level, transformed)
-    log.info("Loading trait data from %s", cfg.traits.interim_out)
-    traits_df = pd.read_parquet(cfg.traits.interim_out)
+    traits_fp = proj_root / cfg.traits.interim_out
+    log.info("Loading trait data from %s", traits_fp)
+    traits_df = pd.read_parquet(traits_fp)
     trait_names = cfg.traits.names
     log.info("Loaded %d species with %d traits", len(traits_df), len(trait_names))
 
@@ -88,11 +96,11 @@ def main(args: argparse.Namespace | None = None) -> None:
     # Load and process data based on source
     if source == "gbif":
         histograms_df, masks_df, coords_df, stats = _process_gbif(
-            cfg, traits_df, trait_names, bin_edges
+            cfg, traits_df, trait_names, bin_edges, proj_root
         )
     else:
         histograms_df, masks_df, coords_df, stats = _process_splot(
-            cfg, traits_df, trait_names, bin_edges
+            cfg, traits_df, trait_names, bin_edges, proj_root
         )
 
     # Save outputs
@@ -155,6 +163,7 @@ def _process_gbif(
     traits_df: pd.DataFrame,
     trait_names: list[str],
     bin_edges: dict[str, np.ndarray],
+    proj_root: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     """Process GBIF observations to construct histograms.
 
@@ -168,6 +177,8 @@ def _process_gbif(
         List of trait column names.
     bin_edges : dict[str, np.ndarray]
         Pre-computed bin edges for each trait.
+    proj_root : Path
+        Project root directory for resolving paths.
 
     Returns
     -------
@@ -175,7 +186,7 @@ def _process_gbif(
         (histograms_df, masks_df, coords_df, stats)
     """
     # Load GBIF data
-    gbif_path = Path(
+    gbif_path = proj_root / Path(
         cfg.gbif.filtered.out_dir, cfg.trait_type, cfg.gbif.filtered.fp
     )
     log.info("Loading GBIF data from %s", gbif_path)
@@ -235,6 +246,7 @@ def _process_splot(
     traits_df: pd.DataFrame,
     trait_names: list[str],
     bin_edges: dict[str, np.ndarray],
+    proj_root: Path,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     """Process sPlot surveys to construct histograms.
 
@@ -248,6 +260,8 @@ def _process_splot(
         List of trait column names.
     bin_edges : dict[str, np.ndarray]
         Pre-computed bin edges for each trait.
+    proj_root : Path
+        Project root directory for resolving paths.
 
     Returns
     -------
@@ -255,7 +269,7 @@ def _process_splot(
         (histograms_df, masks_df, coords_df, stats)
     """
     # Load sPlot data
-    splot_path = Path(
+    splot_path = proj_root / Path(
         cfg.splot.filtered.out_dir, cfg.trait_type, cfg.splot.filtered.fp
     )
     log.info("Loading sPlot data from %s", splot_path)
