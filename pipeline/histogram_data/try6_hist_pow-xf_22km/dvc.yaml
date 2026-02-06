@@ -1,0 +1,45 @@
+params:
+  - params.yaml
+
+stages:
+  build_gbif_histograms:
+    cmd: >-
+      python ${project_root}/stages/build_histogram_targets.py
+      --params params.yaml
+      --source gbif
+      --partitions milan genoa
+      --cpus 16
+      --mem 64GB
+      --time 02:00:00
+    deps:
+      - ${project_root}/src/data/build_histogram_targets.py
+      - ${project_root}/data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
+      - ${project_root}/data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+    params:
+      - histogram
+      - gbif
+      - traits.names
+    outs:
+      - ${project_root}/${output.dir}/gbif:
+          persist: true
+
+  build_splot_histograms:
+    cmd: >-
+      python ${project_root}/stages/build_histogram_targets.py
+      --params params.yaml
+      --source splot
+      --partitions milan genoa
+      --cpus 16
+      --mem 64GB
+      --time 02:00:00
+    deps:
+      - ${project_root}/src/data/build_histogram_targets.py
+      - ${project_root}/data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      - ${project_root}/data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+    params:
+      - histogram
+      - splot
+      - traits.names
+    outs:
+      - ${project_root}/${output.dir}/splot:
+          persist: true
