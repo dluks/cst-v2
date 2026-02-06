@@ -34,8 +34,8 @@ stages:
       md5: 75324f264d2f7d2ed62451f9235ae60b
       size: 4453
     outs:
-    - path: ../../../data/interim/traits/try6_no-xf
+    - path: ../../../data/interim/traits/try6_pow-xf
       hash: md5
-      md5: ca0ce51beeef2ce009eea2e50d783898.dir
-      size: 12112995
-      nfiles: 3
+      md5: 440352d92925c74ece1c53b5268358fa.dir
+      size: 15220788
+      nfiles: 62
