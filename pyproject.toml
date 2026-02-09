@@ -61,6 +61,7 @@ dev = [
     "pylint-pytest>=1.1.7",
     "pytest-mock>=3.12.0",
     "ruff>=0.14.2",
+    "jupyterlab>=4.5.3",
 ]
 
 [build-system]
