@@ -174,8 +174,8 @@ class TestReproject:
         assert result["y"].iloc[0] > 4_000_000
         assert result["y"].iloc[0] < 6_000_000
 
-    def test_preserves_original_columns(self, real_gbif_observations: pd.DataFrame):
-        """Original columns should be preserved after reprojection."""
+    def test_preserves_non_coord_columns(self, real_gbif_observations: pd.DataFrame):
+        """Non-coordinate columns should be preserved; lat/lon dropped."""
         result = _reproject(
             real_gbif_observations,
             lat_col="decimallatitude",
@@ -185,7 +185,8 @@ class TestReproject:
 
         assert "specieskey" in result.columns
         assert "weight" in result.columns
-        assert "decimallatitude" in result.columns
+        assert "decimallatitude" not in result.columns
+        assert "decimallongitude" not in result.columns
 
 
 # =============================================================================

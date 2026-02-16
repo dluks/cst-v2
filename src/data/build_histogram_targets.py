@@ -200,28 +200,46 @@ def _process_gbif(
     gbif = gbif[gbif_cols].compute()
     log.info("Loaded %d GBIF observations", len(gbif))
 
-    # Join with traits
-    log.info("Joining GBIF with trait data...")
-    merged = gbif.merge(
-        traits_df[["GBIFKeyGBIF", *trait_names]],
-        left_on=GBIF_SPECIES_COL,
-        right_on="GBIFKeyGBIF",
-        how="inner",
-    ).drop(columns=["GBIFKeyGBIF"])
-    log.info("Merged data has %d observations", len(merged))
-
-    # Reproject coordinates
+    # Reproject and assign cells BEFORE trait merge to avoid 292M × 35col blowup
     log.info("Reprojecting coordinates to %s...", cfg.crs)
-    merged = _reproject(
-        merged,
+    gbif = _reproject(
+        gbif,
         lat_col=GBIF_COORDS[0],
         lon_col=GBIF_COORDS[1],
         target_crs=cfg.crs,
     )
 
-    # Assign grid cell IDs
     log.info("Assigning grid cell IDs at %dm resolution...", cfg.target_resolution)
-    merged = _assign_cell_ids(merged, cfg.target_resolution)
+    gbif = _assign_cell_ids(gbif, cfg.target_resolution)
+
+    # Pre-aggregate weights by (cell_id, species) — each species has a single
+    # trait value, so summing weights is mathematically equivalent to the
+    # per-observation histogram and reduces ~270M rows to a few million.
+    log.info("Pre-aggregating weights by (cell_id, species)...")
+    agg = (
+        gbif.groupby(["cell_id", "cell_x", "cell_y", GBIF_SPECIES_COL])["weight"]
+        .sum()
+        .reset_index()
+    )
+    n_before, n_after = len(gbif), len(agg)
+    log.info(
+        "Pre-aggregated %d observations → %d (cell, species) pairs (%.1fx reduction)",
+        n_before,
+        n_after,
+        n_before / n_after if n_after > 0 else 0,
+    )
+    del gbif
+
+    # NOW merge with traits at the (cell, species) level
+    log.info("Joining with trait data...")
+    merged = agg.merge(
+        traits_df[["GBIFKeyGBIF", *trait_names]],
+        left_on=GBIF_SPECIES_COL,
+        right_on="GBIFKeyGBIF",
+        how="inner",
+    ).drop(columns=["GBIFKeyGBIF"])
+    del agg
+    log.info("Merged data has %d (cell, species) pairs", len(merged))
 
     # Build histograms per cell
     log.info("Building histograms per grid cell...")
@@ -355,9 +373,10 @@ def _reproject(
         "EPSG:4326", target_crs, always_xy=True
     )
     x, y = transformer.transform(df[lon_col].values, df[lat_col].values)
-    df = df.copy()
     df["x"] = x
     df["y"] = y
+    # Drop original lat/lon to free memory
+    df = df.drop(columns=[lat_col, lon_col])
     return df
 
 
@@ -376,7 +395,6 @@ def _assign_cell_ids(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
     pd.DataFrame
         DataFrame with added 'cell_x', 'cell_y', and 'cell_id' columns.
     """
-    df = df.copy()
     # Compute cell indices (floor division to get cell origin)
     df["cell_x"] = (df["x"] // resolution) * resolution
     df["cell_y"] = (df["y"] // resolution) * resolution
