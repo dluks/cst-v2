@@ -1,0 +1,69 @@
+schema: '2.0'
+stages:
+  build_gbif_histograms:
+    cmd: uv run python ../../../stages/build_histogram_targets.py --params params.yaml
+      --source gbif --partitions milan genoa --cpus 16 --mem 256GB --time 02:00:00
+    deps:
+    - path: ../../../data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
+      hash: md5
+      md5: 3f07282ef229875bacff48149b2e28a9.dir
+      size: 2277005028
+      nfiles: 523
+    - path: ../../../data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+      hash: md5
+      md5: 54ac228d3bd13c72802925f6e8401f2f
+      size: 13514924
+    - path: ../../../src/data/build_histogram_targets.py
+      hash: md5
+      md5: 62893487450055e389288fce4d043aab
+      size: 21373
+    params:
+      params.yaml:
+        gbif:
+          min_observations: 30
+          min_unique_species: 3
+          min_bin_coverage: 0.25
+          filtered:
+            out_dir: data/interim/gbif/filtered_occurrences
+            fp: gbif_filtered.parquet
+        histogram:
+          n_bins: 20
+          label_smoothing_epsilon: 0.01
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X21
+        - X26
+        - X27
+        - X46
+        - X47
+        - X50
+        - X55
+        - X78
+        - X95
+        - X138
+        - X144
+        - X145
+        - X146
+        - X163
+        - X169
+        - X237
+        - X281
+        - X282
+        - X289
+        - X297
+        - X614
+        - X1080
+        - X3106
+        - X3114
+        - X3117
+        - X3120
+    outs:
+    - path: ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/gbif
+      hash: md5
+      md5: 2d73150ba828eaaaad2d3516989932e6.dir
+      size: 270321187
+      nfiles: 4
