@@ -22,7 +22,7 @@ stages:
       - traits.names
     outs:
       - ${project_root}/${output.dir}/gbif:
-          persist: true
+          persist: false
 
   build_splot_histograms:
     cmd: >-
@@ -43,4 +43,4 @@ stages:
       - traits.names
     outs:
       - ${project_root}/${output.dir}/splot:
-          persist: true
+          persist: false

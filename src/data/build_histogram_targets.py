@@ -130,6 +130,11 @@ def main(args: argparse.Namespace | None = None) -> None:
         source=source,
     )
 
+    # Generate sanity-check report
+    from src.data.histogram_report import generate_histogram_report
+
+    generate_histogram_report(zarr_fp, out_dir, params_path=Path(args.params))
+
     log.info(
         "=== Done: %d valid cells, histograms shape %s ===",
         stats["n_cells_valid"],

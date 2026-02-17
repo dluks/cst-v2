@@ -65,6 +65,6 @@ stages:
     outs:
     - path: ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/gbif
       hash: md5
-      md5: 74282016c772d23e2065f072369b8ab5.dir
-      size: 380906783
-      nfiles: 150
+      md5: 5d93e8dd13b2526d0120a093a28cbb8f.dir
+      size: 110585596
+      nfiles: 146
