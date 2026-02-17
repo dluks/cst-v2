@@ -1,25 +1,26 @@
 """Build training data by merging histogram targets with EO features.
 
 This module combines:
-1. GBIF histogram targets (cell-level trait distributions)
-2. sPlot histogram targets (cell-level trait distributions)
-3. EO features (Earth observation predictors)
+1. GBIF histogram targets (Zarr: cell-level trait distributions)
+2. sPlot histogram targets (Zarr: cell-level trait distributions)
+3. EO features (parquet: Earth observation predictors)
 
-The output is a merged dataset ready for histogram-based trait distribution modeling.
+The output is a single Zarr store ready for histogram-based trait
+distribution modeling with PyTorch.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import zarr
 
-from src.utils.config import get_config
+from src.conf.conf import get_config
 
 log = logging.getLogger(__name__)
 
@@ -54,57 +55,53 @@ def cli(args: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(args)
 
 
+# ---------------------------------------------------------------------------
+# Loading helpers
+# ---------------------------------------------------------------------------
+
 def _load_histogram_source(
     source_dir: Path,
     source_name: str,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict] | None:
-    """Load histogram data from a source directory.
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None:
+    """Load histogram data from a Zarr store.
 
     Parameters
     ----------
     source_dir : Path
-        Directory containing histogram outputs.
+        Directory containing ``histograms.zarr``.
     source_name : str
         Name of the source ('gbif' or 'splot').
 
     Returns
     -------
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict] | None
-        Tuple of (histograms_df, masks_df, coords_df, metadata) or None if not found.
+    tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None
+        (histograms, masks, coords, attrs) or None if not found.
     """
-    if not source_dir.exists():
-        log.warning("Source directory not found: %s", source_dir)
+    zarr_path = source_dir / "histograms.zarr"
+    if not zarr_path.exists():
+        log.warning("Zarr store not found: %s", zarr_path)
         return None
 
-    hist_fp = source_dir / "histograms.parquet"
-    masks_fp = source_dir / "masks.parquet"
-    coords_fp = source_dir / "coordinates.parquet"
-    meta_fp = source_dir / "metadata.json"
+    log.info("Loading %s histograms from %s", source_name, zarr_path)
+    root = zarr.open_group(zarr_path, mode="r")
 
-    if not all(fp.exists() for fp in [hist_fp, masks_fp, coords_fp, meta_fp]):
-        log.warning("Missing files in %s source directory: %s", source_name, source_dir)
-        return None
-
-    log.info("Loading %s histograms from %s", source_name, source_dir)
-
-    histograms_df = pd.read_parquet(hist_fp)
-    masks_df = pd.read_parquet(masks_fp)
-    coords_df = pd.read_parquet(coords_fp)
-
-    with open(meta_fp) as f:
-        metadata = json.load(f)
+    histograms = np.asarray(root["histograms"])
+    masks = np.asarray(root["masks"])
+    coords = np.asarray(root["coords"])
+    attrs = dict(root.attrs)
 
     log.info(
-        "Loaded %s: %d cells, %d traits",
+        "Loaded %s: %d cells, %d traits, %d bins",
         source_name,
-        len(histograms_df),
-        len(metadata["trait_names"]),
+        histograms.shape[0],
+        histograms.shape[1],
+        histograms.shape[2],
     )
 
-    return histograms_df, masks_df, coords_df, metadata
+    return histograms, masks, coords, attrs
 
 
-def _load_eo_features(x_fp: Path) -> pd.DataFrame:
+def _load_eo_features(x_fp: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
     """Load EO features from parquet file.
 
     Parameters
@@ -114,8 +111,8 @@ def _load_eo_features(x_fp: Path) -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame
-        EO features with x, y columns.
+    tuple[np.ndarray, np.ndarray, list[str]]
+        (feature_values (N, F), coords (N, 2), feature_names).
     """
     log.info("Loading EO features from %s", x_fp)
     x_df = pd.read_parquet(x_fp)
@@ -124,30 +121,36 @@ def _load_eo_features(x_fp: Path) -> pd.DataFrame:
     if isinstance(x_df.index, pd.MultiIndex):
         x_df = x_df.reset_index()
 
-    log.info("Loaded EO features: %d cells, %d features", len(x_df), len(x_df.columns))
-    return x_df
+    feature_names = [c for c in x_df.columns if c not in ("x", "y")]
+    x_coords = x_df[["x", "y"]].values.astype(np.float64)
+    x_values = x_df[feature_names].values.astype(np.float32)
 
+    log.info("Loaded EO features: %d cells, %d features", len(x_df), len(feature_names))
+    return x_values, x_coords, feature_names
+
+
+# ---------------------------------------------------------------------------
+# Combining / merging
+# ---------------------------------------------------------------------------
 
 def _combine_sources(
-    gbif_data: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict] | None,
-    splot_data: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict] | None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    gbif_data: tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None,
+    splot_data: tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
     """Combine GBIF and sPlot histogram data.
-
-    For cells present in both sources, uses average of histograms weighted by
-    the number of underlying observations/abundance.
 
     Parameters
     ----------
     gbif_data : tuple | None
-        GBIF histogram data tuple.
+        GBIF (histograms, masks, coords, attrs).
     splot_data : tuple | None
-        sPlot histogram data tuple.
+        sPlot (histograms, masks, coords, attrs).
 
     Returns
     -------
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]
-        Combined (histograms_df, masks_df, coords_df, metadata).
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]
+        (histograms, masks, coords, source_ids, attrs).
+        source_ids: 0 = gbif, 1 = splot.
 
     Raises
     ------
@@ -157,121 +160,105 @@ def _combine_sources(
     if gbif_data is None and splot_data is None:
         raise ValueError("No histogram data available from either GBIF or sPlot")
 
-    # Single source case
     if gbif_data is None:
-        log.info("Using sPlot data only")
-        hist_df, mask_df, coord_df, meta = splot_data  # type: ignore[misc]
-        hist_df["source"] = "splot"
-        mask_df["source"] = "splot"
-        coord_df["source"] = "splot"
-        return hist_df, mask_df, coord_df, meta
+        hist, mask, coord, attrs = splot_data  # type: ignore[misc]
+        source_ids = np.ones(hist.shape[0], dtype=np.int8)
+        return hist, mask, coord, source_ids, attrs
 
     if splot_data is None:
-        log.info("Using GBIF data only")
-        hist_df, mask_df, coord_df, meta = gbif_data
-        hist_df["source"] = "gbif"
-        mask_df["source"] = "gbif"
-        coord_df["source"] = "gbif"
-        return hist_df, mask_df, coord_df, meta
+        hist, mask, coord, attrs = gbif_data
+        source_ids = np.zeros(hist.shape[0], dtype=np.int8)
+        return hist, mask, coord, source_ids, attrs
 
-    # Both sources available - combine them
-    gbif_hist, gbif_mask, gbif_coord, gbif_meta = gbif_data
-    splot_hist, splot_mask, splot_coord, splot_meta = splot_data
+    # Both available
+    g_hist, g_mask, g_coord, g_attrs = gbif_data
+    s_hist, s_mask, s_coord, s_attrs = splot_data
 
-    # Verify consistent bin edges
-    for trait in gbif_meta["trait_names"]:
-        if trait in splot_meta["trait_names"]:
-            gbif_edges = np.array(gbif_meta["bin_edges"][trait])
-            splot_edges = np.array(splot_meta["bin_edges"][trait])
-            if not np.allclose(gbif_edges, splot_edges, rtol=1e-5):
-                raise ValueError(f"Inconsistent bin edges for trait {trait}")
+    hist = np.concatenate([g_hist, s_hist], axis=0)
+    mask = np.concatenate([g_mask, s_mask], axis=0)
+    coord = np.concatenate([g_coord, s_coord], axis=0)
+    source_ids = np.concatenate([
+        np.zeros(g_hist.shape[0], dtype=np.int8),
+        np.ones(s_hist.shape[0], dtype=np.int8),
+    ])
 
-    log.info("Combining GBIF and sPlot data...")
-
-    # Add source column
-    gbif_hist["source"] = "gbif"
-    gbif_mask["source"] = "gbif"
-    gbif_coord["source"] = "gbif"
-
-    splot_hist["source"] = "splot"
-    splot_mask["source"] = "splot"
-    splot_coord["source"] = "splot"
-
-    # Concatenate (keep separate rows for cells in both sources)
-    combined_hist = pd.concat([gbif_hist, splot_hist], ignore_index=True)
-    combined_mask = pd.concat([gbif_mask, splot_mask], ignore_index=True)
-    combined_coord = pd.concat([gbif_coord, splot_coord], ignore_index=True)
-
-    # Combine metadata
-    combined_meta = gbif_meta.copy()
-    combined_meta["sources"] = ["gbif", "splot"]
-    combined_meta["gbif_cells"] = len(gbif_hist)
-    combined_meta["splot_cells"] = len(splot_hist)
+    attrs = g_attrs.copy()
+    attrs["sources"] = ["gbif", "splot"]
+    attrs["gbif_cells"] = int(g_hist.shape[0])
+    attrs["splot_cells"] = int(s_hist.shape[0])
 
     log.info(
-        "Combined data: %d GBIF cells + %d sPlot cells = %d total rows",
-        len(gbif_hist),
-        len(splot_hist),
-        len(combined_hist),
+        "Combined: %d GBIF + %d sPlot = %d total cells",
+        g_hist.shape[0],
+        s_hist.shape[0],
+        hist.shape[0],
     )
 
-    return combined_hist, combined_mask, combined_coord, combined_meta
+    return hist, mask, coord, source_ids, attrs
 
 
 def _merge_with_features(
-    histograms_df: pd.DataFrame,
-    masks_df: pd.DataFrame,
-    coords_df: pd.DataFrame,
-    x_df: pd.DataFrame,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Merge histogram data with EO features on coordinates.
+    hist: np.ndarray,
+    mask: np.ndarray,
+    hist_coords: np.ndarray,
+    source_ids: np.ndarray,
+    x_values: np.ndarray,
+    x_coords: np.ndarray,
+    resolution: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Merge histogram data with EO features on grid cell coordinates.
+
+    Snaps EO feature pixel-center coordinates to the same grid used by
+    the histogram cells, then matches on the resulting (cell_x, cell_y).
+    Only cells present in both datasets are kept.
 
     Parameters
     ----------
-    histograms_df : pd.DataFrame
-        Histogram data with cell_id index.
-    masks_df : pd.DataFrame
-        Valid trait masks with cell_id index.
-    coords_df : pd.DataFrame
-        Cell coordinates with cell_id index and x, y columns.
-    x_df : pd.DataFrame
-        EO features with x, y columns.
+    hist : np.ndarray
+        Histogram data (N_hist, n_traits, n_bins).
+    mask : np.ndarray
+        Validity masks (N_hist, n_traits).
+    hist_coords : np.ndarray
+        Histogram cell coordinates (N_hist, 2), already grid-snapped.
+    source_ids : np.ndarray
+        Source indicator per cell (N_hist,).
+    x_values : np.ndarray
+        EO feature values (N_eo, n_features).
+    x_coords : np.ndarray
+        EO feature pixel-center coordinates (N_eo, 2).
+    resolution : int
+        Grid cell resolution in meters (e.g. 22000).
 
     Returns
     -------
-    tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
-        Merged (histograms, masks, features) DataFrames with aligned indices.
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        Aligned (histograms, masks, features, coords, source_ids).
     """
-    log.info("Merging histogram data with EO features on coordinates...")
+    log.info("Merging histogram targets with EO features...")
 
-    # Get x, y from coordinates
-    if "cell_id" in coords_df.columns:
-        coords_with_xy = coords_df.set_index("cell_id")
-    else:
-        coords_with_xy = coords_df.copy()
+    # Snap EO coordinates to the same grid as histogram cells
+    eo_cell_x = (x_coords[:, 0] // resolution) * resolution
+    eo_cell_y = (x_coords[:, 1] // resolution) * resolution
 
-    # Ensure histograms and masks have cell_id index
-    if "cell_id" in histograms_df.columns:
-        histograms_df = histograms_df.set_index("cell_id")
-    if "cell_id" in masks_df.columns:
-        masks_df = masks_df.set_index("cell_id")
+    # Build lookup from snapped (cell_x, cell_y) -> EO row index
+    eo_keys: dict[tuple[float, float], int] = {}
+    for i in range(x_coords.shape[0]):
+        eo_keys[(eo_cell_x[i], eo_cell_y[i])] = i
 
-    # Add x, y to histograms for merge
-    hist_with_coords = histograms_df.join(coords_with_xy[["x", "y"]])
+    # Find matching indices
+    hist_idx = []
+    eo_idx = []
+    for i in range(hist_coords.shape[0]):
+        key = (hist_coords[i, 0], hist_coords[i, 1])
+        if key in eo_keys:
+            hist_idx.append(i)
+            eo_idx.append(eo_keys[key])
 
-    # Create merge key in x_df
-    x_df = x_df.copy()
+    hist_idx = np.array(hist_idx)
+    eo_idx = np.array(eo_idx)
 
-    # Merge on (x, y)
-    # Use inner join to only keep cells with both histograms and EO features
-    merged = hist_with_coords.reset_index().merge(
-        x_df,
-        on=["x", "y"],
-        how="inner",
-    )
-
-    n_before = len(histograms_df)
-    n_after = len(merged)
+    n_before = hist.shape[0]
+    n_after = len(hist_idx)
     n_dropped = n_before - n_after
 
     if n_dropped > 0:
@@ -282,140 +269,136 @@ def _merge_with_features(
         )
 
     log.info(
-        "Merged data: %d cells with both histogram targets and EO features",
+        "Merged: %d cells with both histogram targets and EO features",
         n_after,
     )
 
-    # Split back into components
-    # Extract histogram columns (those ending in _binN pattern)
-    hist_cols = [c for c in merged.columns if "_bin" in c]
-    coord_cols = ["x", "y"]
-    source_col = ["source"] if "source" in merged.columns else []
-    feature_cols = [
-        c
-        for c in merged.columns
-        if c not in hist_cols + coord_cols + source_col + ["cell_id"]
-    ]
-
-    # Rebuild dataframes with consistent index
-    if "cell_id" in merged.columns:
-        merged = merged.set_index("cell_id")
-
-    # Get mask columns aligned
-    mask_cols = [c for c in masks_df.columns if c not in ["source"]]
-    masks_aligned = masks_df.loc[merged.index, mask_cols].copy()
-    if "source" in merged.columns:
-        masks_aligned["source"] = merged["source"]
-
-    merged_hist = merged[hist_cols + source_col].copy()
-    merged_features = merged[coord_cols + feature_cols].copy()
-
-    return merged_hist, masks_aligned, merged_features
-
-
-def _save_outputs(
-    out_dir: Path,
-    histograms_df: pd.DataFrame,
-    masks_df: pd.DataFrame,
-    features_df: pd.DataFrame,
-    metadata: dict,
-) -> None:
-    """Save merged training data to disk.
-
-    Parameters
-    ----------
-    out_dir : Path
-        Output directory.
-    histograms_df : pd.DataFrame
-        Merged histogram data.
-    masks_df : pd.DataFrame
-        Merged validity masks.
-    features_df : pd.DataFrame
-        Merged EO features with coordinates.
-    metadata : dict
-        Combined metadata.
-    """
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Save histograms (Y targets)
-    hist_fp = out_dir / "Y_histograms.parquet"
-    histograms_df.to_parquet(hist_fp, compression="zstd")
-    log.info("Saved histogram targets to %s", hist_fp)
-
-    # Save masks
-    masks_fp = out_dir / "Y_masks.parquet"
-    masks_df.to_parquet(masks_fp, compression="zstd")
-    log.info("Saved validity masks to %s", masks_fp)
-
-    # Save features (X)
-    features_fp = out_dir / "X_features.parquet"
-    features_df.to_parquet(features_fp, compression="zstd")
-    log.info("Saved EO features to %s", features_fp)
-
-    # Save metadata
-    metadata["n_cells"] = len(histograms_df)
-    metadata["n_features"] = len(
-        [c for c in features_df.columns if c not in ["x", "y"]]
+    return (
+        hist[hist_idx],
+        mask[hist_idx],
+        x_values[eo_idx],
+        hist_coords[hist_idx],
+        source_ids[hist_idx],
     )
 
-    meta_fp = out_dir / "metadata.json"
-    with open(meta_fp, "w") as f:
-        json.dump(metadata, f, indent=2)
-    log.info("Saved metadata to %s", meta_fp)
 
+# ---------------------------------------------------------------------------
+# Save
+# ---------------------------------------------------------------------------
 
-def main(args: argparse.Namespace | None = None) -> None:
-    """Main function to merge histogram targets with EO features.
+def _save_outputs(
+    out_path: Path,
+    hist: np.ndarray,
+    mask: np.ndarray,
+    features: np.ndarray,
+    coords: np.ndarray,
+    source_ids: np.ndarray,
+    feature_names: list[str],
+    attrs: dict,
+) -> None:
+    """Save merged training data as a Zarr store.
 
     Parameters
     ----------
-    args : argparse.Namespace | None
-        Parsed command line arguments.
+    out_path : Path
+        Path for the output Zarr store.
+    hist : np.ndarray
+        Histogram targets (N, n_traits, n_bins).
+    mask : np.ndarray
+        Validity masks (N, n_traits).
+    features : np.ndarray
+        EO features (N, n_features).
+    coords : np.ndarray
+        Cell coordinates (N, 2).
+    source_ids : np.ndarray
+        Source indicator per cell (N,).
+    feature_names : list[str]
+        EO feature column names.
+    attrs : dict
+        Metadata attributes.
     """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    root = zarr.open_group(out_path, mode="w")
+
+    root.create_array("Y_hist", data=hist)
+    root.create_array("Y_mask", data=mask)
+    root.create_array("X", data=features)
+    root.create_array("coords", data=coords)
+    root.create_array("source", data=source_ids)
+
+    # Store metadata
+    root.attrs["n_cells"] = int(hist.shape[0])
+    root.attrs["n_traits"] = int(hist.shape[1])
+    root.attrs["n_bins"] = int(hist.shape[2])
+    root.attrs["n_features"] = int(features.shape[1])
+    root.attrs["feature_names"] = feature_names
+    root.attrs["trait_names"] = attrs.get("trait_names", [])
+    root.attrs["crs"] = attrs.get("crs", "")
+    root.attrs["target_resolution"] = attrs.get("target_resolution", 0)
+    root.attrs["label_smoothing_epsilon"] = attrs.get(
+        "label_smoothing_epsilon", 0.0
+    )
+    root.attrs["source_encoding"] = {"gbif": 0, "splot": 1}
+
+    log.info("Saved training Zarr store to %s", out_path)
+    log.info(
+        "  Y_hist: %s %s | Y_mask: %s %s | X: %s %s | coords: %s %s",
+        hist.shape, hist.dtype,
+        mask.shape, mask.dtype,
+        features.shape, features.dtype,
+        coords.shape, coords.dtype,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main(args: argparse.Namespace | None = None) -> None:
+    """Main function to merge histogram targets with EO features."""
     args = cli() if args is None else args
     cfg = get_config(params_path=args.params)
 
-    # Set up paths
     proj_root = os.environ.get("PROJECT_ROOT")
     if proj_root is None:
         raise ValueError("PROJECT_ROOT environment variable is not set")
     proj_root = Path(proj_root)
 
-    # Output directory
-    out_dir = proj_root / cfg.output.xy_dir
-    out_fp = out_dir / "X_features.parquet"
+    # Output path
+    out_path = proj_root / cfg.output.xy_dir / "train.zarr"
 
-    if out_fp.exists() and not args.overwrite:
-        log.info("Output already exists: %s. Use --overwrite to regenerate.", out_fp)
+    if out_path.exists() and not args.overwrite:
+        log.info("Output already exists: %s. Use --overwrite to regenerate.", out_path)
         return
 
     # Load histogram sources
     hist_dir = proj_root / cfg.output.dir
 
-    gbif_dir = hist_dir / "gbif"
-    splot_dir = hist_dir / "splot"
-
-    gbif_data = _load_histogram_source(gbif_dir, "gbif")
-    splot_data = _load_histogram_source(splot_dir, "splot")
+    gbif_data = _load_histogram_source(hist_dir / "gbif", "gbif")
+    splot_data = _load_histogram_source(hist_dir / "splot", "splot")
 
     # Combine sources
-    histograms_df, masks_df, coords_df, metadata = _combine_sources(
+    hist, mask, coords, source_ids, attrs = _combine_sources(
         gbif_data, splot_data
     )
 
     # Load EO features
     x_fp = proj_root / cfg.eo_features.x_fp
-    x_df = _load_eo_features(x_fp)
+    x_values, x_coords, feature_names = _load_eo_features(x_fp)
 
-    # Merge histogram targets with EO features
-    merged_hist, merged_masks, merged_features = _merge_with_features(
-        histograms_df, masks_df, coords_df, x_df
+    # Merge
+    hist, mask, features, coords, source_ids = _merge_with_features(
+        hist, mask, coords, source_ids, x_values, x_coords,
+        resolution=cfg.target_resolution,
     )
 
-    # Save outputs
-    _save_outputs(out_dir, merged_hist, merged_masks, merged_features, metadata)
+    # Save
+    _save_outputs(
+        out_path, hist, mask, features, coords, source_ids, feature_names, attrs
+    )
 
-    log.info("✓ Successfully built histogram XY training data")
+    log.info("Done — %d training cells written to %s", hist.shape[0], out_path)
 
 
 if __name__ == "__main__":

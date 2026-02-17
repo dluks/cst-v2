@@ -279,11 +279,12 @@ class TestBuildCellHistograms:
     def test_histogram_sums_to_one(self, gbif_merged_df: pd.DataFrame, real_traits_df: pd.DataFrame):
         """Each histogram should sum to 1 (probability distribution)."""
         n_bins = 5
-        bin_edges = _compute_bin_edges(real_traits_df, ["X4", "X14"], n_bins)
+        trait_names = ["X4", "X14"]
+        bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
-        histograms_df, masks_df, coords_df, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
             df=gbif_merged_df,
-            trait_names=["X4", "X14"],
+            trait_names=trait_names,
             bin_edges=bin_edges,
             n_bins=n_bins,
             min_observations=5,
@@ -294,12 +295,14 @@ class TestBuildCellHistograms:
             species_col="specieskey",
         )
 
-        # Check that histograms for each trait sum to 1
-        for trait in ["X4", "X14"]:
-            hist_cols = [f"{trait}_bin{i}" for i in range(n_bins)]
-            hist_values = histograms_df[hist_cols].values
-            row_sums = hist_values.sum(axis=1)
-            assert np.allclose(row_sums, 1.0), f"{trait} histograms don't sum to 1"
+        # hist_arr shape: (N, n_traits, n_bins)
+        assert hist_arr.ndim == 3
+        assert hist_arr.shape[1] == len(trait_names)
+        assert hist_arr.shape[2] == n_bins
+
+        # Each histogram should sum to 1
+        row_sums = hist_arr.sum(axis=2)  # (N, n_traits)
+        assert np.allclose(row_sums, 1.0), "Histograms don't sum to 1"
 
     def test_label_smoothing_prevents_zeros(self, gbif_merged_df: pd.DataFrame, real_traits_df: pd.DataFrame):
         """Label smoothing should ensure no bin has zero probability."""
@@ -307,7 +310,7 @@ class TestBuildCellHistograms:
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
         epsilon = 0.01
 
-        histograms_df, _, _, _ = _build_cell_histograms(
+        hist_arr, _, _, _ = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -321,10 +324,8 @@ class TestBuildCellHistograms:
         )
 
         # All bins should have probability > 0 due to smoothing
-        hist_cols = [f"X4_bin{i}" for i in range(n_bins)]
-        for col in hist_cols:
-            if col in histograms_df.columns:
-                assert (histograms_df[col] > 0).all(), f"Bin {col} has zero probability"
+        if hist_arr.shape[0] > 0:
+            assert (hist_arr > 0).all(), "Some bins have zero probability"
 
     def test_filters_cells_with_few_observations(self, real_traits_df: pd.DataFrame):
         """Cells with fewer than min_observations should be filtered."""
@@ -341,7 +342,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        histograms_df, _, _, stats = _build_cell_histograms(
+        hist_arr, _, _, stats = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -354,7 +355,7 @@ class TestBuildCellHistograms:
             species_col="specieskey",
         )
 
-        assert len(histograms_df) == 0
+        assert hist_arr.shape[0] == 0
         assert stats["cells_filtered_observations"] == 1
 
     def test_filters_cells_with_few_species(self, real_traits_df: pd.DataFrame):
@@ -372,7 +373,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        histograms_df, _, _, stats = _build_cell_histograms(
+        hist_arr, _, _, stats = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -385,7 +386,7 @@ class TestBuildCellHistograms:
             species_col="specieskey",
         )
 
-        assert len(histograms_df) == 0
+        assert hist_arr.shape[0] == 0
         assert stats["cells_filtered_species"] == 1
 
     def test_weighted_histogram_gbif(self, real_traits_df: pd.DataFrame):
@@ -403,7 +404,7 @@ class TestBuildCellHistograms:
         n_bins = 4
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        histograms_df, _, _, _ = _build_cell_histograms(
+        hist_arr, _, _, _ = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -418,16 +419,16 @@ class TestBuildCellHistograms:
 
         # The bin containing X4=0.280 should have 2/(2+1+1+1) = 0.4 of the weight
         # (without smoothing). Total weight = 5.0 (2+1+1+1)
-        hist_values = histograms_df[[f"X4_bin{i}" for i in range(n_bins)]].values[0]
+        hist_values = hist_arr[0, 0, :]  # First cell, first trait
         # First bin contains 0.280, should get weight 2/5 = 0.4
         assert hist_values.sum() == pytest.approx(1.0)
 
     def test_splot_abundance_weighting(self, splot_merged_df: pd.DataFrame, real_traits_df: pd.DataFrame):
-        """sPlot histograms should weight by abundance × survey weight."""
+        """sPlot histograms should weight by abundance x survey weight."""
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        histograms_df, masks_df, _, _ = _build_cell_histograms(
+        hist_arr, mask_arr, _, _ = _build_cell_histograms(
             df=splot_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -442,12 +443,13 @@ class TestBuildCellHistograms:
         )
 
         # Should produce valid histogram
-        assert len(histograms_df) > 0
-        assert masks_df["X4"].iloc[0] == True  # noqa: E712
+        assert hist_arr.shape[0] > 0
+        assert mask_arr[0, 0] == True  # noqa: E712
 
     def test_masks_indicate_valid_traits(self, gbif_merged_df: pd.DataFrame, real_traits_df: pd.DataFrame):
-        """Mask DataFrame should correctly indicate which traits are valid per cell."""
+        """Mask array should correctly indicate which traits are valid per cell."""
         n_bins = 5
+        trait_names = ["X4", "X14", "X_missing"]
 
         # Add a trait with all NaN values
         gbif_merged_df["X_missing"] = np.nan
@@ -455,9 +457,9 @@ class TestBuildCellHistograms:
         bin_edges = _compute_bin_edges(real_traits_df, ["X4", "X14"], n_bins)
         # X_missing won't have bin edges computed
 
-        histograms_df, masks_df, _, _ = _build_cell_histograms(
+        hist_arr, mask_arr, _, _ = _build_cell_histograms(
             df=gbif_merged_df,
-            trait_names=["X4", "X14", "X_missing"],
+            trait_names=trait_names,
             bin_edges=bin_edges,
             n_bins=n_bins,
             min_observations=5,
@@ -468,18 +470,18 @@ class TestBuildCellHistograms:
             species_col="specieskey",
         )
 
-        # X4 and X14 should be valid, X_missing should not
-        if len(masks_df) > 0:
-            assert masks_df["X4"].iloc[0] == True  # noqa: E712
-            assert masks_df["X14"].iloc[0] == True  # noqa: E712
-            assert masks_df["X_missing"].iloc[0] == False  # noqa: E712
+        # mask_arr shape: (N, n_traits)
+        if mask_arr.shape[0] > 0:
+            assert mask_arr[0, 0] == True   # X4 valid      # noqa: E712
+            assert mask_arr[0, 1] == True   # X14 valid     # noqa: E712
+            assert mask_arr[0, 2] == False  # X_missing     # noqa: E712
 
     def test_coordinates_output(self, gbif_merged_df: pd.DataFrame, real_traits_df: pd.DataFrame):
-        """Coordinates DataFrame should have correct cell coordinates."""
+        """Coordinates array should have correct cell coordinates."""
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        _, _, coords_df, _ = _build_cell_histograms(
+        _, _, coords_arr, _ = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -492,12 +494,13 @@ class TestBuildCellHistograms:
             species_col="specieskey",
         )
 
-        assert "x" in coords_df.columns
-        assert "y" in coords_df.columns
+        # coords_arr shape: (N, 2) as [x, y]
+        assert coords_arr.ndim == 2
+        assert coords_arr.shape[1] == 2
         # Coordinates should be grid-aligned (multiples of resolution)
-        if len(coords_df) > 0:
-            assert coords_df["x"].iloc[0] % 22000 == 0
-            assert coords_df["y"].iloc[0] % 22000 == 0
+        if coords_arr.shape[0] > 0:
+            assert coords_arr[0, 0] % 22000 == 0  # x
+            assert coords_arr[0, 1] % 22000 == 0  # y
 
 
 # =============================================================================
@@ -534,7 +537,7 @@ class TestIntegration:
         bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
         # 5. Build histograms
-        histograms_df, masks_df, coords_df, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
             df=merged,
             trait_names=trait_names,
             bin_edges=bin_edges,
@@ -547,11 +550,12 @@ class TestIntegration:
             species_col="specieskey",
         )
 
-        # Verify outputs
-        assert len(histograms_df) > 0
-        assert histograms_df.shape[1] == len(trait_names) * n_bins
-        assert masks_df.shape == (len(histograms_df), len(trait_names))
-        assert coords_df.shape == (len(histograms_df), 2)
+        # Verify output shapes
+        n_cells = hist_arr.shape[0]
+        assert n_cells > 0
+        assert hist_arr.shape == (n_cells, len(trait_names), n_bins)
+        assert mask_arr.shape == (n_cells, len(trait_names))
+        assert coords_arr.shape == (n_cells, 2)
         assert stats["n_cells_valid"] > 0
 
     def test_full_splot_workflow(self, real_splot_observations: pd.DataFrame, real_traits_df: pd.DataFrame):
@@ -584,7 +588,7 @@ class TestIntegration:
         bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
         # 6. Build histograms
-        histograms_df, masks_df, coords_df, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
             df=merged,
             trait_names=trait_names,
             bin_edges=bin_edges,
@@ -599,11 +603,9 @@ class TestIntegration:
         )
 
         # Verify outputs
-        assert len(histograms_df) > 0
-        assert histograms_df.shape[1] == len(trait_names) * n_bins
+        assert hist_arr.shape[0] > 0
+        assert hist_arr.shape == (hist_arr.shape[0], len(trait_names), n_bins)
 
-        # Check histogram properties
-        for trait in trait_names:
-            hist_cols = [f"{trait}_bin{i}" for i in range(n_bins)]
-            hist_sum = histograms_df[hist_cols].values.sum(axis=1)
-            assert np.allclose(hist_sum, 1.0)
+        # Check histogram properties — all should sum to 1
+        row_sums = hist_arr.sum(axis=2)
+        assert np.allclose(row_sums, 1.0)

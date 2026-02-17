@@ -10,7 +10,6 @@ to ensure spatial comparability across all grid cells.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 from pathlib import Path
@@ -19,6 +18,7 @@ import dask.dataframe as dd
 import numpy as np
 import pandas as pd
 import pyproj
+import zarr
 
 from src.conf.conf import get_config
 
@@ -164,7 +164,7 @@ def _process_gbif(
     trait_names: list[str],
     bin_edges: dict[str, np.ndarray],
     proj_root: Path,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Process GBIF observations to construct histograms.
 
     Parameters
@@ -265,7 +265,7 @@ def _process_splot(
     trait_names: list[str],
     bin_edges: dict[str, np.ndarray],
     proj_root: Path,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Process sPlot surveys to construct histograms.
 
     Parameters
@@ -415,7 +415,7 @@ def _build_cell_histograms(
     weight_col: str,
     species_col: str,
     min_total_abundance: float | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
     """Build histograms for each grid cell.
 
     Parameters
@@ -445,145 +445,158 @@ def _build_cell_histograms(
 
     Returns
     -------
-    tuple
-        (histograms_df, masks_df, coords_df, stats)
+    tuple[np.ndarray, np.ndarray, np.ndarray, dict]
+        (histograms (N, n_traits, n_bins), masks (N, n_traits),
+         coords (N, 2), stats)
     """
-    # Group by cell
-    grouped = df.groupby("cell_id")
-    n_cells_total = len(grouped)
+    # ------------------------------------------------------------------
+    # Step 1: Cell-level filtering (single groupby, no Python loop)
+    # ------------------------------------------------------------------
+    agg_spec: dict = {
+        "cell_x": ("cell_x", "first"),
+        "cell_y": ("cell_y", "first"),
+        "total_weight": (weight_col, "sum"),
+        "n_species": (species_col, "nunique"),
+    }
+    if min_total_abundance is not None:
+        agg_spec["total_abundance"] = ("Rel_Abund_Plot", "sum")
+        agg_spec["n_plots"] = ("PlotObservationID", "nunique")
+
+    cell_stats = df.groupby("cell_id").agg(**agg_spec)
+    n_cells_total = len(cell_stats)
     log.info("Processing %d unique grid cells...", n_cells_total)
 
-    # Initialize output containers
-    cell_ids = []
-    cell_coords = []
-    cell_histograms = []
-    cell_masks = []
+    # Apply filters in the same order as the original (obs → abundance → species)
+    # so that filter statistics are mutually exclusive.
+    remaining = np.ones(n_cells_total, dtype=bool)
 
-    # Statistics
-    cells_filtered_obs = 0
-    cells_filtered_species = 0
-    cells_filtered_abundance = 0
-    trait_valid_counts = {t: 0 for t in trait_names}
+    if min_observations is not None:
+        fail_obs = cell_stats["total_weight"] < min_observations
+        cells_filtered_obs = int((remaining & fail_obs).sum())
+        remaining &= ~fail_obs
+    else:
+        cells_filtered_obs = 0
 
-    for cell_id, cell_df in grouped:
-        # Get cell coordinates (use first observation's cell coords)
-        cell_x = cell_df["cell_x"].iloc[0]
-        cell_y = cell_df["cell_y"].iloc[0]
+    if min_total_abundance is not None:
+        avg_abund = (
+            cell_stats["total_abundance"]
+            / cell_stats["n_plots"].clip(lower=1)
+        )
+        fail_abund = avg_abund < min_total_abundance
+        cells_filtered_abundance = int((remaining & fail_abund).sum())
+        remaining &= ~fail_abund
+    else:
+        cells_filtered_abundance = 0
 
-        # Check minimum observations (GBIF)
-        if min_observations is not None:
-            weighted_obs = cell_df[weight_col].sum()
-            if weighted_obs < min_observations:
-                cells_filtered_obs += 1
-                continue
+    fail_species = cell_stats["n_species"] < min_unique_species
+    cells_filtered_species = int((remaining & fail_species).sum())
+    remaining &= ~fail_species
 
-        # Check minimum total abundance (sPlot)
-        if min_total_abundance is not None:
-            total_abundance = cell_df["Rel_Abund_Plot"].sum()
-            # Normalize by number of unique plots
-            n_plots = cell_df["PlotObservationID"].nunique()
-            if n_plots > 0:
-                avg_abundance = total_abundance / n_plots
-                if avg_abundance < min_total_abundance:
-                    cells_filtered_abundance += 1
-                    continue
+    valid_cells = cell_stats[remaining]
+    log.info(
+        "Cell filtering: %d passed (obs: -%d, abundance: -%d, species: -%d)",
+        len(valid_cells),
+        cells_filtered_obs,
+        cells_filtered_abundance,
+        cells_filtered_species,
+    )
 
-        # Check minimum unique species
-        n_species = cell_df[species_col].nunique()
-        if n_species < min_unique_species:
-            cells_filtered_species += 1
+    if len(valid_cells) == 0:
+        n_traits = len(trait_names)
+        return (
+            np.empty((0, n_traits, n_bins), dtype=np.float32),
+            np.empty((0, n_traits), dtype=bool),
+            np.empty((0, 2), dtype=np.float64),
+            {
+                "n_cells_total": n_cells_total,
+                "n_cells_valid": 0,
+                "cells_filtered_observations": cells_filtered_obs,
+                "cells_filtered_species": cells_filtered_species,
+                "cells_filtered_abundance": cells_filtered_abundance,
+                "trait_valid_counts": {t: 0 for t in trait_names},
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Step 2: Vectorized histogram construction per trait
+    # ------------------------------------------------------------------
+    # Restrict to valid cells and encode cell_id as integer codes
+    df_valid = df.loc[df["cell_id"].isin(valid_cells.index)]
+
+    cell_id_cat = pd.Categorical(df_valid["cell_id"], categories=valid_cells.index)
+    cell_codes = cell_id_cat.codes  # int array aligned with df_valid rows
+    n_cells = len(valid_cells)
+    n_traits = len(trait_names)
+
+    uniform = np.float32(1.0 / n_bins)
+    hist_arr = np.full((n_cells, n_traits, n_bins), uniform, dtype=np.float32)
+    mask_arr = np.zeros((n_cells, n_traits), dtype=bool)
+    trait_valid_counts: dict[str, int] = {}
+
+    for j, trait in enumerate(trait_names):
+        if trait not in bin_edges:
+            trait_valid_counts[trait] = 0
             continue
 
-        # Build histogram for each trait
-        trait_histograms = {}
-        trait_masks = {}
+        edges = bin_edges[trait]
 
-        for trait in trait_names:
-            if trait not in bin_edges:
-                trait_histograms[trait] = np.full(n_bins, 1.0 / n_bins)
-                trait_masks[trait] = False
-                continue
-
-            # Get trait values and weights
-            trait_df = cell_df[[trait, weight_col]].dropna()
-            values = trait_df[trait].values
-            weights = trait_df[weight_col].values
-
-            if len(values) < min_unique_species:
-                # Not enough observations for this trait in this cell
-                trait_histograms[trait] = np.full(n_bins, 1.0 / n_bins)
-                trait_masks[trait] = False
-                continue
-
-            # Compute weighted histogram
-            counts, _ = np.histogram(values, bins=bin_edges[trait], weights=weights)
-
-            # Check bin coverage
-            non_empty_bins = np.sum(counts > 0)
-            bin_coverage = non_empty_bins / n_bins
-            if bin_coverage < min_bin_coverage:
-                trait_histograms[trait] = np.full(n_bins, 1.0 / n_bins)
-                trait_masks[trait] = False
-                continue
-
-            # Apply label smoothing
-            counts_smoothed = counts + epsilon
-
-            # Normalize to probability distribution
-            histogram = counts_smoothed / counts_smoothed.sum()
-
-            trait_histograms[trait] = histogram
-            trait_masks[trait] = True
-            trait_valid_counts[trait] += 1
-
-        # Check if at least one trait has a valid histogram
-        if not any(trait_masks.values()):
+        # Drop rows with NaN for this trait
+        not_null = df_valid[trait].notna().values
+        if not not_null.any():
+            trait_valid_counts[trait] = 0
             continue
 
-        # Store results
-        cell_ids.append(cell_id)
-        cell_coords.append((cell_x, cell_y))
-        cell_histograms.append(trait_histograms)
-        cell_masks.append(trait_masks)
+        t_codes = cell_codes[not_null]
+        t_values = df_valid[trait].values[not_null]
+        t_weights = df_valid[weight_col].values[not_null]
 
-    n_cells_valid = len(cell_ids)
+        # Digitize all values at once → bin indices
+        bin_idx = np.digitize(t_values, edges) - 1
+        np.clip(bin_idx, 0, n_bins - 1, out=bin_idx)
+
+        # Scatter-add weighted counts into (n_cells, n_bins) matrix
+        flat_idx = t_codes * n_bins + bin_idx
+        counts_flat = np.zeros(n_cells * n_bins, dtype=np.float64)
+        np.add.at(counts_flat, flat_idx, t_weights)
+        counts_2d = counts_flat.reshape(n_cells, n_bins)
+
+        # Per-cell observation count for this trait (non-NaN rows)
+        obs_per_cell = np.zeros(n_cells, dtype=np.int64)
+        np.add.at(obs_per_cell, t_codes, 1)
+
+        # Per-trait validity: enough observations and bin coverage
+        non_empty = (counts_2d > 0).sum(axis=1)
+        coverage = non_empty / n_bins
+        trait_ok = (obs_per_cell >= min_unique_species) & (coverage >= min_bin_coverage)
+
+        # Label smoothing + normalize (vectorized over valid cells)
+        if trait_ok.any():
+            smoothed = counts_2d[trait_ok] + epsilon
+            hist_arr[trait_ok, j, :] = (
+                smoothed / smoothed.sum(axis=1, keepdims=True)
+            ).astype(np.float32)
+            mask_arr[trait_ok, j] = True
+
+        trait_valid_counts[trait] = int(trait_ok.sum())
+
+    # ------------------------------------------------------------------
+    # Step 3: Remove cells where no trait passed
+    # ------------------------------------------------------------------
+    any_valid = mask_arr.any(axis=1)
+    hist_arr = hist_arr[any_valid]
+    mask_arr = mask_arr[any_valid]
+    coords_arr = valid_cells[["cell_x", "cell_y"]].values[any_valid].astype(
+        np.float64
+    )
+
+    n_cells_valid = int(hist_arr.shape[0])
     log.info(
         "Valid cells: %d / %d (%.1f%%)",
         n_cells_valid,
         n_cells_total,
         100 * n_cells_valid / n_cells_total if n_cells_total > 0 else 0,
     )
-    log.info("Filtered - observations: %d, species: %d, abundance: %d",
-             cells_filtered_obs, cells_filtered_species, cells_filtered_abundance)
 
-    # Convert to DataFrames
-    # Histograms: flatten to (n_cells, n_traits * n_bins)
-    hist_columns = []
-    for trait in trait_names:
-        for b in range(n_bins):
-            hist_columns.append(f"{trait}_bin{b}")
-
-    hist_data = []
-    for cell_hist in cell_histograms:
-        row = []
-        for trait in trait_names:
-            row.extend(cell_hist.get(trait, np.full(n_bins, 1.0 / n_bins)))
-        hist_data.append(row)
-
-    histograms_df = pd.DataFrame(hist_data, columns=hist_columns, index=cell_ids)
-
-    # Masks: (n_cells, n_traits)
-    mask_data = []
-    for cell_mask in cell_masks:
-        row = [cell_mask.get(trait, False) for trait in trait_names]
-        mask_data.append(row)
-
-    masks_df = pd.DataFrame(mask_data, columns=trait_names, index=cell_ids)
-
-    # Coordinates: (n_cells, 2)
-    coords_df = pd.DataFrame(cell_coords, columns=["x", "y"], index=cell_ids)
-
-    # Statistics
     stats = {
         "n_cells_total": n_cells_total,
         "n_cells_valid": n_cells_valid,
@@ -593,32 +606,32 @@ def _build_cell_histograms(
         "trait_valid_counts": trait_valid_counts,
     }
 
-    return histograms_df, masks_df, coords_df, stats
+    return hist_arr, mask_arr, coords_arr, stats
 
 
 def _save_outputs(
     out_dir: Path,
-    histograms_df: pd.DataFrame,
-    masks_df: pd.DataFrame,
-    coords_df: pd.DataFrame,
+    histograms: np.ndarray,
+    masks: np.ndarray,
+    coords: np.ndarray,
     bin_edges: dict[str, np.ndarray],
     trait_names: list[str],
     stats: dict,
     cfg,
     source: str,
 ) -> None:
-    """Save histogram targets and metadata to disk.
+    """Save histogram targets as a Zarr store with metadata.
 
     Parameters
     ----------
     out_dir : Path
         Output directory.
-    histograms_df : pd.DataFrame
-        Histogram data.
-    masks_df : pd.DataFrame
-        Valid trait indicators.
-    coords_df : pd.DataFrame
-        Cell coordinates.
+    histograms : np.ndarray
+        Histogram data, shape (N, n_traits, n_bins).
+    masks : np.ndarray
+        Valid trait indicators, shape (N, n_traits).
+    coords : np.ndarray
+        Cell coordinates, shape (N, 2) as [x, y].
     bin_edges : dict[str, np.ndarray]
         Bin edges for each trait.
     trait_names : list[str]
@@ -630,46 +643,47 @@ def _save_outputs(
     source : str
         Data source ('gbif' or 'splot').
     """
-    # Save histograms
-    hist_fp = out_dir / "histograms.parquet"
-    histograms_df.to_parquet(hist_fp)
-    log.info("Saved histograms to %s", hist_fp)
+    zarr_path = out_dir / "histograms.zarr"
+    root = zarr.open_group(zarr_path, mode="w")
 
-    # Save masks
-    masks_fp = out_dir / "masks.parquet"
-    masks_df.to_parquet(masks_fp)
-    log.info("Saved masks to %s", masks_fp)
+    # Arrays — chunk along the cell (row) dimension
+    root.create_array("histograms", data=histograms)
+    root.create_array("masks", data=masks)
+    root.create_array("coords", data=coords)
 
-    # Save coordinates
-    coords_fp = out_dir / "coordinates.parquet"
-    coords_df.to_parquet(coords_fp)
-    log.info("Saved coordinates to %s", coords_fp)
+    # Store bin edges as (n_traits, n_bins+1)
+    edges_arr = np.array(
+        [bin_edges[t] for t in trait_names], dtype=np.float64
+    )
+    root.create_array("bin_edges", data=edges_arr)
 
-    # Save metadata
-    metadata = {
-        "source": source,
-        "n_bins": cfg.histogram.n_bins,
-        "label_smoothing_epsilon": cfg.histogram.label_smoothing_epsilon,
-        "target_resolution": cfg.target_resolution,
-        "crs": cfg.crs,
-        "trait_names": trait_names,
-        "bin_edges": {k: v.tolist() for k, v in bin_edges.items()},
-        "statistics": stats,
-    }
+    # Metadata as group attributes
+    root.attrs["source"] = source
+    root.attrs["n_bins"] = int(cfg.histogram.n_bins)
+    root.attrs["label_smoothing_epsilon"] = float(
+        cfg.histogram.label_smoothing_epsilon
+    )
+    root.attrs["target_resolution"] = int(cfg.target_resolution)
+    root.attrs["crs"] = cfg.crs
+    root.attrs["trait_names"] = list(trait_names)
+    root.attrs["statistics"] = stats
 
     if source == "gbif":
-        metadata["min_observations"] = cfg.gbif.min_observations
-        metadata["min_unique_species"] = cfg.gbif.min_unique_species
-        metadata["min_bin_coverage"] = cfg.gbif.min_bin_coverage
+        root.attrs["min_observations"] = int(cfg.gbif.min_observations)
+        root.attrs["min_unique_species"] = int(cfg.gbif.min_unique_species)
+        root.attrs["min_bin_coverage"] = float(cfg.gbif.min_bin_coverage)
     else:
-        metadata["min_total_abundance"] = cfg.splot.min_total_abundance
-        metadata["min_unique_species"] = cfg.splot.min_unique_species
-        metadata["min_bin_coverage"] = cfg.splot.min_bin_coverage
+        root.attrs["min_total_abundance"] = float(cfg.splot.min_total_abundance)
+        root.attrs["min_unique_species"] = int(cfg.splot.min_unique_species)
+        root.attrs["min_bin_coverage"] = float(cfg.splot.min_bin_coverage)
 
-    meta_fp = out_dir / "metadata.json"
-    with open(meta_fp, "w") as f:
-        json.dump(metadata, f, indent=2)
-    log.info("Saved metadata to %s", meta_fp)
+    log.info("Saved Zarr store to %s", zarr_path)
+    log.info(
+        "  histograms: %s %s, masks: %s %s, coords: %s %s",
+        histograms.shape, histograms.dtype,
+        masks.shape, masks.dtype,
+        coords.shape, coords.dtype,
+    )
 
 
 if __name__ == "__main__":
