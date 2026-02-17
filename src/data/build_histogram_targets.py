@@ -70,45 +70,59 @@ def main(args: argparse.Namespace | None = None) -> None:
     proj_root = Path(proj_root)
 
     source = args.source
-    log.info("Building histogram targets from %s data", source.upper())
+    log.info(
+        "=== Building histogram targets from %s data ===", source.upper()
+    )
+    log.info(
+        "Config: n_bins=%d, epsilon=%.3f, resolution=%dm, CRS=%s",
+        cfg.histogram.n_bins,
+        cfg.histogram.label_smoothing_epsilon,
+        cfg.target_resolution,
+        cfg.crs,
+    )
 
     # Output directory
     out_dir = proj_root / cfg.output.dir / source
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if outputs already exist
-    hist_fp = out_dir / "histograms.parquet"
-    if hist_fp.exists() and not args.overwrite:
-        log.info("Output already exists at %s. Use --overwrite to replace.", hist_fp)
+    zarr_fp = out_dir / "histograms.zarr"
+    if zarr_fp.exists() and not args.overwrite:
+        log.info("Output already exists at %s. Use --overwrite to replace.", zarr_fp)
         return
 
     # Load trait data (species-level, transformed)
     traits_fp = proj_root / cfg.traits.interim_out
-    log.info("Loading trait data from %s", traits_fp)
+    log.info("[1/4] Loading trait data from %s", traits_fp)
     traits_df = pd.read_parquet(traits_fp)
     trait_names = cfg.traits.names
-    log.info("Loaded %d species with %d traits", len(traits_df), len(trait_names))
+    log.info("  Loaded %d species with %d traits", len(traits_df), len(trait_names))
 
     # Compute global bin edges for each trait
-    log.info("Computing global bin edges...")
+    log.info("[2/4] Computing global bin edges (%d bins)...", cfg.histogram.n_bins)
     bin_edges = _compute_bin_edges(traits_df, trait_names, cfg.histogram.n_bins)
+    log.info(
+        "  Bin edges computed for %d / %d traits", len(bin_edges), len(trait_names)
+    )
 
     # Load and process data based on source
+    log.info("[3/4] Processing %s observations...", source.upper())
     if source == "gbif":
-        histograms_df, masks_df, coords_df, stats = _process_gbif(
+        hist_arr, mask_arr, coords_arr, stats = _process_gbif(
             cfg, traits_df, trait_names, bin_edges, proj_root
         )
     else:
-        histograms_df, masks_df, coords_df, stats = _process_splot(
+        hist_arr, mask_arr, coords_arr, stats = _process_splot(
             cfg, traits_df, trait_names, bin_edges, proj_root
         )
 
     # Save outputs
+    log.info("[4/4] Saving outputs to %s", out_dir)
     _save_outputs(
         out_dir=out_dir,
-        histograms_df=histograms_df,
-        masks_df=masks_df,
-        coords_df=coords_df,
+        histograms=hist_arr,
+        masks=mask_arr,
+        coords=coords_arr,
         bin_edges=bin_edges,
         trait_names=trait_names,
         stats=stats,
@@ -116,7 +130,11 @@ def main(args: argparse.Namespace | None = None) -> None:
         source=source,
     )
 
-    log.info("Histogram target construction complete!")
+    log.info(
+        "=== Done: %d valid cells, histograms shape %s ===",
+        stats["n_cells_valid"],
+        hist_arr.shape,
+    )
 
 
 def _compute_bin_edges(
@@ -395,11 +413,15 @@ def _assign_cell_ids(df: pd.DataFrame, resolution: int) -> pd.DataFrame:
     pd.DataFrame
         DataFrame with added 'cell_x', 'cell_y', and 'cell_id' columns.
     """
-    # Compute cell indices (floor division to get cell origin)
-    df["cell_x"] = (df["x"] // resolution) * resolution
-    df["cell_y"] = (df["y"] // resolution) * resolution
-    # Create unique cell ID string for grouping
-    df["cell_id"] = df["cell_x"].astype(str) + "_" + df["cell_y"].astype(str)
+    # Compute integer cell indices (floor division)
+    cx = (df["x"].values // resolution).astype(np.int64)
+    cy = (df["y"].values // resolution).astype(np.int64)
+    # Cell origin coordinates (integer multiples of resolution)
+    df["cell_x"] = cx * resolution
+    df["cell_y"] = cy * resolution
+    # Integer cell ID for fast groupby (avoids expensive string creation)
+    # Safe as long as |cy / resolution| < 10M, which holds for any Earth CRS
+    df["cell_id"] = cx * 10_000_000 + cy
     return df
 
 
@@ -521,7 +543,9 @@ def _build_cell_histograms(
     # Step 2: Vectorized histogram construction per trait
     # ------------------------------------------------------------------
     # Restrict to valid cells and encode cell_id as integer codes
+    log.info("Filtering observations to %d valid cells...", len(valid_cells))
     df_valid = df.loc[df["cell_id"].isin(valid_cells.index)]
+    log.info("  %d observations in valid cells", len(df_valid))
 
     cell_id_cat = pd.Categorical(df_valid["cell_id"], categories=valid_cells.index)
     cell_codes = cell_id_cat.codes  # int array aligned with df_valid rows
@@ -533,17 +557,21 @@ def _build_cell_histograms(
     mask_arr = np.zeros((n_cells, n_traits), dtype=bool)
     trait_valid_counts: dict[str, int] = {}
 
+    log.info("Building histograms for %d traits across %d cells...", n_traits, n_cells)
     for j, trait in enumerate(trait_names):
         if trait not in bin_edges:
             trait_valid_counts[trait] = 0
+            log.debug("  [%2d/%d] %s — skipped (no bin edges)", j + 1, n_traits, trait)
             continue
 
         edges = bin_edges[trait]
 
         # Drop rows with NaN for this trait
         not_null = df_valid[trait].notna().values
+        n_valid_obs = int(not_null.sum())
         if not not_null.any():
             trait_valid_counts[trait] = 0
+            log.debug("  [%2d/%d] %s — skipped (all NaN)", j + 1, n_traits, trait)
             continue
 
         t_codes = cell_codes[not_null]
@@ -577,12 +605,21 @@ def _build_cell_histograms(
             ).astype(np.float32)
             mask_arr[trait_ok, j] = True
 
-        trait_valid_counts[trait] = int(trait_ok.sum())
+        n_ok = int(trait_ok.sum())
+        trait_valid_counts[trait] = n_ok
+        log.info(
+            "  [%2d/%d] %-6s — %d obs, %d / %d cells valid (%.0f%%)",
+            j + 1, n_traits, trait, n_valid_obs, n_ok, n_cells,
+            100 * n_ok / n_cells if n_cells > 0 else 0,
+        )
 
     # ------------------------------------------------------------------
     # Step 3: Remove cells where no trait passed
     # ------------------------------------------------------------------
     any_valid = mask_arr.any(axis=1)
+    n_no_trait = int((~any_valid).sum())
+    if n_no_trait > 0:
+        log.info("Removing %d cells with no valid traits", n_no_trait)
     hist_arr = hist_arr[any_valid]
     mask_arr = mask_arr[any_valid]
     coords_arr = valid_cells[["cell_x", "cell_y"]].values[any_valid].astype(

@@ -2,7 +2,8 @@ schema: '2.0'
 stages:
   build_gbif_histograms:
     cmd: uv run python ../../../stages/build_histogram_targets.py --params params.yaml
-      --source gbif --partitions milan genoa --cpus 16 --mem 256GB --time 02:00:00
+      --source gbif --partitions genoa milan --cpus 16 --mem 256GB --time 02:00:00
+      --overwrite
     deps:
     - path: ../../../data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
       hash: md5
@@ -15,8 +16,8 @@ stages:
       size: 13514924
     - path: ../../../src/data/build_histogram_targets.py
       hash: md5
-      md5: 62893487450055e389288fce4d043aab
-      size: 21373
+      md5: 0d36634e5343bd0023ea09f9a8a5c4d3
+      size: 24298
     params:
       params.yaml:
         gbif:
@@ -64,6 +65,6 @@ stages:
     outs:
     - path: ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/gbif
       hash: md5
-      md5: 2d73150ba828eaaaad2d3516989932e6.dir
-      size: 270321187
-      nfiles: 4
+      md5: 74282016c772d23e2065f072369b8ab5.dir
+      size: 380906783
+      nfiles: 150

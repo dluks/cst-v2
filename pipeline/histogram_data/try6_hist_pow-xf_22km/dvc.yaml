@@ -7,10 +7,11 @@ stages:
       uv run python ${project_root}/stages/build_histogram_targets.py
       --params params.yaml
       --source gbif
-      --partitions milan genoa
+      --partitions genoa milan
       --cpus 16
       --mem 256GB
       --time 02:00:00
+      --overwrite
     deps:
       - ${project_root}/src/data/build_histogram_targets.py
       - ${project_root}/data/interim/gbif/filtered_occurrences/try6/gbif_filtered.parquet
@@ -28,7 +29,7 @@ stages:
       uv run python ${project_root}/stages/build_histogram_targets.py
       --params params.yaml
       --source splot
-      --partitions milan genoa
+      --partitions genoa milan
       --cpus 16
       --mem 64GB
       --time 02:00:00
