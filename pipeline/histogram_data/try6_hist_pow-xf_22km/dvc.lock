@@ -16,8 +16,8 @@ stages:
       size: 13514924
     - path: ../../../src/data/build_histogram_targets.py
       hash: md5
-      md5: 0d36634e5343bd0023ea09f9a8a5c4d3
-      size: 24298
+      md5: 3e370b7f941a61041668cbbaa0ce3b9b
+      size: 25002
     params:
       params.yaml:
         gbif:
@@ -65,6 +65,6 @@ stages:
     outs:
     - path: ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/gbif
       hash: md5
-      md5: 5d93e8dd13b2526d0120a093a28cbb8f.dir
-      size: 110585596
-      nfiles: 146
+      md5: 9fd5e16b96c49b0be08bfea25e9c4b0b.dir
+      size: 117222466
+      nfiles: 156

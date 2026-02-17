@@ -282,7 +282,7 @@ class TestBuildCellHistograms:
         trait_names = ["X4", "X14"]
         bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
-        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, _, stats = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=trait_names,
             bin_edges=bin_edges,
@@ -310,7 +310,7 @@ class TestBuildCellHistograms:
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
         epsilon = 0.01
 
-        hist_arr, _, _, _ = _build_cell_histograms(
+        hist_arr, _, _, _, _ = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -342,7 +342,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        hist_arr, _, _, stats = _build_cell_histograms(
+        hist_arr, _, _, _, stats = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -373,7 +373,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        hist_arr, _, _, stats = _build_cell_histograms(
+        hist_arr, _, _, _, stats = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -404,7 +404,7 @@ class TestBuildCellHistograms:
         n_bins = 4
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        hist_arr, _, _, _ = _build_cell_histograms(
+        hist_arr, _, _, _, _ = _build_cell_histograms(
             df=df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -428,7 +428,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        hist_arr, mask_arr, _, _ = _build_cell_histograms(
+        hist_arr, mask_arr, _, _, _ = _build_cell_histograms(
             df=splot_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -457,7 +457,7 @@ class TestBuildCellHistograms:
         bin_edges = _compute_bin_edges(real_traits_df, ["X4", "X14"], n_bins)
         # X_missing won't have bin edges computed
 
-        hist_arr, mask_arr, _, _ = _build_cell_histograms(
+        hist_arr, mask_arr, _, _, _ = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=trait_names,
             bin_edges=bin_edges,
@@ -481,7 +481,7 @@ class TestBuildCellHistograms:
         n_bins = 5
         bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
 
-        _, _, coords_arr, _ = _build_cell_histograms(
+        _, _, coords_arr, _, _ = _build_cell_histograms(
             df=gbif_merged_df,
             trait_names=["X4"],
             bin_edges=bin_edges,
@@ -537,7 +537,7 @@ class TestIntegration:
         bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
         # 5. Build histograms
-        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, _, stats = _build_cell_histograms(
             df=merged,
             trait_names=trait_names,
             bin_edges=bin_edges,
@@ -588,7 +588,7 @@ class TestIntegration:
         bin_edges = _compute_bin_edges(real_traits_df, trait_names, n_bins)
 
         # 6. Build histograms
-        hist_arr, mask_arr, coords_arr, stats = _build_cell_histograms(
+        hist_arr, mask_arr, coords_arr, _, stats = _build_cell_histograms(
             df=merged,
             trait_names=trait_names,
             bin_edges=bin_edges,

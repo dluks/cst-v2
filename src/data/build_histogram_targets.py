@@ -108,11 +108,11 @@ def main(args: argparse.Namespace | None = None) -> None:
     # Load and process data based on source
     log.info("[3/4] Processing %s observations...", source.upper())
     if source == "gbif":
-        hist_arr, mask_arr, coords_arr, stats = _process_gbif(
+        hist_arr, mask_arr, coords_arr, total_weight, stats = _process_gbif(
             cfg, traits_df, trait_names, bin_edges, proj_root
         )
     else:
-        hist_arr, mask_arr, coords_arr, stats = _process_splot(
+        hist_arr, mask_arr, coords_arr, total_weight, stats = _process_splot(
             cfg, traits_df, trait_names, bin_edges, proj_root
         )
 
@@ -123,6 +123,7 @@ def main(args: argparse.Namespace | None = None) -> None:
         histograms=hist_arr,
         masks=mask_arr,
         coords=coords_arr,
+        total_weight=total_weight,
         bin_edges=bin_edges,
         trait_names=trait_names,
         stats=stats,
@@ -133,7 +134,8 @@ def main(args: argparse.Namespace | None = None) -> None:
     # Generate sanity-check report
     from src.data.histogram_report import generate_histogram_report
 
-    generate_histogram_report(zarr_fp, out_dir, params_path=Path(args.params))
+    transformer_dir = proj_root / cfg.traits.transformer_dir
+    generate_histogram_report(zarr_fp, out_dir, transformer_dir=transformer_dir)
 
     log.info(
         "=== Done: %d valid cells, histograms shape %s ===",
@@ -266,7 +268,7 @@ def _process_gbif(
 
     # Build histograms per cell
     log.info("Building histograms per grid cell...")
-    histograms_df, masks_df, coords_df, stats = _build_cell_histograms(
+    histograms_df, masks_df, coords_df, total_weight, stats = _build_cell_histograms(
         df=merged,
         trait_names=trait_names,
         bin_edges=bin_edges,
@@ -279,7 +281,7 @@ def _process_gbif(
         species_col=GBIF_SPECIES_COL,
     )
 
-    return histograms_df, masks_df, coords_df, stats
+    return histograms_df, masks_df, coords_df, total_weight, stats
 
 
 def _process_splot(
@@ -351,7 +353,7 @@ def _process_splot(
 
     # Build histograms per cell
     log.info("Building histograms per grid cell...")
-    histograms_df, masks_df, coords_df, stats = _build_cell_histograms(
+    histograms_df, masks_df, coords_df, total_weight, stats = _build_cell_histograms(
         df=merged,
         trait_names=trait_names,
         bin_edges=bin_edges,
@@ -365,7 +367,7 @@ def _process_splot(
         min_total_abundance=cfg.splot.min_total_abundance,
     )
 
-    return histograms_df, masks_df, coords_df, stats
+    return histograms_df, masks_df, coords_df, total_weight, stats
 
 
 def _reproject(
@@ -534,6 +536,7 @@ def _build_cell_histograms(
             np.empty((0, n_traits, n_bins), dtype=np.float32),
             np.empty((0, n_traits), dtype=bool),
             np.empty((0, 2), dtype=np.float64),
+            np.empty((0,), dtype=np.float64),
             {
                 "n_cells_total": n_cells_total,
                 "n_cells_valid": 0,
@@ -630,6 +633,9 @@ def _build_cell_histograms(
     coords_arr = valid_cells[["cell_x", "cell_y"]].values[any_valid].astype(
         np.float64
     )
+    total_weight_arr = valid_cells["total_weight"].values[any_valid].astype(
+        np.float64
+    )
 
     n_cells_valid = int(hist_arr.shape[0])
     log.info(
@@ -648,7 +654,7 @@ def _build_cell_histograms(
         "trait_valid_counts": trait_valid_counts,
     }
 
-    return hist_arr, mask_arr, coords_arr, stats
+    return hist_arr, mask_arr, coords_arr, total_weight_arr, stats
 
 
 def _save_outputs(
@@ -656,6 +662,7 @@ def _save_outputs(
     histograms: np.ndarray,
     masks: np.ndarray,
     coords: np.ndarray,
+    total_weight: np.ndarray,
     bin_edges: dict[str, np.ndarray],
     trait_names: list[str],
     stats: dict,
@@ -674,6 +681,8 @@ def _save_outputs(
         Valid trait indicators, shape (N, n_traits).
     coords : np.ndarray
         Cell coordinates, shape (N, 2) as [x, y].
+    total_weight : np.ndarray
+        Total observation weight per cell, shape (N,).
     bin_edges : dict[str, np.ndarray]
         Bin edges for each trait.
     trait_names : list[str]
@@ -692,6 +701,7 @@ def _save_outputs(
     root.create_array("histograms", data=histograms)
     root.create_array("masks", data=masks)
     root.create_array("coords", data=coords)
+    root.create_array("total_weight", data=total_weight)
 
     # Store bin edges as (n_traits, n_bins+1)
     edges_arr = np.array(
