@@ -233,6 +233,9 @@ aoa:
 
 predict:
   dir: predict
+  nemo:
+    n_workers: 8  # Parallel prediction workers (each loads a data chunk)
+    batches: 1  # Only used when n_workers=1
   geos:
     n_workers: 1
     batches: 8
