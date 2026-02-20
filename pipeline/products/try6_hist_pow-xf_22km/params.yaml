@@ -61,3 +61,22 @@ traits:
     - X3117 # Specific leaf area (SLA / 1/LMA)
     - X3120 # Leaf water content per leaf dry mass
   transformer_dir: data/interim/traits/try6_pow-xf/transformers
+
+# ── Model training configuration ─────────────────────────────────────────
+train:
+  arch: histogram_mlp
+  hidden_dims: [512, 256, 256]
+  dropout: 0.2
+  batch_size: 1024
+  lr: 0.001
+  weight_decay: 0.01
+  max_epochs: 200
+  patience: 20
+  n_folds: 5
+  h3_resolution: 2
+  n_fold_iterations: 100
+  standardize_features: true
+  vodca_sentinel: 32767
+
+models:
+  dir_fp: models/try6_hist_pow-xf_22km
