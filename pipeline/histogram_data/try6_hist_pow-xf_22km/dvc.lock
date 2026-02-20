@@ -68,3 +68,69 @@ stages:
       md5: 9fd5e16b96c49b0be08bfea25e9c4b0b.dir
       size: 117222466
       nfiles: 156
+  build_splot_histograms:
+    cmd: uv run python ../../../stages/build_histogram_targets.py --params params.yaml
+      --source splot --partitions milan --cpus 16 --mem 64GB --time 02:00:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      hash: md5
+      md5: 365278ea23f682c67d2244c470471b53
+      size: 144452091
+    - path: ../../../data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+      hash: md5
+      md5: 54ac228d3bd13c72802925f6e8401f2f
+      size: 13514924
+    - path: ../../../src/data/build_histogram_targets.py
+      hash: md5
+      md5: 71eff69eafa063b27f0fbdcfd8a9ace2
+      size: 25174
+    params:
+      params.yaml:
+        histogram:
+          n_bins: 20
+          label_smoothing_epsilon: 0.01
+        splot:
+          min_total_abundance: 0.75
+          min_unique_species: 3
+          min_bin_coverage: 0.25
+          filtered:
+            out_dir: data/interim/splot/filtered_surveys
+            fp: splot_filtered.parquet
+        traits.names:
+        - X4
+        - X6
+        - X13
+        - X14
+        - X15
+        - X21
+        - X26
+        - X27
+        - X46
+        - X47
+        - X50
+        - X55
+        - X78
+        - X95
+        - X138
+        - X144
+        - X145
+        - X146
+        - X163
+        - X169
+        - X237
+        - X281
+        - X282
+        - X289
+        - X297
+        - X614
+        - X1080
+        - X3106
+        - X3114
+        - X3117
+        - X3120
+    outs:
+    - path: ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/splot
+      hash: md5
+      md5: 89e524c30ba520d6f4b7c56b3b49af04.dir
+      size: 9443181
+      nfiles: 33

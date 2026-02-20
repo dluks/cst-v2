@@ -504,6 +504,81 @@ class TestBuildCellHistograms:
 
 
 # =============================================================================
+# Regression Tests
+# =============================================================================
+
+class TestRegression:
+    """Regression tests for known bugs."""
+
+    def test_many_cells_no_int16_overflow(self, real_traits_df: pd.DataFrame):
+        """Cells with Categorical code >= 1639 must not lose data to int16 overflow.
+
+        pd.Categorical.codes returns int16 for <32768 categories.
+        With n_bins=20, code * n_bins overflows int16 at code 1639
+        (1639 * 20 = 32780 > 32767), corrupting flat_idx and silently
+        writing histogram counts into wrong cells' bins.
+
+        Regression test for: all cells must produce identical histograms
+        when given identical observations, regardless of their position in
+        the Categorical ordering.
+        """
+        n_cells = 2000  # Exceeds int16 overflow boundary (1638)
+        n_bins = 20
+        species_ids = real_traits_df["GBIFKeyGBIF"].tolist()
+        n_species = len(species_ids)
+
+        # Create n_cells cells, each containing one observation per species.
+        # Use widely-spaced x values so each gets a unique cell_id.
+        rows = []
+        for i in range(n_cells):
+            for sp in species_ids:
+                rows.append({
+                    "specieskey": sp,
+                    "X4": real_traits_df.loc[
+                        real_traits_df["GBIFKeyGBIF"] == sp, "X4"
+                    ].iloc[0],
+                    "weight": 1.0,
+                    "x": float(i * 22000),
+                    "y": 0.0,
+                })
+        df = pd.DataFrame(rows)
+        df = _assign_cell_ids(df, resolution=22000)
+
+        assert df["cell_id"].nunique() == n_cells
+
+        bin_edges = _compute_bin_edges(real_traits_df, ["X4"], n_bins)
+
+        hist_arr, mask_arr, _, _, stats = _build_cell_histograms(
+            df=df,
+            trait_names=["X4"],
+            bin_edges=bin_edges,
+            n_bins=n_bins,
+            min_observations=3,
+            min_unique_species=3,
+            min_bin_coverage=0.05,
+            epsilon=0.01,
+            weight_col="weight",
+            species_col="specieskey",
+        )
+
+        # Every cell has 8 species with identical trait values,
+        # so all 2000 must survive and have valid histograms.
+        assert hist_arr.shape[0] == n_cells, (
+            f"Expected {n_cells} cells, got {hist_arr.shape[0]} "
+            f"(int16 overflow would drop cells with code >= 1639)"
+        )
+        assert mask_arr[:, 0].all(), "All cells should have valid X4"
+
+        # Every cell received the same observations, so all histograms
+        # must be identical (no cross-cell contamination from overflow).
+        for i in range(1, n_cells):
+            assert np.array_equal(hist_arr[i, 0], hist_arr[0, 0]), (
+                f"Cell {i} histogram differs from cell 0 — "
+                f"possible flat-index corruption"
+            )
+
+
+# =============================================================================
 # Integration Tests
 # =============================================================================
 

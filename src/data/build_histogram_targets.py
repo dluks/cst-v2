@@ -556,7 +556,9 @@ def _build_cell_histograms(
     log.info("  %d observations in valid cells", len(df_valid))
 
     cell_id_cat = pd.Categorical(df_valid["cell_id"], categories=valid_cells.index)
-    cell_codes = cell_id_cat.codes  # int array aligned with df_valid rows
+    # pd.Categorical.codes uses int8/int16 for small category counts;
+    # upcast to int64 to prevent overflow in flat_idx = codes * n_bins.
+    cell_codes = cell_id_cat.codes.astype(np.int64)
     n_cells = len(valid_cells)
     n_traits = len(trait_names)
 
@@ -574,8 +576,10 @@ def _build_cell_histograms(
 
         edges = bin_edges[trait]
 
-        # Drop rows with NaN for this trait
-        not_null = df_valid[trait].notna().values
+        # Drop rows with NaN trait values or NaN weights
+        # (NaN weights poison bins via np.add.at — one NaN makes
+        #  an entire bin NaN, which reads as "empty")
+        not_null = df_valid[trait].notna().values & df_valid[weight_col].notna().values
         n_valid_obs = int(not_null.sum())
         if not not_null.any():
             trait_valid_counts[trait] = 0

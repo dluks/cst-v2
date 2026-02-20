@@ -29,7 +29,7 @@ stages:
       uv run python ${project_root}/stages/build_histogram_targets.py
       --params params.yaml
       --source splot
-      --partitions genoa milan
+      --partitions milan
       --cpus 16
       --mem 64GB
       --time 02:00:00
