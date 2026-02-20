@@ -16,8 +16,8 @@ stages:
       size: 13514924
     - path: ../../../src/data/build_histogram_targets.py
       hash: md5
-      md5: 3e370b7f941a61041668cbbaa0ce3b9b
-      size: 25002
+      md5: acfc57feae6324435ff6ad1fd8f16ab7
+      size: 25293
     params:
       params.yaml:
         gbif:

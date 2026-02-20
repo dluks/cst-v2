@@ -62,7 +62,7 @@ def cli(args: list[str] | None = None) -> argparse.Namespace:
 def _load_histogram_source(
     source_dir: Path,
     source_name: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict] | None:
     """Load histogram data from a Zarr store.
 
     Parameters
@@ -74,8 +74,8 @@ def _load_histogram_source(
 
     Returns
     -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None
-        (histograms, masks, coords, attrs) or None if not found.
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict] | None
+        (histograms, masks, coords, bin_edges, attrs) or None if not found.
     """
     zarr_path = source_dir / "histograms.zarr"
     if not zarr_path.exists():
@@ -88,6 +88,7 @@ def _load_histogram_source(
     histograms = np.asarray(root["histograms"])
     masks = np.asarray(root["masks"])
     coords = np.asarray(root["coords"])
+    bin_edges = np.asarray(root["bin_edges"])
     attrs = dict(root.attrs)
 
     log.info(
@@ -98,7 +99,7 @@ def _load_histogram_source(
         histograms.shape[2],
     )
 
-    return histograms, masks, coords, attrs
+    return histograms, masks, coords, bin_edges, attrs
 
 
 def _load_eo_features(x_fp: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
@@ -134,22 +135,22 @@ def _load_eo_features(x_fp: Path) -> tuple[np.ndarray, np.ndarray, list[str]]:
 # ---------------------------------------------------------------------------
 
 def _combine_sources(
-    gbif_data: tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None,
-    splot_data: tuple[np.ndarray, np.ndarray, np.ndarray, dict] | None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
+    gbif_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict] | None,
+    splot_data: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict] | None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
     """Combine GBIF and sPlot histogram data.
 
     Parameters
     ----------
     gbif_data : tuple | None
-        GBIF (histograms, masks, coords, attrs).
+        GBIF (histograms, masks, coords, bin_edges, attrs).
     splot_data : tuple | None
-        sPlot (histograms, masks, coords, attrs).
+        sPlot (histograms, masks, coords, bin_edges, attrs).
 
     Returns
     -------
-    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]
-        (histograms, masks, coords, source_ids, attrs).
+    tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]
+        (histograms, masks, coords, source_ids, bin_edges, attrs).
         source_ids: 0 = gbif, 1 = splot.
 
     Raises
@@ -161,18 +162,18 @@ def _combine_sources(
         raise ValueError("No histogram data available from either GBIF or sPlot")
 
     if gbif_data is None:
-        hist, mask, coord, attrs = splot_data  # type: ignore[misc]
+        hist, mask, coord, bin_edges, attrs = splot_data  # type: ignore[misc]
         source_ids = np.ones(hist.shape[0], dtype=np.int8)
-        return hist, mask, coord, source_ids, attrs
+        return hist, mask, coord, source_ids, bin_edges, attrs
 
     if splot_data is None:
-        hist, mask, coord, attrs = gbif_data
+        hist, mask, coord, bin_edges, attrs = gbif_data
         source_ids = np.zeros(hist.shape[0], dtype=np.int8)
-        return hist, mask, coord, source_ids, attrs
+        return hist, mask, coord, source_ids, bin_edges, attrs
 
     # Both available
-    g_hist, g_mask, g_coord, g_attrs = gbif_data
-    s_hist, s_mask, s_coord, s_attrs = splot_data
+    g_hist, g_mask, g_coord, g_bin_edges, g_attrs = gbif_data
+    s_hist, s_mask, s_coord, s_bin_edges, s_attrs = splot_data
 
     hist = np.concatenate([g_hist, s_hist], axis=0)
     mask = np.concatenate([g_mask, s_mask], axis=0)
@@ -181,6 +182,9 @@ def _combine_sources(
         np.zeros(g_hist.shape[0], dtype=np.int8),
         np.ones(s_hist.shape[0], dtype=np.int8),
     ])
+
+    # bin_edges are identical across sources (same trait transformers)
+    bin_edges = g_bin_edges
 
     attrs = g_attrs.copy()
     attrs["sources"] = ["gbif", "splot"]
@@ -194,7 +198,7 @@ def _combine_sources(
         hist.shape[0],
     )
 
-    return hist, mask, coord, source_ids, attrs
+    return hist, mask, coord, source_ids, bin_edges, attrs
 
 
 def _merge_with_features(
@@ -293,6 +297,7 @@ def _save_outputs(
     features: np.ndarray,
     coords: np.ndarray,
     source_ids: np.ndarray,
+    bin_edges: np.ndarray,
     feature_names: list[str],
     attrs: dict,
 ) -> None:
@@ -312,6 +317,8 @@ def _save_outputs(
         Cell coordinates (N, 2).
     source_ids : np.ndarray
         Source indicator per cell (N,).
+    bin_edges : np.ndarray
+        Per-trait bin edges (n_traits, n_bins + 1).
     feature_names : list[str]
         EO feature column names.
     attrs : dict
@@ -326,6 +333,7 @@ def _save_outputs(
     root.create_array("X", data=features)
     root.create_array("coords", data=coords)
     root.create_array("source", data=source_ids)
+    root.create_array("bin_edges", data=bin_edges)
 
     # Store metadata
     root.attrs["n_cells"] = int(hist.shape[0])
@@ -343,11 +351,12 @@ def _save_outputs(
 
     log.info("Saved training Zarr store to %s", out_path)
     log.info(
-        "  Y_hist: %s %s | Y_mask: %s %s | X: %s %s | coords: %s %s",
+        "  Y_hist: %s %s | Y_mask: %s %s | X: %s %s | coords: %s %s | bin_edges: %s %s",
         hist.shape, hist.dtype,
         mask.shape, mask.dtype,
         features.shape, features.dtype,
         coords.shape, coords.dtype,
+        bin_edges.shape, bin_edges.dtype,
     )
 
 
@@ -379,7 +388,7 @@ def main(args: argparse.Namespace | None = None) -> None:
     splot_data = _load_histogram_source(hist_dir / "splot", "splot")
 
     # Combine sources
-    hist, mask, coords, source_ids, attrs = _combine_sources(
+    hist, mask, coords, source_ids, bin_edges, attrs = _combine_sources(
         gbif_data, splot_data
     )
 
@@ -395,7 +404,8 @@ def main(args: argparse.Namespace | None = None) -> None:
 
     # Save
     _save_outputs(
-        out_path, hist, mask, features, coords, source_ids, feature_names, attrs
+        out_path, hist, mask, features, coords, source_ids, bin_edges,
+        feature_names, attrs,
     )
 
     log.info("Done — %d training cells written to %s", hist.shape[0], out_path)

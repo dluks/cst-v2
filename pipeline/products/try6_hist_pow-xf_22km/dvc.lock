@@ -1,0 +1,38 @@
+schema: '2.0'
+stages:
+  build_histogram_xy:
+    cmd: uv run python ../../../stages/build_histogram_xy.py --params params.yaml
+      --partitions genoa milan --cpus 8 --mem 64GB --time 00:30:00 --overwrite
+    deps:
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_22km/X.parquet
+      hash: md5
+      md5: a6977a3ec18b6c3a93a5658a59e51a4f
+      size: 62403668
+    - path: 
+        ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/gbif/histograms.zarr
+      hash: md5
+      md5: dba34bc22f8b1acd00b319352b973d76.dir
+      size: 110787221
+      nfiles: 149
+    - path: 
+        ../../../data/interim/histogram_targets/try6_hist_pow-xf_22km/splot/histograms.zarr
+      hash: md5
+      md5: 55b17c7f74a2b2b91e4db07a5c7e9274.dir
+      size: 43762928
+      nfiles: 76
+    - path: ../../../src/features/build_histogram_xy.py
+      hash: md5
+      md5: 5592a6849eb2622ea56688ae94bb5bd5
+      size: 12966
+    params:
+      params.yaml:
+        eo_features.x_fp: data/features/predict/modis_wc2_soil_canopy_vodca_alos_22km/X.parquet
+        output.dir: data/interim/histogram_targets/try6_hist_pow-xf_22km
+        output.xy_dir: data/features/try6_hist_pow-xf_22km/xy_data
+        target_resolution: 22000
+    outs:
+    - path: ../../../data/features/try6_hist_pow-xf_22km/xy_data
+      hash: md5
+      md5: c9175e31e34177ab6902d83939bc6b6b.dir
+      size: 156875233
+      nfiles: 213

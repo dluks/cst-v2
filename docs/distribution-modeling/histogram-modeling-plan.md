@@ -6,15 +6,27 @@ Model plant trait distributions per grid cell as probability histograms, using a
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Histogram bins | 20 fixed equal-width | Balance between resolution and stability |
-| Bin domain | Yeo-Johnson transformed | More uniform distributions, better bin utilization |
-| Model architecture | Joint multi-output MLP | Single model predicts all trait histograms, can learn trait correlations |
-| Loss function | KL divergence | Natural measure for comparing probability distributions |
-| Framework | PyTorch (custom) | AutoGluon doesn't support histogram outputs with KL loss |
+| Decision | Choice | Rationale | Status |
+|----------|--------|-----------|--------|
+| Histogram bins | 20 fixed equal-width | Balance between resolution and stability | ✅ |
+| Bin domain | Yeo-Johnson transformed | More uniform distributions, better bin utilization | ✅ |
+| Output format | Zarr v3 store | Efficient array storage with metadata attrs | ✅ |
+| Grid projection | EPSG:6933 (Equal Area Cylindrical) 22 km | Consistent cell areas globally | ✅ |
+| Model architecture | Joint multi-output MLP | Single model predicts all trait histograms, can learn trait correlations | Phase 2 |
+| Loss function | KL divergence | Natural measure for comparing probability distributions | Phase 2 |
+| Framework | PyTorch (custom) | AutoGluon doesn't support histogram outputs with KL loss | Phase 2 |
 
-## Histogram Construction
+## Histogram Construction ✅
+
+> **Status**: Fully implemented in `src/data/build_histogram_targets.py` with tests in
+> `tests/data/test_build_histogram_targets.py` (19 tests passing). Output is a Zarr v3 store
+> containing `histograms` (N, 31, 20), `masks` (N, 31), `coords` (N, 2), `bin_edges` (31, 21),
+> and `total_weight` (N,). Construction is vectorized using `np.add.at` with integer cell IDs
+> (`cx * 10_000_000 + cy`) for fast groupby in EPSG:6933 at 22 km resolution.
+>
+> A sanity-check report is generated automatically at the end of each stage run
+> (`src/data/histogram_report.py`), producing PNG figures and a markdown summary in
+> `{out_dir}/report/`.
 
 ### Step 1: Define Global Bin Edges
 
@@ -75,29 +87,17 @@ def build_gbif_histogram(cell_observations, trait, bin_edges, weights=None):
 
 Two options for incorporating abundances:
 
-**Option A: Abundance as weight (recommended)**
+**Option A: Abundance as weight (implemented ✅)**
 ```python
-def build_splot_histogram(cell_plots, trait, bin_edges):
-    """
-    Build probability histogram from sPlot surveys.
-
-    Each species contributes to bins weighted by its abundance.
-    Plots are weighted by resurvey weights.
-    """
-    values = cell_plots[trait].values
-    abundances = cell_plots["relative_abundance"].values
-    resurvey_weights = cell_plots["weight"].values
-
-    # Combined weight = abundance × resurvey_weight
-    combined_weights = abundances * resurvey_weights
-
-    counts, _ = np.histogram(values, bins=bin_edges, weights=combined_weights)
-    histogram = counts / counts.sum() if counts.sum() > 0 else np.full(len(counts), 1.0 / len(counts))
-
-    return histogram
+# Combined weight = Rel_Abund_Plot × weight (resurvey weight)
+combined_weights = abundances * resurvey_weights
 ```
 
-**Option B: Pseudo-observation expansion (current approach)**
+> **Implementation note**: NaN weights in sPlot's `weight` column (~10.7% of rows) caused
+> silent bin poisoning via `np.add.at` (one NaN poisons an entire bin sum). Fixed by extending
+> the per-trait `not_null` mask to also filter NaN weights before accumulation.
+
+**Option B: Pseudo-observation expansion (not used)**
 - Expand each species to `int(abundance × multiplier)` pseudo-observations
 - Build histogram from pseudo-observations
 - More memory-intensive but preserves existing pipeline logic
@@ -138,6 +138,8 @@ Even with filtering, some histograms may be sparse. Options:
 3. **Accept sparsity**: Let the model learn that sparse histograms have higher uncertainty
 
 **Recommendation**: Use label smoothing with small epsilon (e.g., 0.01) to avoid zero probabilities which cause issues with KL divergence.
+
+> **Implemented** ✅ with `epsilon=0.01` (configurable via `params.yaml`).
 
 ## Model Architecture
 
@@ -403,19 +405,29 @@ Same as training loss, evaluated on held-out test set.
 
 ```
 src/
-  models/
-    histogram_mlp/
-      __init__.py
-      model.py          # HistogramMLP architecture
-      loss.py           # KL divergence, cross-entropy with masking
-      train.py          # Training loop
-      evaluate.py       # Evaluation metrics
-      dataset.py        # PyTorch Dataset for histogram data
   data/
-    build_histogram_data.py  # Construct histograms from GBIF/sPlot
+    build_histogram_targets.py  # ✅ Construct histograms from GBIF/sPlot → Zarr
+    histogram_report.py         # ✅ Sanity-check figures + markdown report
+  models/
+    histogram_mlp/              # (Phase 2)
+      __init__.py
+      model.py                  # HistogramMLP architecture
+      loss.py                   # KL divergence, cross-entropy with masking
+      train.py                  # Training loop
+      evaluate.py               # Evaluation metrics
+      dataset.py                # PyTorch Dataset for histogram data
+
+tests/
+  data/
+    test_build_histogram_targets.py  # ✅ 19 tests incl. int16 overflow regression
 
 pipeline/
-  histogram_models/
+  histogram_data/
+    try6_hist_pow-xf_22km/      # ✅ DVC pipeline (build_gbif_histograms, build_splot_histograms)
+      params.yaml
+      dvc.yaml
+      dvc.lock
+  histogram_models/             # (Phase 3)
     try6_hist_22km/
       params.yaml
       dvc.yaml
@@ -423,10 +435,24 @@ pipeline/
 
 ## Implementation Phases
 
-### Phase 1: Histogram Construction
-- [ ] Implement `build_histogram_data.py` to create histogram targets
-- [ ] Add bin edge computation with Yeo-Johnson transformation
-- [ ] Output: `(n_cells, n_traits, n_bins)` tensor + masks + metadata
+### Phase 1: Histogram Construction ✅
+
+- [x] Implement `build_histogram_targets.py` to create histogram targets
+  - Vectorized construction via `np.add.at` with integer cell ID packing (`cx * 10_000_000 + cy`)
+  - Separate GBIF and sPlot stages with source-specific filtering
+- [x] Add bin edge computation with Yeo-Johnson transformation
+  - Per-trait `PowerTransformer` pickles for forward/inverse transforms
+- [x] Output: Zarr store with `histograms` (N, 31, 20), `masks` (N, 31), `coords` (N, 2), `bin_edges` (31, 21), `total_weight` (N,)
+- [x] Quality filtering (min_observations, min_unique_species, min_bin_coverage, min_total_abundance)
+- [x] Label smoothing (epsilon=0.01)
+- [x] sPlot abundance weighting (Option A: combined_weight = Rel_Abund_Plot × weight)
+- [x] Sanity-check report generation (spatial coverage, per-trait validity/mean maps, entropy, sample distributions, entropy-vs-observations)
+- [x] DVC pipeline with Slurm execution (`pipeline/histogram_data/try6_hist_pow-xf_22km/`)
+- [x] Test suite (19 tests) including int16 overflow regression test
+
+**Bugs fixed during Phase 1:**
+- **int16 overflow**: `pd.Categorical.codes` returns int16 for <32,768 categories; `code * n_bins` overflows at code 1639 with n_bins=20, causing cross-cell histogram contamination. Fix: `.astype(np.int64)`.
+- **NaN weight poisoning**: `np.add.at` propagates NaN — one NaN weight poisons an entire bin. Fix: filter NaN weights in the per-trait `not_null` mask.
 
 ### Phase 2: Model Implementation
 - [ ] Implement `HistogramMLP` in PyTorch
