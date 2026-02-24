@@ -7,6 +7,7 @@ supporting both standard prediction and Coefficient of Variation (CoV) calculati
 import argparse
 import os
 import shutil
+import time
 from multiprocessing import Pool
 from pathlib import Path
 from typing import Literal
@@ -84,13 +85,16 @@ def cli() -> argparse.Namespace:
 _worker_state: dict = {}
 
 
-def _init_predict_worker(model_path_str: str, n_threads: int) -> None:
+def _init_predict_worker(
+    model_path_str: str, n_threads: int, log_level: int
+) -> None:
     """Initialize a prediction worker process.
 
     Called once per worker when the Pool is created. Sets thread limits
     to avoid oversubscription, then loads the AutoGluon model.
     """
     global _worker_state
+    log.setLevel(log_level)
     thread_str = str(n_threads)
     os.environ["OMP_NUM_THREADS"] = thread_str
     os.environ["OPENBLAS_NUM_THREADS"] = thread_str
@@ -109,6 +113,12 @@ def _predict_row_groups(args: tuple[str, list[int]]) -> pd.DataFrame:
 
     predict_fp_str, row_group_indices = args
     predictor = _worker_state["predictor"]
+    worker_id = os.getpid()
+
+    t0 = time.time()
+    log.info(
+        "[Worker %d] Loading %d row groups...", worker_id, len(row_group_indices)
+    )
 
     pf = pq.ParquetFile(predict_fp_str)
     tables = [pf.read_row_group(i) for i in row_group_indices]
@@ -118,10 +128,47 @@ def _predict_row_groups(args: tuple[str, list[int]]) -> pd.DataFrame:
     if "x" not in data.columns or "y" not in data.columns:
         data = data.reset_index()
 
+    t_load = time.time() - t0
+    log.info(
+        "[Worker %d] Loaded %s rows in %.1fs. Predicting...",
+        worker_id,
+        f"{len(data):,}",
+        t_load,
+    )
+
     coords = data[["x", "y"]]
     features = data.drop(columns=["x", "y"])
 
-    predictions = predictor.predict(features, as_pandas=True)
+    # Predict in sub-batches for progress reporting
+    n_rows = len(features)
+    sub_batch_size = 2_000_000
+    if n_rows > sub_batch_size:
+        predictions_list = []
+        for start in range(0, n_rows, sub_batch_size):
+            end = min(start + sub_batch_size, n_rows)
+            batch_pred = predictor.predict(
+                features.iloc[start:end], as_pandas=True
+            )
+            predictions_list.append(batch_pred)
+            elapsed = time.time() - t0
+            log.info(
+                "[Worker %d] %s / %s rows predicted (%.1fs elapsed)",
+                worker_id,
+                f"{end:,}",
+                f"{n_rows:,}",
+                elapsed,
+            )
+        predictions = pd.concat(predictions_list, ignore_index=True)
+    else:
+        predictions = predictor.predict(features, as_pandas=True)
+
+    t_total = time.time() - t0
+    log.info(
+        "[Worker %d] Prediction complete in %.1fs (%.0f rows/s)",
+        worker_id,
+        t_total,
+        n_rows / t_total,
+    )
 
     result = pd.concat(
         [coords.reset_index(drop=True), predictions.reset_index(drop=True)],
@@ -202,7 +249,11 @@ def _predict_parallel(
     pf = pq.ParquetFile(str(predict_fp))
     n_row_groups = pf.metadata.num_row_groups
 
-    n_cpus = os.cpu_count() or n_workers
+    n_cpus = (
+        int(os.environ.get("SLURM_CPUS_PER_TASK", 0))
+        or os.cpu_count()
+        or n_workers
+    )
     threads_per_worker = max(1, n_cpus // n_workers)
 
     log.info(
@@ -220,12 +271,24 @@ def _predict_parallel(
         if len(indices) > 0
     ]
 
+    t0 = time.time()
+    results = []
     with Pool(
         len(work_items),
         initializer=_init_predict_worker,
-        initargs=(str(model_path), threads_per_worker),
+        initargs=(str(model_path), threads_per_worker, log.level),
     ) as pool:
-        results = pool.map(_predict_row_groups, work_items)
+        for i, result in enumerate(
+            pool.imap_unordered(_predict_row_groups, work_items), 1
+        ):
+            elapsed = time.time() - t0
+            log.info(
+                "Progress: %d/%d chunks complete (%.1fs elapsed)",
+                i,
+                len(work_items),
+                elapsed,
+            )
+            results.append(result)
 
     log.info("Concatenating %d chunk results...", len(results))
     return pd.concat(results)

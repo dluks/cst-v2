@@ -121,9 +121,9 @@ stages:
       --params params.yaml
       --trait-sets splot_gbif
       --partitions genoa milan
-      --predict-cpus 56
-      --predict-mem 64GB
-      --predict-time 02:00:00
+      --predict-cpus 128
+      --predict-mem 250GB
+      --predict-time 12:00:00
       --aoa-cpus 112
       --aoa-mem 128GB
       --aoa-gpus 1
@@ -132,6 +132,8 @@ stages:
       --final-mem 32GB
       --final-time 01:00:00
       --overwrite
+      --predict-only
+      --traits rdmax
     deps:
       - ${project_root}/stages/inference.py
       - ${project_root}/src/models/predict_single_trait.py

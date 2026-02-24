@@ -556,6 +556,8 @@ def run_slurm(
             "--trait": trait,
             "--trait-set": trait_set,
         }
+        if task_type in ("predict", "cov"):
+            extra_args["-v"] = None
         if task_type == "cov":
             extra_args["--cov"] = None
         if task_type == "final":

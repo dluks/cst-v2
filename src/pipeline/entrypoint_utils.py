@@ -554,14 +554,14 @@ def build_base_command(
 
     Examples:
         >>> build_base_command("src.data.build_gbif_map", "/path/to/params.yaml", True)
-        ['python', '-m', 'src.data.build_gbif_map', '--params', '/path/to/params.yaml',
+        ['python', '-u', '-m', 'src.data.build_gbif_map', '--params', '/path/to/params.yaml',
         '--overwrite']
 
         >>> build_base_command("src.data.harmonize", extra_args={"--dry-run": None,
         "--cpus": 4})
-        ['python', '-m', 'src.data.harmonize', '--dry-run', '--cpus', '4']
+        ['python', '-u', '-m', 'src.data.harmonize', '--dry-run', '--cpus', '4']
     """
-    cmd = ["python", "-m", module_path]
+    cmd = ["python", "-u", "-m", module_path]
 
     if params_path:
         cmd.extend(["--params", params_path])
