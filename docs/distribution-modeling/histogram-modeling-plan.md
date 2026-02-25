@@ -12,9 +12,12 @@ Model plant trait distributions per grid cell as probability histograms, using a
 | Bin domain | Yeo-Johnson transformed | More uniform distributions, better bin utilization | ✅ |
 | Output format | Zarr v3 store | Efficient array storage with metadata attrs | ✅ |
 | Grid projection | EPSG:6933 (Equal Area Cylindrical) 22 km | Consistent cell areas globally | ✅ |
-| Model architecture | Joint multi-output MLP | Single model predicts all trait histograms, can learn trait correlations | Phase 2 |
-| Loss function | KL divergence | Natural measure for comparing probability distributions | Phase 2 |
-| Framework | PyTorch (custom) | AutoGluon doesn't support histogram outputs with KL loss | Phase 2 |
+| Model architecture | Joint multi-output MLP | Single model predicts all trait histograms, can learn trait correlations | ✅ |
+| Loss function | Masked KL divergence | Natural measure for comparing probability distributions; per-trait masking + source weighting | ✅ |
+| Framework | PyTorch (custom) | AutoGluon doesn't support histogram outputs with KL loss | ✅ |
+| CV strategy | H3 spatial folds, sPlot-only validation | Joint model needs one fold per cell; sPlot is ground truth | ✅ |
+| sPlot weighting | Loss weighting (`gbif_weight = n_splot / n_total`) | Cleaner than oversampling with masked loss | ✅ |
+| HPO | Optuna with JournalFileStorage | Parallel Slurm workers, MedianPruner, NFS-safe | ✅ |
 
 ## Histogram Construction ✅
 
@@ -406,31 +409,40 @@ Same as training loss, evaluated on held-out test set.
 ```
 src/
   data/
-    build_histogram_targets.py  # ✅ Construct histograms from GBIF/sPlot → Zarr
-    histogram_report.py         # ✅ Sanity-check figures + markdown report
+    build_histogram_targets.py   # ✅ Construct histograms from GBIF/sPlot → Zarr
+    histogram_report.py          # ✅ Sanity-check figures + markdown report
+  features/
+    build_histogram_xy.py        # ✅ Merge EO features with histogram targets → train.zarr
   models/
-    histogram_mlp/              # (Phase 2)
+    histogram_mlp/               # ✅ Phase 2
       __init__.py
-      model.py                  # HistogramMLP architecture
-      loss.py                   # KL divergence, cross-entropy with masking
-      train.py                  # Training loop
-      evaluate.py               # Evaluation metrics
-      dataset.py                # PyTorch Dataset for histogram data
+      model.py                   # HistogramMLP: MLP → Reshape → LogSoftmax
+      loss.py                    # MaskedKLDivLoss with source weighting
+      dataset.py                 # Zarr loader, preprocessing, PyTorch Dataset
+      cv_splits.py               # H3 spatial folds, sPlot-only validation splits
+      evaluate.py                # KL, EMD, histogram intersection, moment comparison
+      train.py                   # Training loop, CV orchestration, CLI
+      hpo.py                     # ✅ Optuna HPO (search space, objective, study mgmt)
+    run_utils.py                 # Run ID generation (run_YYYYMMDD_HHMMSS)
+
+stages/
+  build_histogram_xy.py          # ✅ Slurm/local entry point for XY merge
+  train_histogram_model.py       # ✅ Slurm/local entry point for training (GPU)
+  run_histogram_hpo.py           # ✅ Slurm entry point for parallel HPO workers
 
 tests/
   data/
     test_build_histogram_targets.py  # ✅ 19 tests incl. int16 overflow regression
+  models/
+    conftest.py                  # ✅ Shared fixtures (rng, dims, synthetic_data)
+    test_histogram_mlp.py        # ✅ Model, loss, dataset, CV, metrics, integration tests
+    test_hpo.py                  # ✅ Search space, study, pruning callback tests
 
 pipeline/
   histogram_data/
-    try6_hist_pow-xf_22km/      # ✅ DVC pipeline (build_gbif_histograms, build_splot_histograms)
-      params.yaml
-      dvc.yaml
-      dvc.lock
-  histogram_models/             # (Phase 3)
-    try6_hist_22km/
-      params.yaml
-      dvc.yaml
+    try6_hist_pow-xf_22km/       # ✅ DVC pipeline (build_gbif_histograms, build_splot_histograms)
+  products/
+    try6_hist_pow-xf_22km/       # ✅ DVC pipeline (build_histogram_xy, train_histogram_model)
 ```
 
 ## Implementation Phases
@@ -454,18 +466,24 @@ pipeline/
 - **int16 overflow**: `pd.Categorical.codes` returns int16 for <32,768 categories; `code * n_bins` overflows at code 1639 with n_bins=20, causing cross-cell histogram contamination. Fix: `.astype(np.int64)`.
 - **NaN weight poisoning**: `np.add.at` propagates NaN — one NaN weight poisons an entire bin. Fix: filter NaN weights in the per-trait `not_null` mask.
 
-### Phase 2: Model Implementation
-- [ ] Implement `HistogramMLP` in PyTorch
-- [ ] Implement masked cross-entropy loss
-- [ ] Basic training loop with early stopping
+### Phase 2: Model Implementation & Training Pipeline ✅
 
-### Phase 3: Training Pipeline
-- [ ] DVC pipeline for training
-- [ ] Hyperparameter configuration via params.yaml
-- [ ] Checkpointing and logging (TensorBoard/W&B)
+- [x] `HistogramMLP` nn.Module: configurable hidden_dims, dropout, LogSoftmax per-trait output
+- [x] `MaskedKLDivLoss`: per-trait masking, sPlot/GBIF source weighting (`gbif_weight_factor`)
+- [x] `HistogramDataset` + `preprocess_features`: sentinel→NaN, median imputation, standardization
+- [x] `assign_spatial_folds`: H3 hex-based spatial CV with fold balance optimization
+- [x] `evaluate_all`: KL divergence, EMD, histogram intersection, moment comparison (mean R², MAE)
+- [x] Training loop with early stopping, CosineAnnealingLR, AdamW, completion flags for resumability
+- [x] CV orchestration (`run_cv`): 5-fold spatial CV + full model training
+- [x] Optuna HPO integration: `hpo.py` with `JournalFileStorage`, `MedianPruner`, parallel Slurm workers
+- [x] DVC stage `train_histogram_model` with GPU partition (`l40s`)
+- [x] Slurm entry points: `stages/train_histogram_model.py`, `stages/run_histogram_hpo.py`
+- [x] Unit tests for all modules + HPO integration tests
+- [x] `optuna-dashboard` available for HPO monitoring (dev dependency)
 
-### Phase 4: Evaluation & Comparison
-- [ ] Implement evaluation metrics (KL, EMD, histogram intersection)
+### Phase 3: Evaluation & Comparison
+- [ ] Run HPO to find optimal hyperparameters
+- [ ] Full 5-fold CV with best hyperparameters
 - [ ] Compare to moment-based approach (derive moments from histograms)
 - [ ] Visualization of predicted vs observed histograms
 

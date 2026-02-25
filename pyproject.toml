@@ -64,6 +64,7 @@ dev = [
     "pytest-mock>=3.12.0",
     "ruff>=0.14.2",
     "jupyterlab>=4.5.3",
+    "optuna-dashboard>=0.20.0",
 ]
 
 [build-system]
