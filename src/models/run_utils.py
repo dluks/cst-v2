@@ -14,6 +14,11 @@ def generate_run_id() -> str:
     return f"run_{now()}"
 
 
+def generate_study_id() -> str:
+    """Generate a new HPO study ID based on current timestamp."""
+    return f"hpo_{now()}"
+
+
 def get_latest_run_id(base_dir: Path) -> str | None:
     """
     Find the most recent run ID in a directory.

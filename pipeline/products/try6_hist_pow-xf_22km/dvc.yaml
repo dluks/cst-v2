@@ -7,12 +7,13 @@ stages:
       uv run python ${project_root}/stages/build_histogram_xy.py
       --params params.yaml
       --partitions genoa milan
-      --cpus 8
-      --mem 64GB
-      --time 00:30:00
+      --cpus 2
+      --mem 8GB
+      --time 00:10:00
       --overwrite
     deps:
       - ${project_root}/src/features/build_histogram_xy.py
+      - ${project_root}/src/models/histogram_mlp/cv_splits.py
       - ${project_root}/${output.dir}/gbif/histograms.zarr
       - ${project_root}/${output.dir}/splot/histograms.zarr
       - ${project_root}/${eo_features.x_fp}
@@ -21,8 +22,40 @@ stages:
       - output.xy_dir
       - eo_features.x_fp
       - target_resolution
+      - train.n_folds
+      - train.h3_resolution
+      - train.n_fold_iterations
     outs:
       - ${project_root}/${output.xy_dir}:
+          persist: true
+
+  # ── Phase 2: HPO ──────────────────────────────────────────────────────
+  run_histogram_hpo:
+    cmd: >-
+      uv run python ${project_root}/stages/run_histogram_hpo.py
+      --params params.yaml
+      --partitions l40s
+      --n-workers ${hpo.n_workers}
+      --n-trials-per-worker ${hpo.n_trials_per_worker}
+      --hpo-fold ${hpo.hpo_fold}
+      --gpus 1
+      --cpus 16
+      --mem 64GB
+      --time 06:00:00
+    deps:
+      - ${project_root}/src/models/histogram_mlp/hpo.py
+      - ${project_root}/src/models/histogram_mlp/train.py
+      - ${project_root}/src/models/histogram_mlp/model.py
+      - ${project_root}/src/models/histogram_mlp/loss.py
+      - ${project_root}/src/models/histogram_mlp/dataset.py
+      - ${project_root}/src/models/histogram_mlp/cv_splits.py
+      - ${project_root}/${output.xy_dir}/train.zarr
+    params:
+      - histogram
+      - train
+      - hpo
+    outs:
+      - ${project_root}/models/${product_code}/hpo:
           persist: true
 
   # ── Phase 2: Model training ────────────────────────────────────────────
@@ -48,5 +81,5 @@ stages:
       - train
       - models
     outs:
-      - ${project_root}/models/${product_code}:
+      - ${project_root}/models/${product_code}/training:
           persist: true

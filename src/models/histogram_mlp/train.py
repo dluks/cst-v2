@@ -17,7 +17,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from torch.utils.data import DataLoader
 
 from src.conf.conf import get_config
-from src.models.histogram_mlp.cv_splits import assign_spatial_folds, get_train_val_indices
+from src.models.histogram_mlp.cv_splits import get_train_val_indices
 from src.models.histogram_mlp.dataset import (
     HistogramDataset,
     load_zarr_arrays,
@@ -375,21 +375,11 @@ def run_cv(
     )
     np.savez(run_dir / "feature_stats.npz", **feature_stats)
 
-    # Assign spatial folds
-    folds_path = run_dir / "fold_assignments.npy"
-    if folds_path.exists():
-        log.info("Loading cached fold assignments from %s", folds_path)
-        folds = np.load(folds_path)
-    else:
-        log.info("Assigning spatial folds...")
-        folds = assign_spatial_folds(
-            data["coords"],
-            n_folds=n_folds,
-            h3_resolution=cfg.train.get("h3_resolution", 2),
-            n_iterations=cfg.train.get("n_fold_iterations", 100),
-            random_seed=cfg.get("random_seed", 42),
-        )
-        np.save(folds_path, folds)
+    # Load pre-computed folds from Zarr
+    if "folds" not in data:
+        raise ValueError("No 'folds' array in train.zarr — re-run build_histogram_xy")
+    folds = data["folds"]
+    log.info("Loaded fold assignments: %d folds", len(np.unique(folds)))
 
     # Train CV folds
     cv_dir = run_dir / "cv"
@@ -549,7 +539,7 @@ def main() -> None:
     proj_root = Path(proj_root)
 
     zarr_path = proj_root / cfg.output.xy_dir / "train.zarr"
-    models_base = proj_root / cfg.models.dir_fp / "histogram_mlp"
+    models_base = proj_root / cfg.models.dir_fp / "training"
     models_base.mkdir(parents=True, exist_ok=True)
 
     # Determine run ID
@@ -610,18 +600,9 @@ def main() -> None:
         )
         np.savez(run_dir / "feature_stats.npz", **feature_stats)
 
-        folds_path = run_dir / "fold_assignments.npy"
-        if folds_path.exists():
-            folds = np.load(folds_path)
-        else:
-            folds = assign_spatial_folds(
-                data["coords"],
-                n_folds=cfg.train.n_folds,
-                h3_resolution=cfg.train.get("h3_resolution", 2),
-                n_iterations=cfg.train.get("n_fold_iterations", 100),
-                random_seed=seed,
-            )
-            np.save(folds_path, folds)
+        if "folds" not in data:
+            raise ValueError("No 'folds' array in train.zarr — re-run build_histogram_xy")
+        folds = data["folds"]
 
         train_fold(
             args.fold, data, folds,

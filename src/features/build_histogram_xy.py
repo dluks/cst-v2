@@ -21,6 +21,7 @@ import pandas as pd
 import zarr
 
 from src.conf.conf import get_config
+from src.models.histogram_mlp.cv_splits import assign_spatial_folds
 
 log = logging.getLogger(__name__)
 
@@ -287,6 +288,122 @@ def _merge_with_features(
 
 
 # ---------------------------------------------------------------------------
+# Fold assignment diagnostics
+# ---------------------------------------------------------------------------
+
+# Representative traits spanning leaf, stem, root, and seed organs
+_KEY_TRAITS = {
+    "X3117": "SLA",
+    "X3106": "Plant height",
+    "X14": "Leaf N",
+    "X4": "Wood density",
+    "X6": "Rooting depth",
+    "X26": "Seed mass",
+}
+
+
+def _plot_fold_assignments(
+    coords: np.ndarray,
+    folds: np.ndarray,
+    mask: np.ndarray,
+    trait_names: list[str],
+    output_path: Path,
+    max_samples: int = 200_000,
+) -> None:
+    """Plot spatial fold assignments for key traits as a 2x3 PDF.
+
+    Each subplot shows cells with valid data for one trait, colored by fold ID.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        Cell coordinates (N, 2).
+    folds : np.ndarray
+        Fold assignments (N,).
+    mask : np.ndarray
+        Validity mask (N, n_traits).
+    trait_names : list[str]
+        Trait identifiers (e.g. ``["X4", "X6", ...]``).
+    output_path : Path
+        Where to save the PDF.
+    max_samples : int
+        Maximum number of points per subplot (randomly subsampled).
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
+    # Select trait indices: prefer key traits, fall back to evenly spaced
+    trait_indices = []
+    plot_names = []
+    for tid, short_name in _KEY_TRAITS.items():
+        if tid in trait_names:
+            trait_indices.append(trait_names.index(tid))
+            plot_names.append(f"{tid}: {short_name}")
+    if len(trait_indices) < 6:
+        # Fill remaining slots with evenly spaced traits
+        step = max(1, len(trait_names) // 6)
+        for i in range(0, len(trait_names), step):
+            if i not in trait_indices:
+                trait_indices.append(i)
+                plot_names.append(trait_names[i])
+            if len(trait_indices) == 6:
+                break
+
+    n_folds = len(np.unique(folds))
+    palette = sns.color_palette("tab10", n_folds)
+    rng = np.random.RandomState(0)
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    axes = axes.ravel()
+
+    for ax_idx, (trait_idx, name) in enumerate(zip(trait_indices, plot_names)):
+        ax = axes[ax_idx]
+        valid = mask[:, trait_idx].astype(bool)
+        valid_coords = coords[valid]
+        valid_folds = folds[valid]
+
+        # Subsample if needed
+        n_valid = len(valid_coords)
+        if n_valid > max_samples:
+            sample_idx = rng.choice(n_valid, max_samples, replace=False)
+            valid_coords = valid_coords[sample_idx]
+            valid_folds = valid_folds[sample_idx]
+
+        # Scatter by fold
+        for fold_id in range(n_folds):
+            fold_mask = valid_folds == fold_id
+            n_fold = fold_mask.sum()
+            ax.scatter(
+                valid_coords[fold_mask, 0],
+                valid_coords[fold_mask, 1],
+                c=[palette[fold_id]],
+                s=1,
+                alpha=0.4,
+                label=f"Fold {fold_id} ({n_fold:,})",
+                rasterized=True,
+            )
+
+        ax.set_title(name, fontsize=11)
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.legend(fontsize=7, markerscale=5, loc="lower left")
+        ax.set_aspect("equal")
+
+    # Hide unused axes
+    for ax_idx in range(len(trait_indices), len(axes)):
+        axes[ax_idx].set_visible(False)
+
+    fig.suptitle(
+        f"Spatial CV fold assignments ({n_folds} folds, {len(coords):,} cells)",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    log.info("Fold assignment plot saved to %s", output_path)
+
+
+# ---------------------------------------------------------------------------
 # Save
 # ---------------------------------------------------------------------------
 
@@ -300,6 +417,8 @@ def _save_outputs(
     bin_edges: np.ndarray,
     feature_names: list[str],
     attrs: dict,
+    *,
+    folds: np.ndarray | None = None,
 ) -> None:
     """Save merged training data as a Zarr store.
 
@@ -323,6 +442,8 @@ def _save_outputs(
         EO feature column names.
     attrs : dict
         Metadata attributes.
+    folds : np.ndarray | None
+        Spatial CV fold assignments (N,). Saved if provided.
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -334,6 +455,8 @@ def _save_outputs(
     root.create_array("coords", data=coords)
     root.create_array("source", data=source_ids)
     root.create_array("bin_edges", data=bin_edges)
+    if folds is not None:
+        root.create_array("folds", data=folds)
 
     # Store metadata
     root.attrs["n_cells"] = int(hist.shape[0])
@@ -402,10 +525,28 @@ def main(args: argparse.Namespace | None = None) -> None:
         resolution=cfg.target_resolution,
     )
 
+    # Assign spatial CV folds
+    log.info("Assigning spatial CV folds...")
+    folds = assign_spatial_folds(
+        coords,
+        n_folds=cfg.train.n_folds,
+        h3_resolution=cfg.train.get("h3_resolution", 2),
+        n_iterations=cfg.train.get("n_fold_iterations", 100),
+        random_seed=cfg.get("random_seed", 42),
+        from_crs=cfg.crs,
+    )
+
+    # Plot fold assignments
+    trait_names = attrs.get("trait_names", [])
+    _plot_fold_assignments(
+        coords, folds, mask, trait_names,
+        output_path=out_path.parent / "fold_assignments.pdf",
+    )
+
     # Save
     _save_outputs(
         out_path, hist, mask, features, coords, source_ids, bin_edges,
-        feature_names, attrs,
+        feature_names, attrs, folds=folds,
     )
 
     log.info("Done — %d training cells written to %s", hist.shape[0], out_path)

@@ -12,7 +12,6 @@ from pathlib import Path
 import numpy as np
 
 from src.conf.conf import get_config
-from src.models.histogram_mlp.cv_splits import assign_spatial_folds
 from src.models.histogram_mlp.dataset import load_zarr_arrays, preprocess_features
 from src.models.histogram_mlp.train import train_fold
 
@@ -256,8 +255,8 @@ def cli() -> argparse.Namespace:
         "--params", type=str, required=True, help="Path to params.yaml",
     )
     parser.add_argument(
-        "--study-name", type=str, default="histogram_mlp_hpo",
-        help="Optuna study name (default: histogram_mlp_hpo).",
+        "--study-name", type=str, required=True,
+        help="Optuna study name (passed by run_histogram_hpo.py).",
     )
     parser.add_argument(
         "--n-trials", type=int, default=20,
@@ -296,8 +295,7 @@ def main() -> None:
     proj_root = Path(proj_root)
 
     zarr_path = proj_root / cfg.output.xy_dir / "train.zarr"
-    models_base = proj_root / cfg.models.dir_fp / "histogram_mlp"
-    hpo_dir = models_base / "hpo" / args.study_name
+    hpo_dir = proj_root / cfg.models.dir_fp / "hpo" / args.study_name
     hpo_dir.mkdir(parents=True, exist_ok=True)
 
     storage_path = hpo_dir / "journal.log"
@@ -326,21 +324,11 @@ def main() -> None:
         vodca_sentinel=cfg.train.get("vodca_sentinel", 32767.0),
     )
 
-    # Compute folds (cached)
-    folds_path = hpo_dir / "fold_assignments.npy"
-    if folds_path.exists():
-        log.info("Loading cached fold assignments from %s", folds_path)
-        folds = np.load(folds_path)
-    else:
-        log.info("Assigning spatial folds...")
-        folds = assign_spatial_folds(
-            data["coords"],
-            n_folds=cfg.train.n_folds,
-            h3_resolution=cfg.train.get("h3_resolution", 2),
-            n_iterations=cfg.train.get("n_fold_iterations", 100),
-            random_seed=seed,
-        )
-        np.save(folds_path, folds)
+    # Load pre-computed folds from Zarr
+    if "folds" not in data:
+        raise ValueError("No 'folds' array in train.zarr — re-run build_histogram_xy")
+    folds = data["folds"]
+    log.info("Loaded fold assignments: %d folds", len(np.unique(folds)))
 
     # Create study and objective
     study = create_study(args.study_name, storage_path)

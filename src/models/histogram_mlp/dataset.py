@@ -27,7 +27,8 @@ def load_zarr_arrays(zarr_path: Path) -> dict[str, np.ndarray | list[str]]:
     -------
     dict
         Keys: ``Y_hist``, ``Y_mask``, ``X``, ``coords``, ``source``,
-        ``bin_edges``, ``feature_names``, ``trait_names``.
+        ``bin_edges``, ``feature_names``, ``trait_names``, and
+        optionally ``folds``.
     """
     root = zarr.open_group(zarr_path, mode="r")
 
@@ -41,6 +42,9 @@ def load_zarr_arrays(zarr_path: Path) -> dict[str, np.ndarray | list[str]]:
         "feature_names": list(root.attrs.get("feature_names", [])),
         "trait_names": list(root.attrs.get("trait_names", [])),
     }
+
+    if "folds" in root:
+        data["folds"] = np.asarray(root["folds"])
 
     log.info(
         "Loaded train.zarr: %d cells, %d traits, %d bins, %d features",

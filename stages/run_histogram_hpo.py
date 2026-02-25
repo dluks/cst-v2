@@ -15,6 +15,7 @@ from pathlib import Path
 
 from simple_slurm import Slurm
 
+from src.models.run_utils import generate_study_id
 from src.pipeline.entrypoint_utils import (
     add_common_args,
     add_execution_args,
@@ -59,8 +60,8 @@ def cli() -> argparse.Namespace:
         help="Number of trials each worker runs (default: 25).",
     )
     parser.add_argument(
-        "--study-name", type=str, default="histogram_mlp_hpo",
-        help="Optuna study name (default: histogram_mlp_hpo).",
+        "--study-name", type=str, default=None,
+        help="Optuna study name (default: auto-generated hpo_YYYYMMDD_HHMMSS).",
     )
     parser.add_argument(
         "--hpo-fold", type=int, default=0,
@@ -89,6 +90,9 @@ def main() -> None:
     """Main function to submit HPO workers or run locally."""
     args = cli()
     params_path = Path(args.params).resolve()
+
+    if args.study_name is None:
+        args.study_name = generate_study_id()
 
     total_trials = args.n_workers * args.n_trials_per_worker
     print(f"HPO: {args.n_workers} workers x {args.n_trials_per_worker} trials = {total_trials} total")

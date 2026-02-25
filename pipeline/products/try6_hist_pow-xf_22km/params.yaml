@@ -73,7 +73,7 @@ train:
   max_epochs: 200
   patience: 20
   n_folds: 5
-  h3_resolution: 2
+  h3_resolution: 1
   n_fold_iterations: 100
   standardize_features: true
   vodca_sentinel: 32767
@@ -83,7 +83,6 @@ models:
 
 # ── HPO configuration ───────────────────────────────────────────────────
 hpo:
-  study_name: histogram_mlp_hpo
   n_workers: 4
   n_trials_per_worker: 25
   hpo_fold: 0
