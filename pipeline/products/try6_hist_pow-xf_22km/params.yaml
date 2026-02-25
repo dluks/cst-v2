@@ -80,3 +80,10 @@ train:
 
 models:
   dir_fp: models/try6_hist_pow-xf_22km
+
+# ── HPO configuration ───────────────────────────────────────────────────
+hpo:
+  study_name: histogram_mlp_hpo
+  n_workers: 4
+  n_trials_per_worker: 25
+  hpo_fold: 0

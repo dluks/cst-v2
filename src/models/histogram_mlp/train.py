@@ -7,6 +7,7 @@ import csv
 import json
 import logging
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -125,6 +126,7 @@ def train_fold(
     output_dir: Path,
     cfg,
     device: torch.device,
+    epoch_callback: Callable[[int, float], None] | None = None,
 ) -> dict:
     """Train a single CV fold.
 
@@ -142,6 +144,9 @@ def train_fold(
         Training configuration.
     device : torch.device
         CUDA or CPU device.
+    epoch_callback : Callable[[int, float], None] | None
+        Optional callback invoked with ``(epoch, val_loss)`` after each epoch.
+        Can raise an exception (e.g. ``optuna.TrialPruned``) to stop training.
 
     Returns
     -------
@@ -196,6 +201,7 @@ def train_fold(
     n_splot_train = int((data["source"][train_idx] == 1).sum())
     n_total_train = len(train_idx)
     gbif_weight = n_splot_train / n_total_train if n_total_train > 0 else 1.0
+    gbif_weight *= cfg.train.get("gbif_weight_factor", 1.0)
     log.info("Source weighting: gbif_weight=%.4f", gbif_weight)
 
     criterion = MaskedKLDivLoss(gbif_weight=gbif_weight)
@@ -227,6 +233,10 @@ def train_fold(
                 "  Epoch %3d: train=%.6f  val=%.6f  lr=%.2e",
                 epoch, train_loss, val_loss, lr,
             )
+
+        # Report to callback (e.g., Optuna pruning)
+        if epoch_callback is not None:
+            epoch_callback(epoch, val_loss)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss

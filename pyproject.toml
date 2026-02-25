@@ -46,6 +46,7 @@ dependencies = [
 cuda = [
     "torch>=2.0.0",
     "cupy-cuda12x>=13.6.0",
+    "optuna>=3.6.0",
     # "cudf-cu11>=24.10.0",
     # "cuml-cu11>=24.10.0",
 ]
