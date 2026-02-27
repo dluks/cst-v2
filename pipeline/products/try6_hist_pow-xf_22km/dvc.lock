@@ -43,3 +43,69 @@ stages:
       md5: 9e98f7cff8321d18577db632aad001fc.dir
       size: 157428597
       nfiles: 217
+  run_histogram_hpo:
+    cmd: uv run python ../../../stages/run_histogram_hpo.py --params params.yaml --partitions
+      l40s --n-workers 4 --n-trials-per-worker 25 --hpo-fold 0 --gpus 1 --cpus 4 --mem
+      16GB --time 01:00:00
+    deps:
+    - path: ../../../data/features/try6_hist_pow-xf_22km/xy_data/train.zarr
+      hash: md5
+      md5: 280376d45fc579dbc41057d00d4c3165.dir
+      size: 156890568
+      nfiles: 216
+    - path: ../../../src/models/histogram_mlp/cv_splits.py
+      hash: md5
+      md5: 5eeea727f252a19a2f0a5b0ddca588b9
+      size: 4049
+    - path: ../../../src/models/histogram_mlp/dataset.py
+      hash: md5
+      md5: d2246544c03d8ae000efa8ae91c6b0d4
+      size: 5090
+    - path: ../../../src/models/histogram_mlp/hpo.py
+      hash: md5
+      md5: 24ef32c1690c495da0d2b8c308f7a458
+      size: 10556
+    - path: ../../../src/models/histogram_mlp/loss.py
+      hash: md5
+      md5: f8e0a851b59726627e4ff57a0ded9256
+      size: 2648
+    - path: ../../../src/models/histogram_mlp/model.py
+      hash: md5
+      md5: 87b4d4933d5271250b1a7a111e7ff9be
+      size: 2141
+    - path: ../../../src/models/histogram_mlp/train.py
+      hash: md5
+      md5: b9a998e73ce239fa58a82624ad3f9d43
+      size: 20727
+    params:
+      params.yaml:
+        histogram:
+          n_bins: 20
+          label_smoothing_epsilon: 0.01
+        hpo:
+          n_workers: 4
+          n_trials_per_worker: 25
+          hpo_fold: 0
+        train:
+          arch: histogram_mlp
+          hidden_dims:
+          - 512
+          - 256
+          - 256
+          dropout: 0.2
+          batch_size: 1024
+          lr: 0.001
+          weight_decay: 0.01
+          max_epochs: 200
+          patience: 20
+          n_folds: 5
+          h3_resolution: 1
+          n_fold_iterations: 100
+          standardize_features: true
+          vodca_sentinel: 32767
+    outs:
+    - path: ../../../models/try6_hist_pow-xf_22km/hpo
+      hash: md5
+      md5: 98b398408026b61fd3c78f01653c4de9.dir
+      size: 905494732
+      nfiles: 491
