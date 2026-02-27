@@ -30,6 +30,41 @@ from src.models.run_utils import generate_run_id, get_latest_run_id
 
 log = logging.getLogger(__name__)
 
+# HPO param keys that map directly to cfg.train fields
+_HPO_PARAM_KEYS = ("hidden_dims", "dropout", "lr", "weight_decay", "batch_size", "gbif_weight_factor")
+
+
+def load_hpo_best_params(hpo_base_dir: Path) -> dict | None:
+    """Load the best HPO params from the study with the lowest validation loss.
+
+    Scans all ``*/best_params.json`` files under *hpo_base_dir* and returns
+    the hyperparameter dict from the study with the lowest ``best_val_loss``.
+    Returns ``None`` if no HPO results are found.
+    """
+    candidates = sorted(hpo_base_dir.glob("*/best_params.json"))
+    if not candidates:
+        return None
+
+    best_loss = float("inf")
+    best_params = None
+    best_path = None
+    for path in candidates:
+        with open(path) as f:
+            params = json.load(f)
+        loss = params.get("best_val_loss", float("inf"))
+        if loss < best_loss:
+            best_loss = loss
+            best_params = params
+            best_path = path
+
+    if best_params is not None:
+        study_dir = best_path.parent.name
+        log.info(
+            "Loaded HPO params from %s (trial %d, val_loss=%.6f)",
+            study_dir, best_params.get("best_trial_number", -1), best_loss,
+        )
+    return best_params
+
 
 # ---------------------------------------------------------------------------
 # Training helpers
@@ -338,6 +373,8 @@ def train_full_model(
 
     n_splot = int((data["source"] == 1).sum())
     gbif_weight = n_splot / len(data["source"])
+    gbif_weight *= cfg.train.get("gbif_weight_factor", 1.0)
+    log.info("Source weighting (full model): gbif_weight=%.4f", gbif_weight)
 
     criterion = MaskedKLDivLoss(gbif_weight=gbif_weight)
     optimizer = AdamW(
@@ -558,17 +595,29 @@ def main() -> None:
     args = cli()
     cfg = get_config(params_path=args.params)
 
-    # Override for debug mode
-    if args.debug:
-        cfg.train.max_epochs = 3
-        cfg.train.batch_size = 64
-        cfg.train.patience = 100  # Don't early-stop in debug
-
     # Resolve paths
     proj_root = os.environ.get("PROJECT_ROOT")
     if proj_root is None:
         raise ValueError("PROJECT_ROOT environment variable is not set")
     proj_root = Path(proj_root)
+
+    # Auto-load HPO best params
+    hpo_base_dir = proj_root / cfg.models.dir_fp / "hpo"
+    hpo_params = load_hpo_best_params(hpo_base_dir)
+    if hpo_params is not None:
+        for key in _HPO_PARAM_KEYS:
+            if key in hpo_params:
+                old_val = cfg.train.get(key, "(unset)")
+                cfg.train[key] = hpo_params[key]
+                log.info("  HPO override: train.%s = %s (was %s)", key, hpo_params[key], old_val)
+    else:
+        log.info("No HPO results found in %s — using params.yaml defaults", hpo_base_dir)
+
+    # Override for debug mode
+    if args.debug:
+        cfg.train.max_epochs = 3
+        cfg.train.batch_size = 64
+        cfg.train.patience = 100  # Don't early-stop in debug
 
     zarr_path = proj_root / cfg.output.xy_dir / "train.zarr"
     models_base = proj_root / cfg.models.dir_fp / "training"

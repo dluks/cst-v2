@@ -76,6 +76,7 @@ stages:
       - ${project_root}/src/models/histogram_mlp/cv_splits.py
       - ${project_root}/src/models/histogram_mlp/evaluate.py
       - ${project_root}/${output.xy_dir}/train.zarr
+      - ${project_root}/models/${product_code}/hpo
     params:
       - histogram
       - train
