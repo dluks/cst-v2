@@ -210,6 +210,59 @@ def compute_moment_comparison(
     }
 
 
+def compute_baseline_metrics(
+    Y_hist: np.ndarray,
+    Y_mask: np.ndarray,
+    train_idx: np.ndarray,
+    val_idx: np.ndarray,
+    bin_edges: np.ndarray,
+    trait_names: list[str] | None = None,
+) -> dict:
+    """Evaluate a mean-histogram baseline: predict the training mean for every cell.
+
+    For each trait, the mean histogram is computed from training cells where
+    that trait is valid.  This constant prediction is then evaluated against
+    validation targets using :func:`evaluate_all`.
+
+    Parameters
+    ----------
+    Y_hist : np.ndarray
+        Full histogram array, shape ``(N_total, n_traits, n_bins)``.
+    Y_mask : np.ndarray
+        Full validity mask, shape ``(N_total, n_traits)``.
+    train_idx, val_idx : np.ndarray
+        Integer index arrays into the first axis of *Y_hist* / *Y_mask*.
+    bin_edges : np.ndarray
+        Shape ``(n_traits, n_bins + 1)``.
+    trait_names : list[str] | None
+        Optional trait names for labeling.
+
+    Returns
+    -------
+    dict
+        Same structure as :func:`evaluate_all`.
+    """
+    n_traits, n_bins = Y_hist.shape[1], Y_hist.shape[2]
+    train_hist = Y_hist[train_idx]  # (N_train, n_traits, n_bins)
+    train_mask = Y_mask[train_idx]  # (N_train, n_traits)
+
+    # Per-trait masked mean histogram
+    mean_hist = np.zeros((n_traits, n_bins), dtype=np.float64)
+    for j in range(n_traits):
+        valid = train_mask[:, j].astype(bool)
+        if valid.any():
+            mean_hist[j] = train_hist[valid, j].mean(axis=0)
+
+    # Broadcast to all validation cells: (N_val, n_traits, n_bins)
+    n_val = len(val_idx)
+    baseline_pred = np.broadcast_to(mean_hist[np.newaxis], (n_val, n_traits, n_bins)).copy()
+
+    return evaluate_all(
+        baseline_pred, Y_hist[val_idx], Y_mask[val_idx], bin_edges,
+        trait_names=trait_names,
+    )
+
+
 def evaluate_all(
     pred_probs: np.ndarray,
     target_probs: np.ndarray,

@@ -23,7 +23,7 @@ from src.models.histogram_mlp.dataset import (
     load_zarr_arrays,
     preprocess_features,
 )
-from src.models.histogram_mlp.evaluate import evaluate_all
+from src.models.histogram_mlp.evaluate import compute_baseline_metrics, evaluate_all
 from src.models.histogram_mlp.loss import MaskedKLDivLoss
 from src.models.histogram_mlp.model import HistogramMLP
 from src.models.run_utils import generate_run_id, get_latest_run_id
@@ -272,13 +272,20 @@ def train_fold(
     metrics["best_val_loss"] = best_val_loss
     metrics["epochs_trained"] = len(training_log)
 
+    # Mean-histogram baseline for comparison
+    metrics["baseline"] = compute_baseline_metrics(
+        data["Y_hist"], data["Y_mask"], train_idx, val_idx,
+        data["bin_edges"], trait_names=data.get("trait_names"),
+    )
+
     with open(output_dir / "fold_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2, default=_json_default)
 
     flag_path.touch()
-    log.info("Fold %d complete: val_loss=%.6f, KL=%.6f, EMD=%.6f, HI=%.4f",
+    baseline_kl = metrics["baseline"]["kl_divergence"]["overall"]
+    log.info("Fold %d complete: val_loss=%.6f, KL=%.6f (baseline=%.6f), EMD=%.6f, HI=%.4f",
              fold_id, best_val_loss,
-             metrics["kl_divergence"]["overall"],
+             metrics["kl_divergence"]["overall"], baseline_kl,
              metrics["emd"]["overall"],
              metrics["histogram_intersection"]["overall"])
 
