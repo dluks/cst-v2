@@ -136,6 +136,7 @@ def create_objective(
                 cfg=trial_cfg,
                 device=device,
                 epoch_callback=epoch_callback,
+                num_workers=0,
             )
             val_loss = metrics["best_val_loss"]
         except optuna.TrialPruned:
@@ -279,6 +280,7 @@ def cli() -> argparse.Namespace:
 
 def main() -> None:
     """Main HPO entry point."""
+    import optuna
     import torch
 
     args = cli()
@@ -340,7 +342,11 @@ def main() -> None:
     study.optimize(objective, n_trials=args.n_trials)
 
     # Save best params (all workers do this; last writer wins, which is fine)
-    save_best_params(study, hpo_dir / "best_params.json")
+    completed = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    if completed:
+        save_best_params(study, hpo_dir / "best_params.json")
+    else:
+        log.warning("No completed trials — skipping best_params.json (faulty GPU node?)")
 
     log.info("HPO complete. %d trials finished.", len(study.trials))
 

@@ -123,6 +123,7 @@ def main() -> None:
             mem=args.mem,
             gpus=args.gpus,
             study_name=args.study_name,
+            exclude=args.exclude,
         )
 
 
@@ -159,6 +160,7 @@ def run_slurm(
     mem: str,
     gpus: str,
     study_name: str,
+    exclude: str | None = None,
 ) -> None:
     """Submit parallel HPO workers to Slurm."""
     cmd_parts = build_base_command(
@@ -172,7 +174,7 @@ def run_slurm(
     for worker_id in range(n_workers):
         partition = partitions[worker_id % len(partitions)]
 
-        slurm = Slurm(
+        slurm_kwargs = dict(
             job_name=f"hpo_w{worker_id}_{study_name}",
             output=str(log_dir / f"%j_hpo_w{worker_id}.log"),
             error=str(log_dir / f"%j_hpo_w{worker_id}.err"),
@@ -182,6 +184,10 @@ def run_slurm(
             partition=partition,
             gres=f"gpu:{gpus}",
         )
+        if exclude:
+            slurm_kwargs["exclude"] = exclude
+
+        slurm = Slurm(**slurm_kwargs)
 
         job_id = submit_job_with_retry(slurm, command)
         job_ids.append(job_id)

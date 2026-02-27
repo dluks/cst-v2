@@ -127,6 +127,7 @@ def train_fold(
     cfg,
     device: torch.device,
     epoch_callback: Callable[[int, float], None] | None = None,
+    num_workers: int = 4,
 ) -> dict:
     """Train a single CV fold.
 
@@ -147,6 +148,9 @@ def train_fold(
     epoch_callback : Callable[[int, float], None] | None
         Optional callback invoked with ``(epoch, val_loss)`` after each epoch.
         Can raise an exception (e.g. ``optuna.TrialPruned``) to stop training.
+    num_workers : int
+        Number of DataLoader workers. Use 0 for HPO to avoid multiprocessing
+        cleanup issues across short-lived trials.
 
     Returns
     -------
@@ -180,13 +184,16 @@ def train_fold(
         data["X"], data["Y_hist"], data["Y_mask"], data["source"],
         indices=val_idx,
     )
+    use_mp = num_workers > 0
     train_dl = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
-        num_workers=4, pin_memory=True, persistent_workers=True,
+        num_workers=num_workers, pin_memory=use_mp, persistent_workers=use_mp,
     )
+    val_workers = min(2, num_workers)
     val_dl = DataLoader(
         val_ds, batch_size=batch_size * 2, shuffle=False,
-        num_workers=2, pin_memory=True, persistent_workers=True,
+        num_workers=val_workers, pin_memory=use_mp,
+        persistent_workers=use_mp and val_workers > 0,
     )
 
     # Model, loss, optimizer, scheduler

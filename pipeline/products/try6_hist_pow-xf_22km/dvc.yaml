@@ -39,9 +39,9 @@ stages:
       --n-trials-per-worker ${hpo.n_trials_per_worker}
       --hpo-fold ${hpo.hpo_fold}
       --gpus 1
-      --cpus 16
-      --mem 64GB
-      --time 06:00:00
+      --cpus 4
+      --mem 16GB
+      --time 01:00:00
     deps:
       - ${project_root}/src/models/histogram_mlp/hpo.py
       - ${project_root}/src/models/histogram_mlp/train.py

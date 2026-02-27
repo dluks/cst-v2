@@ -690,6 +690,13 @@ def add_resource_args(
             help=f"Number of GPUs for Slurm job (default: {gpus_default}).",
         )
 
+    parser.add_argument(
+        "--exclude",
+        type=str,
+        default=None,
+        help="Comma-separated list of nodes to exclude (e.g. 'g3607,g3608').",
+    )
+
 
 def add_execution_args(
     parser: argparse.ArgumentParser, multi_job: bool = False, n_jobs_default: int = 4
