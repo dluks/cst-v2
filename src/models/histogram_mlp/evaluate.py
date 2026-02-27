@@ -142,6 +142,60 @@ def compute_histogram_intersection(
     return {"overall": overall, "per_trait": per_trait}
 
 
+def compute_crps(
+    pred_probs: np.ndarray,
+    target_probs: np.ndarray,
+    mask: np.ndarray,
+    bin_edges: np.ndarray,
+) -> dict[str, float | list[float]]:
+    """Compute Continuous Ranked Probability Score for binned histograms.
+
+    CRPS = integral of (CDF_pred - CDF_target)^2 over the support.
+    For discrete bins: ``sum_k (cumsum_pred_k - cumsum_target_k)^2 * bin_width_k``.
+
+    Lower is better (0 = perfect distributional match).
+
+    Parameters
+    ----------
+    pred_probs : np.ndarray
+        Shape ``(N, n_traits, n_bins)``.
+    target_probs : np.ndarray
+        Shape ``(N, n_traits, n_bins)``.
+    mask : np.ndarray
+        Shape ``(N, n_traits)``.
+    bin_edges : np.ndarray
+        Shape ``(n_traits, n_bins + 1)``.
+
+    Returns
+    -------
+    dict
+        ``{'overall': float, 'per_trait': list[float]}``
+    """
+    n_traits = pred_probs.shape[1]
+    bin_widths = bin_edges[:, 1:] - bin_edges[:, :-1]  # (n_traits, n_bins)
+
+    cdf_pred = np.cumsum(pred_probs, axis=-1)    # (N, n_traits, n_bins)
+    cdf_target = np.cumsum(target_probs, axis=-1)
+
+    # (CDF_pred - CDF_target)^2 weighted by bin width → (N, n_traits)
+    crps_per_cell = (
+        (cdf_pred - cdf_target) ** 2 * bin_widths[np.newaxis]
+    ).sum(axis=-1)
+
+    per_trait = []
+    for j in range(n_traits):
+        valid = mask[:, j].astype(bool)
+        if valid.any():
+            per_trait.append(float(crps_per_cell[valid, j].mean()))
+        else:
+            per_trait.append(float("nan"))
+
+    overall = (
+        float(crps_per_cell[mask.astype(bool)].mean()) if mask.any() else float("nan")
+    )
+    return {"overall": overall, "per_trait": per_trait}
+
+
 def compute_moment_comparison(
     pred_probs: np.ndarray,
     target_probs: np.ndarray,
@@ -296,6 +350,7 @@ def evaluate_all(
         "histogram_intersection": compute_histogram_intersection(
             pred_probs, target_probs, mask
         ),
+        "crps": compute_crps(pred_probs, target_probs, mask, bin_edges),
         "moment_comparison": compute_moment_comparison(
             pred_probs, target_probs, mask, bin_edges
         ),

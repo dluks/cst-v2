@@ -28,6 +28,7 @@ from src.models.histogram_mlp.evaluate import (
     compute_kl_divergence,
     compute_emd,
     compute_histogram_intersection,
+    compute_crps,
     compute_moment_comparison,
     evaluate_all,
 )
@@ -421,12 +422,52 @@ class TestEvaluationMetrics:
         assert result["mean_r2"]["overall"] > 0.99
         assert result["mean_mae"]["overall"] < 1e-10
 
+    def test_crps_nonnegative(self, eval_data):
+        pred, target, mask, bin_edges = eval_data
+        result = compute_crps(pred, target, mask, bin_edges)
+        assert result["overall"] >= 0
+        for v in result["per_trait"]:
+            assert v >= 0
+
+    def test_crps_zero_for_identical(self, dims):
+        N, T, B = dims["N"], dims["T"], dims["B"]
+        probs = np.ones((N, T, B)) / B
+        mask = np.ones((N, T))
+        bin_edges = np.tile(np.linspace(0, 1, B + 1), (T, 1))
+
+        result = compute_crps(probs, probs, mask, bin_edges)
+        assert result["overall"] < 1e-10
+
+    def test_crps_increases_with_distance(self, dims):
+        """CRPS should be larger when predictions are further from targets."""
+        N, T, B = 10, 2, 5
+        mask = np.ones((N, T))
+        bin_edges = np.tile(np.linspace(0, 1, B + 1), (T, 1))
+
+        # Target: all mass in first bin
+        target = np.zeros((N, T, B))
+        target[:, :, 0] = 1.0
+
+        # Close prediction: most mass in first bin
+        close = np.zeros((N, T, B))
+        close[:, :, 0] = 0.8
+        close[:, :, 1] = 0.2
+
+        # Far prediction: all mass in last bin
+        far = np.zeros((N, T, B))
+        far[:, :, -1] = 1.0
+
+        crps_close = compute_crps(close, target, mask, bin_edges)
+        crps_far = compute_crps(far, target, mask, bin_edges)
+        assert crps_close["overall"] < crps_far["overall"]
+
     def test_evaluate_all_keys(self, eval_data):
         pred, target, mask, bin_edges = eval_data
         result = evaluate_all(pred, target, mask, bin_edges)
         assert "kl_divergence" in result
         assert "emd" in result
         assert "histogram_intersection" in result
+        assert "crps" in result
         assert "moment_comparison" in result
 
     def test_mask_respected(self, dims):

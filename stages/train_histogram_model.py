@@ -241,7 +241,10 @@ def run_slurm(
     cv_dir = run_dir / "cv"
 
     print("\nAggregating CV metrics...")
-    from src.models.histogram_mlp.train import aggregate_cv_metrics
+    from src.models.histogram_mlp.train import (
+        aggregate_cv_metrics,
+        generate_performance_summary,
+    )
 
     fold_metrics = []
     for fold_id in range(n_folds):
@@ -255,8 +258,9 @@ def run_slurm(
 
     print(f"  KL={summary.get('kl_divergence_mean', float('nan')):.6f} "
           f"(baseline={summary.get('baseline_kl_divergence_mean', float('nan')):.6f}), "
-          f"EMD={summary.get('emd_mean', float('nan')):.6f}, "
+          f"CRPS={summary.get('crps_mean', float('nan')):.6f}, "
           f"HI={summary.get('histogram_intersection_mean', float('nan')):.4f}")
+    generate_performance_summary(summary, cv_dir / "performance_summary.csv")
 
     # ── Phase 3: Submit full model job ──────────────────────────────────
     print("\nSubmitting full model job...")

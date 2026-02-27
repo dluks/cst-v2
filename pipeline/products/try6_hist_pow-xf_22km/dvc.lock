@@ -118,6 +118,11 @@ stages:
       md5: 280376d45fc579dbc41057d00d4c3165.dir
       size: 156890568
       nfiles: 216
+    - path: ../../../models/try6_hist_pow-xf_22km/hpo
+      hash: md5
+      md5: 2ec5cc4d09e9bced7e5c947de8e9fc55.dir
+      size: 1279428027
+      nfiles: 534
     - path: ../../../src/models/histogram_mlp/cv_splits.py
       hash: md5
       md5: 5eeea727f252a19a2f0a5b0ddca588b9
@@ -140,8 +145,8 @@ stages:
       size: 2141
     - path: ../../../src/models/histogram_mlp/train.py
       hash: md5
-      md5: 144b196ae5f011b5e2923bf57bba3a35
-      size: 21614
+      md5: 1e93ab1f9fcd1888439f0607432a0fe4
+      size: 23534
     params:
       params.yaml:
         histogram:
@@ -169,6 +174,6 @@ stages:
     outs:
     - path: ../../../models/try6_hist_pow-xf_22km/training
       hash: md5
-      md5: 2d1af3c7bc246b7c560cd2eb90907f7c.dir
-      size: 10613150
-      nfiles: 32
+      md5: 8f3140a685654c7f94ed4956345bb6dd.dir
+      size: 67582492
+      nfiles: 64

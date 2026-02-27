@@ -298,8 +298,6 @@ def train_fold(
             log.info("Early stopping at epoch %d (patience=%d)", epoch, cfg.train.patience)
             break
 
-    writer.close()
-
     # Save training log
     _save_training_log(training_log, output_dir / "training_log.csv")
 
@@ -322,15 +320,29 @@ def train_fold(
         data["bin_edges"], trait_names=data.get("trait_names"),
     )
 
+    # Log eval metrics to TensorBoard
+    final_epoch = len(training_log) - 1
+    writer.add_scalar("Eval/kl_divergence", metrics["kl_divergence"]["overall"], final_epoch)
+    writer.add_scalar("Eval/histogram_intersection", metrics["histogram_intersection"]["overall"], final_epoch)
+    writer.add_scalar("Eval/crps", metrics["crps"]["overall"], final_epoch)
+    writer.add_scalar("Eval/baseline_kl", metrics["baseline"]["kl_divergence"]["overall"], final_epoch)
+    writer.add_scalar("Eval/baseline_crps", metrics["baseline"]["crps"]["overall"], final_epoch)
+    trait_names = data.get("trait_names", [])
+    per_trait_r2 = metrics["moment_comparison"]["mean_r2"]["per_trait"]
+    for j, r2_val in enumerate(per_trait_r2):
+        tag = trait_names[j] if j < len(trait_names) else f"trait_{j}"
+        writer.add_scalar(f"Eval_R2/{tag}", r2_val, final_epoch)
+    writer.close()
+
     with open(output_dir / "fold_metrics.json", "w") as f:
         json.dump(metrics, f, indent=2, default=_json_default)
 
     flag_path.touch()
     baseline_kl = metrics["baseline"]["kl_divergence"]["overall"]
-    log.info("Fold %d complete: val_loss=%.6f, KL=%.6f (baseline=%.6f), EMD=%.6f, HI=%.4f",
+    log.info("Fold %d complete: val_loss=%.6f, KL=%.6f (baseline=%.6f), CRPS=%.6f, HI=%.4f",
              fold_id, best_val_loss,
              metrics["kl_divergence"]["overall"], baseline_kl,
-             metrics["emd"]["overall"],
+             metrics["crps"]["overall"],
              metrics["histogram_intersection"]["overall"])
 
     return metrics
@@ -469,11 +481,7 @@ def run_cv(
     with open(cv_dir / "cv_summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=_json_default)
 
-    log.info("CV Summary: KL=%.6f, EMD=%.6f, HI=%.4f, Mean R²=%.4f",
-             summary.get("kl_divergence_mean", float("nan")),
-             summary.get("emd_mean", float("nan")),
-             summary.get("histogram_intersection_mean", float("nan")),
-             summary.get("mean_r2_mean", float("nan")))
+    generate_performance_summary(summary, cv_dir / "performance_summary.csv")
 
     # Train full model
     log.info("=" * 60)
@@ -507,6 +515,7 @@ def aggregate_cv_metrics(fold_metrics: list[dict]) -> dict:
         ("kl_divergence", "overall"),
         ("emd", "overall"),
         ("histogram_intersection", "overall"),
+        ("crps", "overall"),
     ]
     for key, subkey in metric_keys:
         values = []
@@ -516,27 +525,178 @@ def aggregate_cv_metrics(fold_metrics: list[dict]) -> dict:
                 if v is not None and not (isinstance(v, float) and np.isnan(v)):
                     values.append(v)
         if values:
-            name = key.replace("_divergence", "")
             summary[f"{key}_mean"] = float(np.mean(values))
             summary[f"{key}_std"] = float(np.std(values))
 
     # Moment comparison
+    moment_keys = ("mean_r2", "mean_mae")
     for fm in fold_metrics:
         mc = fm.get("moment_comparison", {})
-        for mk in ("mean_r2", "mean_mae"):
+        for mk in moment_keys:
             if mk in mc and "overall" in mc[mk]:
                 v = mc[mk]["overall"]
                 if v is not None and not (isinstance(v, float) and np.isnan(v)):
                     summary.setdefault(f"{mk}_values", []).append(v)
 
-    for mk in ("mean_r2", "mean_mae"):
+    for mk in moment_keys:
         values = summary.pop(f"{mk}_values", [])
         if values:
             summary[f"{mk}_mean"] = float(np.mean(values))
             summary[f"{mk}_std"] = float(np.std(values))
 
+    # ── Baseline overall metrics ────────────────────────────────────────
+    for key, subkey in metric_keys:
+        values = []
+        for fm in fold_metrics:
+            bl = fm.get("baseline", {})
+            if key in bl and subkey in bl[key]:
+                v = bl[key][subkey]
+                if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                    values.append(v)
+        if values:
+            summary[f"baseline_{key}_mean"] = float(np.mean(values))
+            summary[f"baseline_{key}_std"] = float(np.std(values))
+
+    for mk in moment_keys:
+        values = []
+        for fm in fold_metrics:
+            bl_mc = fm.get("baseline", {}).get("moment_comparison", {})
+            if mk in bl_mc and "overall" in bl_mc[mk]:
+                v = bl_mc[mk]["overall"]
+                if v is not None and not (isinstance(v, float) and np.isnan(v)):
+                    values.append(v)
+        if values:
+            summary[f"baseline_{mk}_mean"] = float(np.mean(values))
+            summary[f"baseline_{mk}_std"] = float(np.std(values))
+
+    # ── Per-trait aggregation (mean across folds per trait) ─────────────
+    n_traits = len(fold_metrics[0].get("trait_names", []))
+    if n_traits > 0:
+        summary["trait_names"] = fold_metrics[0]["trait_names"]
+
+        pt_specs = [
+            # (top_key, sub_key, label)
+            ("moment_comparison", "mean_r2", "mean_r2_per_trait"),
+            ("moment_comparison", "mean_mae", "mean_mae_per_trait"),
+            ("histogram_intersection", None, "histogram_intersection_per_trait"),
+            ("crps", None, "crps_per_trait"),
+        ]
+        for source_key, sub_key, label in pt_specs:
+            for prefix, root in [("", None), ("baseline_", "baseline")]:
+                fold_arrays = []
+                for fm in fold_metrics:
+                    src = fm.get(root, fm) if root else fm
+                    if sub_key:
+                        vals = src.get(source_key, {}).get(sub_key, {}).get("per_trait", [])
+                    else:
+                        vals = src.get(source_key, {}).get("per_trait", [])
+                    if len(vals) == n_traits:
+                        fold_arrays.append(vals)
+                if fold_arrays:
+                    arr = np.array(fold_arrays)
+                    summary[f"{prefix}{label}_mean"] = np.nanmean(arr, axis=0).tolist()
+                    summary[f"{prefix}{label}_std"] = np.nanstd(arr, axis=0).tolist()
+
     summary["n_folds"] = len(fold_metrics)
     return summary
+
+
+def generate_performance_summary(cv_summary: dict, output_path: Path) -> None:
+    """Generate a per-trait performance summary table as CSV and log it.
+
+    Reads per-trait means from *cv_summary* (output of
+    :func:`aggregate_cv_metrics`) and writes a CSV table. Also logs a
+    human-readable table to the console.
+    """
+    trait_names = cv_summary.get("trait_names", [])
+    if not trait_names:
+        log.warning("No trait_names in cv_summary — skipping performance summary")
+        return
+
+    # Resolve human-readable names from trait_mapping.json (no heavy imports)
+    short_names: dict[str, str] = {}
+    try:
+        mapping_path = Path(__file__).resolve().parents[3] / "reference" / "trait_mapping.json"
+        if mapping_path.exists():
+            with open(mapping_path) as _f:
+                mapping = json.load(_f)
+            for tid in trait_names:
+                tnum = tid.lstrip("X")
+                if tnum in mapping:
+                    short_names[tid] = mapping[tnum].get("short", "")
+    except Exception:
+        pass  # fall back to trait IDs only
+
+    def _get(key):
+        return cv_summary.get(key, [])
+
+    model_r2 = _get("mean_r2_per_trait_mean")
+    baseline_r2 = _get("baseline_mean_r2_per_trait_mean")
+    model_hi = _get("histogram_intersection_per_trait_mean")
+    baseline_hi = _get("baseline_histogram_intersection_per_trait_mean")
+    model_crps = _get("crps_per_trait_mean")
+    baseline_crps = _get("baseline_crps_per_trait_mean")
+
+    n = len(trait_names)
+
+    def _val(lst, i):
+        return lst[i] if i < len(lst) else float("nan")
+
+    rows = []
+    for i in range(n):
+        r = {
+            "trait_id": trait_names[i],
+            "short_name": short_names.get(trait_names[i], ""),
+            "model_R2": _val(model_r2, i),
+            "baseline_R2": _val(baseline_r2, i),
+            "delta_R2": _val(model_r2, i) - _val(baseline_r2, i),
+            "model_HI": _val(model_hi, i),
+            "baseline_HI": _val(baseline_hi, i),
+            "model_CRPS": _val(model_crps, i),
+            "baseline_CRPS": _val(baseline_crps, i),
+        }
+        rows.append(r)
+
+    # Write CSV
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0].keys())
+    with open(output_path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+    log.info("Performance summary saved to %s", output_path)
+
+    # Console table
+    hdr = (f"{'Trait':<8} {'Name':<20} {'R2':>6} {'bl_R2':>6} {'dR2':>6} "
+           f"{'HI':>6} {'bl_HI':>6} {'CRPS':>8} {'bl_CRPS':>8}")
+    sep = "-" * len(hdr)
+    log.info("=" * len(hdr))
+    log.info("Per-trait Performance Summary (mean across %d folds)", cv_summary.get("n_folds", 0))
+    log.info("=" * len(hdr))
+    log.info(hdr)
+    log.info(sep)
+    for r in rows:
+        log.info(
+            f"{r['trait_id']:<8} {r['short_name']:<20} "
+            f"{r['model_R2']:>6.3f} {r['baseline_R2']:>6.3f} {r['delta_R2']:>+6.3f} "
+            f"{r['model_HI']:>6.3f} {r['baseline_HI']:>6.3f} "
+            f"{r['model_CRPS']:>8.4f} {r['baseline_CRPS']:>8.4f}"
+        )
+    # Summary row
+    m_r2 = cv_summary.get("mean_r2_mean", float("nan"))
+    bl_r2 = cv_summary.get("baseline_mean_r2_mean", float("nan"))
+    m_hi = cv_summary.get("histogram_intersection_mean", float("nan"))
+    bl_hi = cv_summary.get("baseline_histogram_intersection_mean", float("nan"))
+    m_crps = cv_summary.get("crps_mean", float("nan"))
+    bl_crps = cv_summary.get("baseline_crps_mean", float("nan"))
+    log.info(sep)
+    log.info(
+        f"{'MEAN':<8} {'':<20} "
+        f"{m_r2:>6.3f} {bl_r2:>6.3f} {m_r2 - bl_r2:>+6.3f} "
+        f"{m_hi:>6.3f} {bl_hi:>6.3f} "
+        f"{m_crps:>8.4f} {bl_crps:>8.4f}"
+    )
+    log.info("=" * len(hdr))
 
 
 def _json_default(obj):
