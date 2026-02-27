@@ -2,13 +2,16 @@
 
 This module handles prediction for a single trait-trait_set combination,
 supporting both standard prediction and Coefficient of Variation (CoV) calculation.
+
+Supports three execution modes:
+- Standard: Load all data, predict, rasterize (single process)
+- Chunk: Load a subset of parquet row groups, predict, save as parquet
+- Merge: Load chunk parquets, concatenate, rasterize to tif
 """
 
 import argparse
-import os
 import shutil
 import time
-from multiprocessing import Pool
 from pathlib import Path
 from typing import Literal
 
@@ -63,13 +66,6 @@ def cli() -> argparse.Namespace:
         help="Number of batches for prediction (overrides config)",
     )
     parser.add_argument(
-        "-n",
-        "--n-workers",
-        type=int,
-        default=None,
-        help="Number of workers (overrides config)",
-    )
-    parser.add_argument(
         "--params",
         type=str,
         default=None,
@@ -78,134 +74,179 @@ def cli() -> argparse.Namespace:
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable verbose mode"
     )
+    # Chunk/merge mode arguments (for Slurm-level parallelism)
+    parser.add_argument(
+        "--chunk-index",
+        type=int,
+        default=None,
+        help="Chunk index (0-based) for chunked prediction",
+    )
+    parser.add_argument(
+        "--n-chunks",
+        type=int,
+        default=None,
+        help="Total number of chunks for chunked prediction",
+    )
+    parser.add_argument(
+        "--merge-chunks",
+        action="store_true",
+        help="Merge chunk parquet results and rasterize to tif",
+    )
+    parser.add_argument(
+        "--fold-index",
+        type=int,
+        default=None,
+        help="CV fold index (0-based) for chunked CoV prediction",
+    )
     return parser.parse_args()
 
 
-# Module-level state for multiprocessing workers
-_worker_state: dict = {}
+# ============================================================
+# Data loading
+# ============================================================
 
 
-def _init_predict_worker(
-    model_path_str: str, n_threads: int, log_level: int
-) -> None:
-    """Initialize a prediction worker process.
+def load_predict_data(
+    predict_fp: Path, batches: int = 1
+) -> pd.DataFrame | dd.DataFrame:
+    """Load predict data from disk.
 
-    Called once per worker when the Pool is created. Sets thread limits
-    to avoid oversubscription, then loads the AutoGluon model.
+    Args:
+        predict_fp: Path to predict features parquet file
+        batches: Number of batches (1 = pandas, >1 = Dask)
+
+    Returns:
+        DataFrame with features and x, y coordinates
     """
-    global _worker_state
-    log.setLevel(log_level)
-    thread_str = str(n_threads)
-    os.environ["OMP_NUM_THREADS"] = thread_str
-    os.environ["OPENBLAS_NUM_THREADS"] = thread_str
-    os.environ["MKL_NUM_THREADS"] = thread_str
-    _worker_state["predictor"] = TabularPredictor.load(model_path_str)
+    log.info("Loading predict data from %s...", predict_fp)
+    if not predict_fp.exists():
+        raise FileNotFoundError(
+            f"Predict data not found: {predict_fp}"
+        )
+
+    # Reset index to convert x/y from index to columns
+    if batches == 1:
+        return pd.read_parquet(predict_fp).reset_index()
+    else:
+        return dd.read_parquet(predict_fp).reset_index().repartition(npartitions=batches)
 
 
-def _predict_row_groups(args: tuple[str, list[int]]) -> pd.DataFrame:
-    """Predict on specific parquet row groups.
+def load_predict_data_chunk(
+    predict_fp: Path, chunk_index: int, n_chunks: int
+) -> pd.DataFrame:
+    """Load a chunk of predict data from specific parquet row groups.
 
-    Each worker loads its assigned row groups from the parquet file,
-    runs prediction, and returns results indexed by (y, x).
+    Distributes row groups evenly across chunks and loads only this
+    chunk's row groups, keeping memory usage proportional to 1/n_chunks.
+
+    Args:
+        predict_fp: Path to predict features parquet file
+        chunk_index: 0-based index of this chunk
+        n_chunks: Total number of chunks
+
+    Returns:
+        DataFrame with features and x, y columns
     """
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    predict_fp_str, row_group_indices = args
-    predictor = _worker_state["predictor"]
-    worker_id = os.getpid()
+    pf = pq.ParquetFile(str(predict_fp))
+    n_row_groups = pf.metadata.num_row_groups
 
-    t0 = time.time()
+    # Distribute row groups across chunks
+    all_indices = np.array_split(range(n_row_groups), n_chunks)
+    my_indices = list(all_indices[chunk_index])
+
     log.info(
-        "[Worker %d] Loading %d row groups...", worker_id, len(row_group_indices)
+        "Chunk %d/%d: loading %d row groups (of %d total)...",
+        chunk_index,
+        n_chunks,
+        len(my_indices),
+        n_row_groups,
     )
 
-    pf = pq.ParquetFile(predict_fp_str)
-    tables = [pf.read_row_group(i) for i in row_group_indices]
+    t0 = time.time()
+    tables = [pf.read_row_group(i) for i in my_indices]
     data = pa.concat_tables(tables).to_pandas()
 
     # Ensure x/y are columns (they may be stored as the parquet index)
     if "x" not in data.columns or "y" not in data.columns:
         data = data.reset_index()
 
-    t_load = time.time() - t0
     log.info(
-        "[Worker %d] Loaded %s rows in %.1fs. Predicting...",
-        worker_id,
+        "Loaded %s rows for chunk %d in %.1fs",
         f"{len(data):,}",
-        t_load,
+        chunk_index,
+        time.time() - t0,
     )
+    return data
 
-    coords = data[["x", "y"]]
-    features = data.drop(columns=["x", "y"])
 
-    # Predict in sub-batches for progress reporting
-    n_rows = len(features)
-    sub_batch_size = 2_000_000
-    if n_rows > sub_batch_size:
-        predictions_list = []
-        for start in range(0, n_rows, sub_batch_size):
-            end = min(start + sub_batch_size, n_rows)
-            batch_pred = predictor.predict(
-                features.iloc[start:end], as_pandas=True
-            )
-            predictions_list.append(batch_pred)
-            elapsed = time.time() - t0
-            log.info(
-                "[Worker %d] %s / %s rows predicted (%.1fs elapsed)",
-                worker_id,
-                f"{end:,}",
-                f"{n_rows:,}",
-                elapsed,
-            )
-        predictions = pd.concat(predictions_list, ignore_index=True)
-    else:
-        predictions = predictor.predict(features, as_pandas=True)
+# ============================================================
+# Model path resolution
+# ============================================================
 
-    t_total = time.time() - t0
-    log.info(
-        "[Worker %d] Prediction complete in %.1fs (%.0f rows/s)",
-        worker_id,
-        t_total,
-        n_rows / t_total,
-    )
 
-    result = pd.concat(
-        [coords.reset_index(drop=True), predictions.reset_index(drop=True)],
-        axis=1,
-    )
-    return result.set_index(["y", "x"])
+def find_model_path(models_dir: Path, trait: str, trait_set: str) -> Path:
+    """Find the model directory for a trait/trait_set combination.
+
+    Returns the trait_set directory containing full_model and cv subdirs.
+
+    Args:
+        models_dir: Base directory containing trained models
+        trait: Trait name
+        trait_set: Trait set name
+
+    Returns:
+        Path to the trait_set directory
+
+    Raises:
+        FileNotFoundError: If model directory not found
+    """
+    trait_dir = models_dir / trait
+    if not trait_dir.exists():
+        raise FileNotFoundError(f"Model directory not found: {trait_dir}")
+
+    autogluon_dir = trait_dir / "autogluon"
+    if not autogluon_dir.exists():
+        raise FileNotFoundError(f"AutoGluon directory not found: {autogluon_dir}")
+
+    run_dirs = [
+        d
+        for d in autogluon_dir.iterdir()
+        if d.is_dir() and d.name.startswith("run_")
+    ]
+    if not run_dirs:
+        raise FileNotFoundError(f"No run directories found in: {autogluon_dir}")
+    latest_run = max(run_dirs, key=lambda d: d.name)
+
+    trait_set_dir = latest_run / trait_set
+    if not trait_set_dir.exists():
+        raise FileNotFoundError(f"Trait set directory not found: {trait_set_dir}")
+
+    return trait_set_dir
+
+
+# ============================================================
+# Prediction functions
+# ============================================================
 
 
 def predict_trait_ag(
-    data: pd.DataFrame | dd.DataFrame | None,
+    data: pd.DataFrame | dd.DataFrame,
     model_path: Path,
-    n_workers: int = 1,
-    predict_fp: Path | None = None,
 ) -> pd.DataFrame:
-    """Predict using model loaded once.
+    """Predict using AutoGluon model.
 
     Loads the AutoGluon model once and runs prediction on the entire dataset.
-    When n_workers > 1, uses parallel chunked prediction where each worker
-    loads a subset of the data from the parquet file independently.
 
     Args:
-        data: DataFrame with features and x, y coordinates (None when parallel)
+        data: DataFrame with features and x, y coordinates
         model_path: Path to the full_model directory
-        n_workers: Number of parallel workers (1 = single-process)
-        predict_fp: Path to predict parquet file (required when n_workers > 1)
 
     Returns:
         DataFrame with predictions indexed by (y, x)
     """
-    if n_workers > 1:
-        if predict_fp is None:
-            raise ValueError("predict_fp is required for parallel prediction")
-        return _predict_parallel(predict_fp, model_path, n_workers)
-
-    if data is None:
-        raise ValueError("data is required for single-process prediction")
-
     log.info("Loading AutoGluon predictor from %s...", model_path)
     predictor = TabularPredictor.load(str(model_path))
 
@@ -231,86 +272,19 @@ def predict_trait_ag(
     return result.set_index(["y", "x"])
 
 
-def _predict_parallel(
-    predict_fp: Path, model_path: Path, n_workers: int
-) -> pd.DataFrame:
-    """Run prediction in parallel using multiprocessing.
-
-    Splits the parquet file's row groups across workers. Each worker
-    loads its subset of the data and the model independently.
-
-    Args:
-        predict_fp: Path to predict parquet file
-        model_path: Path to the model directory
-        n_workers: Number of parallel workers
-    """
-    import pyarrow.parquet as pq
-
-    pf = pq.ParquetFile(str(predict_fp))
-    n_row_groups = pf.metadata.num_row_groups
-
-    n_cpus = (
-        int(os.environ.get("SLURM_CPUS_PER_TASK", 0))
-        or os.cpu_count()
-        or n_workers
-    )
-    threads_per_worker = max(1, n_cpus // n_workers)
-
-    log.info(
-        "Parallel prediction: %d workers, %d row groups, %d threads/worker",
-        n_workers,
-        n_row_groups,
-        threads_per_worker,
-    )
-
-    # Distribute row groups across workers
-    chunks = np.array_split(range(n_row_groups), n_workers)
-    work_items = [
-        (str(predict_fp), list(indices))
-        for indices in chunks
-        if len(indices) > 0
-    ]
-
-    t0 = time.time()
-    results = []
-    with Pool(
-        len(work_items),
-        initializer=_init_predict_worker,
-        initargs=(str(model_path), threads_per_worker, log.level),
-    ) as pool:
-        for i, result in enumerate(
-            pool.imap_unordered(_predict_row_groups, work_items), 1
-        ):
-            elapsed = time.time() - t0
-            log.info(
-                "Progress: %d/%d chunks complete (%.1fs elapsed)",
-                i,
-                len(work_items),
-                elapsed,
-            )
-            results.append(result)
-
-    log.info("Concatenating %d chunk results...", len(results))
-    return pd.concat(results)
-
-
 def predict_cov(
-    predict_data: pd.DataFrame | dd.DataFrame | None,
+    predict_data: pd.DataFrame | dd.DataFrame,
     cv_dir: Path,
     tmp_dir: Path,
-    n_workers: int = 1,
-    predict_fp: Path | None = None,
 ) -> pd.DataFrame:
     """Calculate the Coefficient of Variation using CV fold models.
 
     Loads each CV fold model once and predicts on the entire dataset.
 
     Args:
-        predict_data: DataFrame with features and x, y coordinates (None when parallel)
+        predict_data: DataFrame with features and x, y coordinates
         cv_dir: Path to directory containing CV fold models
         tmp_dir: Directory to store intermediate fold predictions
-        n_workers: Number of parallel workers for each fold's prediction
-        predict_fp: Path to predict parquet file (required when n_workers > 1)
 
     Returns:
         DataFrame with CoV values indexed by (y, x)
@@ -336,7 +310,7 @@ def predict_cov(
 
         log.info("Predicting with %s...", fold_model_path.stem)
         # Use predict_trait_ag which loads model once
-        pred = predict_trait_ag(predict_data, fold_model_path, n_workers, predict_fp)
+        pred = predict_trait_ag(predict_data, fold_model_path)
         pred.to_parquet(cv_prediction_fn)
 
         cv_predictions.append(cv_prediction_fn)
@@ -360,23 +334,20 @@ def predict_cov(
     return cov
 
 
-def predict(
-    predict_data: pd.DataFrame | dd.DataFrame | None,
+def predict_fn(
+    predict_data: pd.DataFrame | dd.DataFrame,
     model_path: Path,
     cov: bool,
     tmp_dir: Path | None,
-    n_workers: int = 1,
-    predict_fp: Path | None = None,
 ) -> tuple[pd.DataFrame, Path | None]:
     """Predict the trait using the given model, with optional CoV calculation.
 
     Args:
-        predict_data: DataFrame with features and x, y coordinates (None when parallel)
-        model_path: Path to the trait_set directory (containing full_model and cv subdirs)
+        predict_data: DataFrame with features and x, y coordinates
+        model_path: Path to the trait_set directory
+            (containing full_model and cv subdirs)
         cov: Whether to calculate CoV instead of standard prediction
         tmp_dir: Directory for temporary files (used for CoV calculation)
-        n_workers: Number of parallel workers
-        predict_fp: Path to predict parquet file (required when n_workers > 1)
 
     Returns:
         Tuple of (predictions DataFrame, temp directory path or None)
@@ -386,45 +357,387 @@ def predict(
             raise ValueError("tmp_dir must be provided for CoV calculation")
         cv_dir = model_path / "cv"
         return (
-            predict_cov(
-                predict_data, cv_dir, tmp_dir, n_workers, predict_fp
-            ),
+            predict_cov(predict_data, cv_dir, tmp_dir),
             tmp_dir,
         )
     full_model = model_path / "full_model"
     return (
-        predict_trait_ag(predict_data, full_model, n_workers, predict_fp),
+        predict_trait_ag(predict_data, full_model),
         None,
     )
 
 
-def load_predict_data(
-    predict_fp: Path, batches: int = 1
-) -> pd.DataFrame | dd.DataFrame:
-    """Load predict data from disk.
+# ============================================================
+# Chunk and merge modes
+# ============================================================
+
+
+def predict_and_save_chunk(args: argparse.Namespace, cfg: ConfigBox) -> Path:
+    """Load a data chunk, predict, and save results as parquet.
+
+    Each chunk job loads a subset of parquet row groups, runs prediction
+    in a single process, and saves the result as a parquet file in a
+    chunks subdirectory.
 
     Args:
-        predict_fp: Path to predict features parquet file
-        batches: Number of batches (1 = pandas, >1 = Dask)
+        args: CLI args (must include chunk_index, n_chunks, trait, trait_set)
+        cfg: Configuration
 
     Returns:
-        DataFrame with features and x, y coordinates
+        Path to chunk parquet file
     """
-    log.info("Loading predict data from %s...", predict_fp)
-    if not predict_fp.exists():
-        raise FileNotFoundError(f"Predict data not found: {predict_fp}")
+    predict_fp = Path(cfg.train.predict.fp)
+    models_dir = Path(cfg.models.dir_fp)
+    out_dir = get_predict_dir(cfg)
 
-    # Reset index to convert x/y from index to columns
-    if batches == 1:
-        return pd.read_parquet(predict_fp).reset_index()
+    # Skip if chunk parquet already exists
+    chunks_dir = out_dir / args.trait / args.trait_set / "chunks"
+    chunk_fp = chunks_dir / f"chunk_{args.chunk_index:03d}.parquet"
+    if chunk_fp.exists():
+        log.info(
+            "Chunk %d already exists at %s, skipping",
+            args.chunk_index,
+            chunk_fp,
+        )
+        return chunk_fp
+
+    # Load chunk data
+    data = load_predict_data_chunk(predict_fp, args.chunk_index, args.n_chunks)
+
+    # Find model
+    trait_set_dir = find_model_path(models_dir, args.trait, args.trait_set)
+    model_path = trait_set_dir / "full_model"
+    if not model_path.exists():
+        raise ValueError(f"full_model directory not found: {model_path}")
+
+    # Load model and predict
+    log.info("Loading AutoGluon predictor from %s...", model_path)
+    predictor = TabularPredictor.load(str(model_path))
+
+    coords = data[["x", "y"]]
+    features = data.drop(columns=["x", "y"])
+
+    # Predict in sub-batches for progress reporting
+    t0 = time.time()
+    n_rows = len(features)
+    sub_batch_size = 500_000
+    if n_rows > sub_batch_size:
+        predictions_list = []
+        for start in range(0, n_rows, sub_batch_size):
+            end = min(start + sub_batch_size, n_rows)
+            batch_pred = predictor.predict(
+                features.iloc[start:end], as_pandas=True
+            )
+            predictions_list.append(batch_pred)
+            elapsed = time.time() - t0
+            rows_per_s = end / elapsed if elapsed > 0 else 0
+            log.info(
+                "Chunk %d: %s / %s rows predicted (%.1fs elapsed, %.0f rows/s)",
+                args.chunk_index,
+                f"{end:,}",
+                f"{n_rows:,}",
+                elapsed,
+                rows_per_s,
+            )
+        predictions = pd.concat(predictions_list, ignore_index=True)
     else:
-        return dd.read_parquet(predict_fp).reset_index().repartition(npartitions=batches)
+        predictions = predictor.predict(features, as_pandas=True)
+
+    t_total = time.time() - t0
+    log.info(
+        "Chunk %d prediction complete in %.1fs (%.0f rows/s)",
+        args.chunk_index,
+        t_total,
+        n_rows / t_total if t_total > 0 else 0,
+    )
+
+    # Build result with coords
+    result = pd.concat(
+        [coords.reset_index(drop=True), predictions.reset_index(drop=True)],
+        axis=1,
+    ).set_index(["y", "x"])
+
+    # Save to chunks directory
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    result.to_parquet(chunk_fp)
+    log.info("Chunk %d saved to %s", args.chunk_index, chunk_fp)
+
+    return chunk_fp
+
+
+def merge_and_rasterize(args: argparse.Namespace, cfg: ConfigBox) -> Path:
+    """Load chunk parquets, concatenate, rasterize, and save as tif.
+
+    This is the merge step that runs after all chunk jobs complete.
+    It reads all chunk parquet files, concatenates them, rasterizes
+    to a GeoTIFF, and cleans up the chunk files.
+
+    Args:
+        args: CLI args (must include trait, trait_set)
+        cfg: Configuration
+
+    Returns:
+        Path to output tif file
+    """
+    out_dir = get_predict_dir(cfg)
+    chunks_dir = out_dir / args.trait / args.trait_set / "chunks"
+
+    # Find and load all chunk parquets
+    chunk_files = sorted(chunks_dir.glob("chunk_*.parquet"))
+    if not chunk_files:
+        raise FileNotFoundError(f"No chunk parquets found in {chunks_dir}")
+
+    log.info("Merging %d chunk files from %s...", len(chunk_files), chunks_dir)
+    t0 = time.time()
+    dfs = [pd.read_parquet(f) for f in chunk_files]
+    pred = pd.concat(dfs)
+    log.info("Merged %s rows in %.1fs", f"{len(pred):,}", time.time() - t0)
+
+    # Set up output path
+    out_fn = (
+        out_dir
+        / args.trait
+        / args.trait_set
+        / f"{args.trait}_{args.trait_set}_predict.tif"
+    )
+    out_fn.parent.mkdir(parents=True, exist_ok=True)
+
+    if not args.overwrite and out_fn.exists():
+        log.info("Output file already exists: %s", out_fn)
+        return out_fn
+
+    log.info("Rasterizing predictions...")
+    pred_r = rasterize_points(
+        pred, data_cols=args.trait, res=cfg.target_resolution, crs=cfg.crs
+    )
+    pred_r = pack_xr(pred_r)
+    xr_to_raster(pred_r, out_fn)
+    log.info("Raster saved to %s", out_fn)
+
+    # Clean up chunks
+    log.info("Cleaning up chunk files...")
+    shutil.rmtree(chunks_dir)
+
+    log.info("Merge complete: %s", out_fn)
+    return out_fn
+
+
+def cov_chunk_predict(args: argparse.Namespace, cfg: ConfigBox) -> Path:
+    """Load a data chunk, predict with a single CV fold model, and save as parquet.
+
+    Each job predicts one chunk of data using one CV fold model.
+    Output: {cov_dir}/{trait}/{trait_set}/chunks/fold_{F:02d}_chunk_{N:03d}.parquet
+
+    Args:
+        args: CLI args (must include chunk_index, n_chunks, fold_index, trait, trait_set)
+        cfg: Configuration
+
+    Returns:
+        Path to chunk parquet file
+    """
+    predict_fp = Path(cfg.train.predict.fp)
+    models_dir = Path(cfg.models.dir_fp)
+    out_dir = get_cov_dir(cfg)
+
+    # Skip if chunk parquet already exists
+    chunks_dir = out_dir / args.trait / args.trait_set / "chunks"
+    chunk_fp = chunks_dir / f"fold_{args.fold_index:02d}_chunk_{args.chunk_index:03d}.parquet"
+    if chunk_fp.exists():
+        log.info(
+            "CoV chunk (fold %d, chunk %d) already exists at %s, skipping",
+            args.fold_index,
+            args.chunk_index,
+            chunk_fp,
+        )
+        return chunk_fp
+
+    # Load chunk data
+    data = load_predict_data_chunk(predict_fp, args.chunk_index, args.n_chunks)
+
+    # Find CV fold model
+    trait_set_dir = find_model_path(models_dir, args.trait, args.trait_set)
+    cv_dir = trait_set_dir / "cv"
+    if not cv_dir.exists():
+        raise ValueError(f"cv directory not found: {cv_dir}")
+
+    # Find the fold directory (fold_0, fold_1, ...)
+    fold_dir = cv_dir / f"fold_{args.fold_index}"
+    if not fold_dir.exists():
+        raise ValueError(f"CV fold directory not found: {fold_dir}")
+
+    # Load model and predict
+    log.info(
+        "Loading AutoGluon predictor for fold %d from %s...",
+        args.fold_index,
+        fold_dir,
+    )
+    predictor = TabularPredictor.load(str(fold_dir))
+
+    coords = data[["x", "y"]]
+    features = data.drop(columns=["x", "y"])
+
+    # Predict in sub-batches for progress reporting
+    t0 = time.time()
+    n_rows = len(features)
+    sub_batch_size = 500_000
+    if n_rows > sub_batch_size:
+        predictions_list = []
+        for start in range(0, n_rows, sub_batch_size):
+            end = min(start + sub_batch_size, n_rows)
+            batch_pred = predictor.predict(
+                features.iloc[start:end], as_pandas=True
+            )
+            predictions_list.append(batch_pred)
+            elapsed = time.time() - t0
+            rows_per_s = end / elapsed if elapsed > 0 else 0
+            log.info(
+                "CoV fold %d chunk %d: %s / %s rows "
+                "(%.1fs elapsed, %.0f rows/s)",
+                args.fold_index,
+                args.chunk_index,
+                f"{end:,}",
+                f"{n_rows:,}",
+                elapsed,
+                rows_per_s,
+            )
+        predictions = pd.concat(predictions_list, ignore_index=True)
+    else:
+        predictions = predictor.predict(features, as_pandas=True)
+
+    t_total = time.time() - t0
+    log.info(
+        "CoV fold %d chunk %d prediction complete in %.1fs (%.0f rows/s)",
+        args.fold_index,
+        args.chunk_index,
+        t_total,
+        n_rows / t_total if t_total > 0 else 0,
+    )
+
+    # Build result with coords
+    result = pd.concat(
+        [coords.reset_index(drop=True), predictions.reset_index(drop=True)],
+        axis=1,
+    ).set_index(["y", "x"])
+
+    # Save to chunks directory
+    chunks_dir.mkdir(parents=True, exist_ok=True)
+    result.to_parquet(chunk_fp)
+    log.info(
+        "CoV fold %d chunk %d saved to %s",
+        args.fold_index,
+        args.chunk_index,
+        chunk_fp,
+    )
+
+    return chunk_fp
+
+
+def cov_merge_and_rasterize(args: argparse.Namespace, cfg: ConfigBox) -> Path:
+    """Load CoV chunk parquets, compute CoV across folds, rasterize, and save as tif.
+
+    Groups chunk files by fold, concatenates each fold's chunks into a full
+    dataset prediction, then computes CoV (std/mean with value shifting)
+    across all folds.
+
+    Args:
+        args: CLI args (must include trait, trait_set)
+        cfg: Configuration
+
+    Returns:
+        Path to output tif file
+    """
+    out_dir = get_cov_dir(cfg)
+    chunks_dir = out_dir / args.trait / args.trait_set / "chunks"
+
+    # Find all fold×chunk parquets
+    chunk_files = sorted(chunks_dir.glob("fold_*_chunk_*.parquet"))
+    if not chunk_files:
+        raise FileNotFoundError(f"No CoV chunk parquets found in {chunks_dir}")
+
+    log.info("Found %d CoV chunk files in %s", len(chunk_files), chunks_dir)
+
+    # Group by fold index
+    from collections import defaultdict
+
+    fold_chunks: dict[int, list[Path]] = defaultdict(list)
+    for fp in chunk_files:
+        # Parse fold index from filename: fold_XX_chunk_YYY.parquet
+        parts = fp.stem.split("_")
+        fold_idx = int(parts[1])
+        fold_chunks[fold_idx].append(fp)
+
+    n_folds = len(fold_chunks)
+    log.info("Found %d folds with chunks", n_folds)
+
+    # For each fold, concatenate all its chunks into one prediction series
+    t0 = time.time()
+    fold_predictions = []
+    for fold_idx in sorted(fold_chunks.keys()):
+        fold_files = sorted(fold_chunks[fold_idx])
+        log.info("Loading fold %d: %d chunk files...", fold_idx, len(fold_files))
+        dfs = [pd.read_parquet(f) for f in fold_files]
+        fold_pred = pd.concat(dfs)
+        # Rename column to fold index to avoid duplicate column names
+        fold_pred.columns = [f"fold_{fold_idx}"]
+        fold_predictions.append(fold_pred)
+
+    log.info("Concatenating %d fold predictions...", n_folds)
+    all_preds = pd.concat(fold_predictions, axis=1)
+    log.info(
+        "Merged %s rows x %d folds in %.1fs",
+        f"{len(all_preds):,}",
+        n_folds,
+        time.time() - t0,
+    )
+
+    # Compute CoV: shift values, then std / mean
+    log.info("Calculating CoV...")
+    cov = (
+        all_preds
+        .pipe(lambda _df: _df + abs(_df.min().min()))
+        .pipe(lambda _df: _df.std(axis=1) / _df.mean(axis=1))
+        .rename("cov")
+        .to_frame()
+    )
+
+    # Set up output path
+    out_fn = (
+        out_dir
+        / args.trait
+        / args.trait_set
+        / f"{args.trait}_{args.trait_set}_cov.tif"
+    )
+    out_fn.parent.mkdir(parents=True, exist_ok=True)
+
+    if not args.overwrite and out_fn.exists():
+        log.info("Output file already exists: %s", out_fn)
+        return out_fn
+
+    log.info("Rasterizing CoV...")
+    cov_r = rasterize_points(
+        cov, data_cols="cov", res=cfg.target_resolution, crs=cfg.crs
+    )
+    cov_r = pack_xr(cov_r)
+    xr_to_raster(cov_r, out_fn)
+    log.info("CoV raster saved to %s", out_fn)
+
+    # Clean up chunks
+    log.info("Cleaning up chunk files...")
+    shutil.rmtree(chunks_dir)
+
+    log.info("CoV merge complete: %s", out_fn)
+    return out_fn
+
+
+# ============================================================
+# Standard prediction pipeline
+# ============================================================
 
 
 def predict_single_trait(
     trait: str,
     trait_set: str,
-    predict_data: pd.DataFrame | dd.DataFrame | None,
+    predict_data: pd.DataFrame | dd.DataFrame,
     models_dir: Path,
     out_dir: Path,
     res: int | float,
@@ -433,7 +746,6 @@ def predict_single_trait(
     dask_dashboard: str,
     overwrite: bool = False,
     mode: Literal["predict", "cov"] = "predict",
-    predict_fp: Path | None = None,
 ) -> Path:
     """Predict a single trait and save to raster.
 
@@ -441,7 +753,6 @@ def predict_single_trait(
         trait: Trait name
         trait_set: Trait set name
         predict_data: DataFrame with features and x, y coordinates
-            (None when using parallel prediction)
         models_dir: Base directory containing trained models
         out_dir: Output directory for predictions
         res: Spatial resolution
@@ -450,7 +761,6 @@ def predict_single_trait(
         dask_dashboard: Dask dashboard address
         overwrite: Whether to overwrite existing output
         mode: Either "predict" or "cov" for CoV calculation
-        predict_fp: Path to predict parquet file (for parallel mode)
 
     Returns:
         Path to output file
@@ -462,28 +772,7 @@ def predict_single_trait(
     cov: bool = mode == "cov"
 
     # Find model directory
-    trait_dir = models_dir / trait
-    if not trait_dir.exists():
-        raise FileNotFoundError(f"Model directory not found: {trait_dir}")
-
-    # Find latest run
-    autogluon_dir = trait_dir / "autogluon"
-    if not autogluon_dir.exists():
-        raise FileNotFoundError(f"AutoGluon directory not found: {autogluon_dir}")
-
-    # Get latest run directory (pattern: run_YYYYMMDD_HHMMSS)
-    run_dirs = [
-        d for d in autogluon_dir.iterdir()
-        if d.is_dir() and d.name.startswith("run_")
-    ]
-    if not run_dirs:
-        raise FileNotFoundError(f"No run directories found in: {autogluon_dir}")
-    latest_run = max(run_dirs, key=lambda d: d.name)
-
-    # Find trait_set directory
-    trait_set_dir = latest_run / trait_set
-    if not trait_set_dir.exists():
-        raise FileNotFoundError(f"Trait set directory not found: {trait_set_dir}")
+    trait_set_dir = find_model_path(models_dir, trait, trait_set)
 
     # Check for required model directories
     full_model_dir = trait_set_dir / "full_model"
@@ -497,7 +786,10 @@ def predict_single_trait(
 
     # Set up output path
     out_fn = (
-        out_dir / trait / trait_set / f"{trait}_{trait_set}_{'cov' if cov else 'predict'}.tif"
+        out_dir
+        / trait
+        / trait_set
+        / f"{trait}_{trait_set}_{'cov' if cov else 'predict'}.tif"
     )
     out_fn.parent.mkdir(parents=True, exist_ok=True)
 
@@ -514,10 +806,7 @@ def predict_single_trait(
         tmp_dir.mkdir(parents=True, exist_ok=True)
 
     # Run prediction (handles both pandas and Dask DataFrames)
-    n_workers = getattr(predict_cfg, "n_workers", 1)
-    pred, tmp_dir = predict(
-        predict_data, trait_set_dir, cov, tmp_dir, n_workers, predict_fp
-    )
+    pred, tmp_dir = predict_fn(predict_data, trait_set_dir, cov, tmp_dir)
 
     log.info("Writing predictions to raster...")
     pred_r = rasterize_points(
@@ -534,8 +823,20 @@ def predict_single_trait(
     return out_fn
 
 
+# ============================================================
+# Main entry point
+# ============================================================
+
+
 def main(args: argparse.Namespace, cfg: ConfigBox | None = None) -> Path:
     """Main function to predict a single trait.
+
+    Dispatches to one of five modes:
+    - CoV merge (--cov --merge-chunks): merge CoV chunk parquets, compute CoV, rasterize
+    - CoV chunk (--cov --chunk-index --n-chunks --fold-index): predict with CV fold
+    - Predict merge (--merge-chunks): merge predict chunk parquets and rasterize
+    - Predict chunk (--chunk-index + --n-chunks): predict on data subset, save parquet
+    - Standard mode: load all data, predict, rasterize (original behavior)
 
     Args:
         args: Command-line arguments
@@ -547,36 +848,38 @@ def main(args: argparse.Namespace, cfg: ConfigBox | None = None) -> Path:
     if cfg is None:
         cfg = get_config(params_path=getattr(args, "params", None))
 
-    predict_cfg = cfg.predict[detect_system()]
-
-    # Override config with CLI args if provided
-    if args.batches is not None:
-        predict_cfg.batches = args.batches
-    if args.n_workers is not None:
-        predict_cfg.n_workers = args.n_workers
-
     if not args.verbose:
         log.setLevel("WARNING")
+
+    # Dispatch: CoV merge mode
+    if args.cov and args.merge_chunks:
+        return cov_merge_and_rasterize(args, cfg)
+
+    # Dispatch: CoV chunk mode
+    if args.cov and args.chunk_index is not None and args.fold_index is not None:
+        return cov_chunk_predict(args, cfg)
+
+    # Dispatch: predict merge mode
+    if args.merge_chunks:
+        return merge_and_rasterize(args, cfg)
+
+    # Dispatch: predict chunk mode
+    if args.chunk_index is not None and args.n_chunks is not None:
+        return predict_and_save_chunk(args, cfg)
+
+    # Standard mode (original behavior)
+    predict_cfg = cfg.predict[detect_system()]
+    if args.batches is not None:
+        predict_cfg.batches = args.batches
 
     models_dir = Path(cfg.models.dir_fp)
     mode: Literal["predict", "cov"] = "cov" if args.cov else "predict"
     out_dir = get_cov_dir(cfg) if args.cov else get_predict_dir(cfg)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load predict data (skip when using parallel workers)
-    predict_fp = Path(cfg.train.predict.fp)
-    n_workers = getattr(predict_cfg, "n_workers", 1)
-    if n_workers > 1:
-        log.info(
-            "Parallel mode: %d workers (data loaded per-worker)",
-            n_workers,
-        )
-        predict_data = None
-    else:
-        predict_data = load_predict_data(predict_fp, predict_cfg.batches)
+    predict_data = load_predict_data(Path(cfg.train.predict.fp), predict_cfg.batches)
 
-    # Run prediction
-    out_fn = predict_single_trait(
+    return predict_single_trait(
         trait=args.trait,
         trait_set=args.trait_set,
         predict_data=predict_data,
@@ -588,11 +891,7 @@ def main(args: argparse.Namespace, cfg: ConfigBox | None = None) -> Path:
         dask_dashboard=cfg.dask_dashboard,
         overwrite=args.overwrite,
         mode=mode,
-        predict_fp=predict_fp,
     )
-
-    log.info("Done!")
-    return out_fn
 
 
 if __name__ == "__main__":

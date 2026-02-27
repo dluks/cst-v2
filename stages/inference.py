@@ -69,6 +69,44 @@ def cli() -> argparse.Namespace:
         help="Memory for prediction jobs (default: 64GB)",
     )
     parser.add_argument(
+        "--predict-chunks",
+        type=int,
+        default=1,
+        help=(
+            "Number of Slurm chunks per predict task (default: 1). "
+            "When > 1, each predict task is split into N chunk jobs "
+            "plus 1 merge job for Slurm-level parallelism."
+        ),
+    )
+    parser.add_argument(
+        "--cov-chunks",
+        type=int,
+        default=1,
+        help=(
+            "Number of Slurm chunks per CoV fold prediction "
+            "(default: 1). When > 1, each CoV task is split "
+            "into N_chunks * N_folds chunk jobs + 1 merge job."
+        ),
+    )
+    parser.add_argument(
+        "--merge-time",
+        type=str,
+        default="02:00:00",
+        help="Time limit for merge jobs (default: 02:00:00)",
+    )
+    parser.add_argument(
+        "--merge-cpus",
+        type=int,
+        default=8,
+        help="Number of CPUs for merge jobs (default: 8)",
+    )
+    parser.add_argument(
+        "--merge-mem",
+        type=str,
+        default="64GB",
+        help="Memory for merge jobs (default: 64GB)",
+    )
+    parser.add_argument(
         "--aoa-time",
         type=str,
         default="04:00:00",
@@ -284,13 +322,26 @@ def generate_tasks(
     traits: list[str],
     trait_sets: list[str],
     tasks_to_run: dict[str, bool],
+    predict_chunks: int = 1,
+    cov_chunks: int = 1,
+    n_folds: int = 1,
 ) -> list[dict]:
     """Generate list of inference tasks.
+
+    When predict_chunks > 1, each predict task is expanded into N
+    predict_chunk tasks plus 1 predict_merge task for Slurm-level
+    parallelism.
+
+    When cov_chunks > 1, each CoV task is expanded into
+    N_chunks * N_folds cov_chunk tasks plus 1 cov_merge task.
 
     Args:
         traits: List of trait names
         trait_sets: List of trait set names
         tasks_to_run: Dictionary indicating which task types to run
+        predict_chunks: Number of chunks per predict task
+        cov_chunks: Number of chunks per CoV fold prediction
+        n_folds: Number of CV folds
 
     Returns:
         List of task dictionaries
@@ -300,17 +351,49 @@ def generate_tasks(
     for trait in traits:
         for trait_set in trait_sets:
             if tasks_to_run["predict"]:
-                tasks.append({
-                    "trait": trait,
-                    "trait_set": trait_set,
-                    "task_type": "predict",
-                })
+                if predict_chunks > 1:
+                    for i in range(predict_chunks):
+                        tasks.append({
+                            "trait": trait,
+                            "trait_set": trait_set,
+                            "task_type": "predict_chunk",
+                            "chunk_index": i,
+                            "n_chunks": predict_chunks,
+                        })
+                    tasks.append({
+                        "trait": trait,
+                        "trait_set": trait_set,
+                        "task_type": "predict_merge",
+                    })
+                else:
+                    tasks.append({
+                        "trait": trait,
+                        "trait_set": trait_set,
+                        "task_type": "predict",
+                    })
             if tasks_to_run["cov"]:
-                tasks.append({
-                    "trait": trait,
-                    "trait_set": trait_set,
-                    "task_type": "cov",
-                })
+                if cov_chunks > 1:
+                    for fold in range(n_folds):
+                        for i in range(cov_chunks):
+                            tasks.append({
+                                "trait": trait,
+                                "trait_set": trait_set,
+                                "task_type": "cov_chunk",
+                                "chunk_index": i,
+                                "n_chunks": cov_chunks,
+                                "fold_index": fold,
+                            })
+                    tasks.append({
+                        "trait": trait,
+                        "trait_set": trait_set,
+                        "task_type": "cov_merge",
+                    })
+                else:
+                    tasks.append({
+                        "trait": trait,
+                        "trait_set": trait_set,
+                        "task_type": "cov",
+                    })
             if tasks_to_run["aoa"]:
                 tasks.append({
                     "trait": trait,
@@ -352,9 +435,44 @@ def run_task_local(
     if task_type == "predict":
         script_path = "src/models/predict_single_trait.py"
         cmd = ["python", script_path, "--trait", trait, "--trait-set", trait_set]
+    elif task_type == "predict_chunk":
+        script_path = "src/models/predict_single_trait.py"
+        cmd = [
+            "python", script_path,
+            "--trait", trait, "--trait-set", trait_set,
+            "--chunk-index", str(task["chunk_index"]),
+            "--n-chunks", str(task["n_chunks"]),
+        ]
+    elif task_type == "predict_merge":
+        script_path = "src/models/predict_single_trait.py"
+        cmd = [
+            "python", script_path,
+            "--trait", trait, "--trait-set", trait_set,
+            "--merge-chunks",
+        ]
     elif task_type == "cov":
         script_path = "src/models/predict_single_trait.py"
-        cmd = ["python", script_path, "--trait", trait, "--trait-set", trait_set, "--cov"]
+        cmd = [
+            "python", script_path,
+            "--trait", trait, "--trait-set", trait_set, "--cov",
+        ]
+    elif task_type == "cov_chunk":
+        script_path = "src/models/predict_single_trait.py"
+        cmd = [
+            "python", script_path,
+            "--trait", trait, "--trait-set", trait_set,
+            "--cov",
+            "--chunk-index", str(task["chunk_index"]),
+            "--n-chunks", str(task["n_chunks"]),
+            "--fold-index", str(task["fold_index"]),
+        ]
+    elif task_type == "cov_merge":
+        script_path = "src/models/predict_single_trait.py"
+        cmd = [
+            "python", script_path,
+            "--trait", trait, "--trait-set", trait_set,
+            "--cov", "--merge-chunks",
+        ]
     elif task_type == "aoa":
         script_path = "src/analysis/aoa_single_trait.py"
         cmd = ["python", script_path, "--trait", trait, "--trait-set", trait_set]
@@ -441,17 +559,24 @@ def get_task_resources(task_type: str, args: argparse.Namespace) -> dict:
     """Get resource requirements for a task type.
 
     Args:
-        task_type: Type of task (predict, cov, aoa, final)
+        task_type: Type of task (predict, predict_chunk, predict_merge, cov, aoa, final)
         args: Command-line arguments with resource specifications
 
     Returns:
         Dictionary with time, cpus, mem, and gres keys
     """
-    if task_type in ("predict", "cov"):
+    if task_type in ("predict", "predict_chunk", "cov", "cov_chunk"):
         return {
             "time": args.predict_time,
             "cpus": args.predict_cpus,
             "mem": args.predict_mem,
+            "gres": None,
+        }
+    elif task_type in ("predict_merge", "cov_merge"):
+        return {
+            "time": args.merge_time,
+            "cpus": args.merge_cpus,
+            "mem": args.merge_mem,
             "gres": None,
         }
     elif task_type == "aoa":
@@ -475,7 +600,11 @@ def get_task_resources(task_type: str, args: argparse.Namespace) -> dict:
 # Task type to module path mapping
 TASK_MODULES = {
     "predict": "src.models.predict_single_trait",
+    "predict_chunk": "src.models.predict_single_trait",
+    "predict_merge": "src.models.predict_single_trait",
     "cov": "src.models.predict_single_trait",
+    "cov_chunk": "src.models.predict_single_trait",
+    "cov_merge": "src.models.predict_single_trait",
     "aoa": "src.analysis.aoa_single_trait",
     "final": "src.data.build_final_product_single_trait",
 }
@@ -523,8 +652,15 @@ def run_slurm(
         print("No existing jobs found in queue")
 
     # Track jobs by trait/trait_set for dependencies
+    # job_tracker tracks the "logical" predict/cov/aoa/final jobs for
+    # downstream dependency resolution (e.g., final depends on predict)
     job_tracker: dict[tuple[str, str], dict[str, int]] = {}
+    # chunk_job_tracker tracks individual chunk job IDs so the merge
+    # job can depend on all chunks completing
+    chunk_job_tracker: dict[tuple[str, str], list[int]] = {}
+    cov_chunk_job_tracker: dict[tuple[str, str], list[int]] = {}
     skipped_jobs = []
+    submitted_count = 0
 
     for task in tasks:
         trait = task["trait"]
@@ -532,9 +668,33 @@ def run_slurm(
         task_type = task["task_type"]
 
         # Build job name (include product_code to avoid conflicts)
-        job_name = (
-            f"inf_{task_type[:4]}_{trait[:8]}_{cfg.product_code[:12]}_{trait_set[:4]}"
-        )
+        if task_type == "predict_chunk":
+            chunk_idx = task["chunk_index"]
+            job_name = (
+                f"inf_pc{chunk_idx:02d}"
+                f"_{trait[:8]}_{cfg.product_code[:12]}"
+                f"_{trait_set[:4]}"
+            )
+        elif task_type == "cov_chunk":
+            chunk_idx = task["chunk_index"]
+            fold_idx = task["fold_index"]
+            job_name = (
+                f"inf_cc{chunk_idx:02d}f{fold_idx}"
+                f"_{trait[:8]}_{cfg.product_code[:12]}"
+                f"_{trait_set[:4]}"
+            )
+        elif task_type == "cov_merge":
+            job_name = (
+                f"inf_cmer"
+                f"_{trait[:8]}_{cfg.product_code[:12]}"
+                f"_{trait_set[:4]}"
+            )
+        else:
+            job_name = (
+                f"inf_{task_type[:4]}"
+                f"_{trait[:8]}_{cfg.product_code[:12]}"
+                f"_{trait_set[:4]}"
+            )
 
         # Check if job already exists in queue
         if job_name in existing_jobs:
@@ -543,12 +703,27 @@ def run_slurm(
                 f"  Skipping {task_type}/{trait}/{trait_set}: "
                 f"job already in queue ({existing_state})"
             )
-            skipped_jobs.append((job_name, existing_job_id, existing_state))
+            skipped_jobs.append(
+                (job_name, existing_job_id, existing_state)
+            )
             # Track for dependencies
             key = (trait, trait_set)
             if key not in job_tracker:
                 job_tracker[key] = {}
-            job_tracker[key][task_type] = int(existing_job_id)
+            if task_type == "predict_chunk":
+                chunk_job_tracker.setdefault(key, []).append(
+                    int(existing_job_id)
+                )
+            elif task_type == "predict_merge":
+                job_tracker[key]["predict"] = int(existing_job_id)
+            elif task_type == "cov_chunk":
+                cov_chunk_job_tracker.setdefault(key, []).append(
+                    int(existing_job_id)
+                )
+            elif task_type == "cov_merge":
+                job_tracker[key]["cov"] = int(existing_job_id)
+            else:
+                job_tracker[key][task_type] = int(existing_job_id)
             continue
 
         # Build extra_args for build_base_command
@@ -556,10 +731,24 @@ def run_slurm(
             "--trait": trait,
             "--trait-set": trait_set,
         }
-        if task_type in ("predict", "cov"):
+        if task_type in (
+            "predict", "predict_chunk", "predict_merge",
+            "cov", "cov_chunk", "cov_merge",
+        ):
             extra_args["-v"] = None
-        if task_type == "cov":
+        if task_type == "predict_chunk":
+            extra_args["--chunk-index"] = str(task["chunk_index"])
+            extra_args["--n-chunks"] = str(task["n_chunks"])
+        if task_type == "predict_merge":
+            extra_args["--merge-chunks"] = None
+        if task_type in ("cov", "cov_chunk", "cov_merge"):
             extra_args["--cov"] = None
+        if task_type == "cov_chunk":
+            extra_args["--chunk-index"] = str(task["chunk_index"])
+            extra_args["--n-chunks"] = str(task["n_chunks"])
+            extra_args["--fold-index"] = str(task["fold_index"])
+        if task_type == "cov_merge":
+            extra_args["--merge-chunks"] = None
         if task_type == "final":
             extra_args["--dest"] = args.dest
 
@@ -575,23 +764,46 @@ def run_slurm(
         # Get resources for task type
         resources = get_task_resources(task_type, args)
 
-        # Determine dependencies for final tasks
+        # Determine dependencies
         dependency = None
-        if task_type == "final":
-            key = (trait, trait_set)
+        key = (trait, trait_set)
+        if task_type == "predict_merge":
+            chunk_ids = chunk_job_tracker.get(key, [])
+            if chunk_ids:
+                dependency = (
+                    "afterok:"
+                    + ":".join(str(j) for j in chunk_ids)
+                )
+        elif task_type == "cov_merge":
+            chunk_ids = cov_chunk_job_tracker.get(key, [])
+            if chunk_ids:
+                dependency = (
+                    "afterok:"
+                    + ":".join(str(j) for j in chunk_ids)
+                )
+        elif task_type == "final":
             if key in job_tracker:
                 dep_job_ids = list(job_tracker[key].values())
                 if dep_job_ids:
-                    dependency = "afterok:" + ":".join(str(j) for j in dep_job_ids)
+                    dependency = (
+                        "afterok:"
+                        + ":".join(str(j) for j in dep_job_ids)
+                    )
 
         # Get partition using round-robin distribution
         partition = distributor.get_next()
 
-        # Build Slurm job kwargs (only include optional params if they have values)
+        # Build Slurm job kwargs
         slurm_kwargs = {
             "job_name": job_name,
-            "output": str(product_log_dir / f"%j_{task_type}_{trait}_{trait_set}.log"),
-            "error": str(product_log_dir / f"%j_{task_type}_{trait}_{trait_set}.err"),
+            "output": str(
+                product_log_dir
+                / f"%j_{task_type}_{trait}_{trait_set}.log"
+            ),
+            "error": str(
+                product_log_dir
+                / f"%j_{task_type}_{trait}_{trait_set}.err"
+            ),
             "partition": partition,
             "time": resources["time"],
             "cpus_per_task": resources["cpus"],
@@ -602,49 +814,91 @@ def run_slurm(
         if dependency:
             slurm_kwargs["dependency"] = dependency
 
-        # Create Slurm job
+        # Create and submit Slurm job
         slurm = Slurm(**slurm_kwargs)
-
-        # Submit job
         job_id = slurm.sbatch(command)
+        submitted_count += 1
 
         # Track job for dependencies
-        key = (trait, trait_set)
         if key not in job_tracker:
             job_tracker[key] = {}
-        job_tracker[key][task_type] = job_id
+        if task_type == "predict_chunk":
+            chunk_job_tracker.setdefault(key, []).append(job_id)
+        elif task_type == "predict_merge":
+            # Register merge as "predict" so downstream tasks
+            # (cov, aoa, final) depend on the merge completing
+            job_tracker[key]["predict"] = job_id
+        elif task_type == "cov_chunk":
+            cov_chunk_job_tracker.setdefault(key, []).append(
+                job_id
+            )
+        elif task_type == "cov_merge":
+            # Register merge as "cov" for downstream deps
+            job_tracker[key]["cov"] = job_id
+        else:
+            job_tracker[key][task_type] = job_id
 
         # Print submission info
         dep_info = ""
         if dependency:
             n_deps = len(dependency.split(":")) - 1
             dep_info = f" (depends on {n_deps} jobs)"
-        partition_info = f" [{partition}]" if len(distributor) > 1 else ""
-        print(
-            f"  Submitted {task_type}/{trait}/{trait_set}: "
-            f"job {job_id}{partition_info}{dep_info}"
+        partition_info = (
+            f" [{partition}]" if len(distributor) > 1 else ""
         )
+        if task_type == "predict_chunk":
+            print(
+                f"  Submitted chunk {task['chunk_index']}/{task['n_chunks']}"
+                f" for {trait}/{trait_set}: "
+                f"job {job_id}{partition_info}"
+            )
+        elif task_type == "cov_chunk":
+            print(
+                f"  Submitted cov fold {task['fold_index']} "
+                f"chunk {task['chunk_index']}/{task['n_chunks']}"
+                f" for {trait}/{trait_set}: "
+                f"job {job_id}{partition_info}"
+            )
+        else:
+            print(
+                f"  Submitted {task_type}/{trait}/{trait_set}: "
+                f"job {job_id}{partition_info}{dep_info}"
+            )
 
         # Small delay to avoid overwhelming scheduler
         time.sleep(0.5)
 
     # Collect all job IDs for summary
     all_job_ids = []
-    task_counts = {"predict": 0, "cov": 0, "aoa": 0, "final": 0}
+    task_counts: dict[str, int] = {}
     for trait_jobs in job_tracker.values():
-        for task_type, job_id in trait_jobs.items():
-            all_job_ids.append(job_id)
-            task_counts[task_type] += 1
+        for tt, jid in trait_jobs.items():
+            all_job_ids.append(jid)
+            task_counts[tt] = task_counts.get(tt, 0) + 1
+    for chunk_ids in chunk_job_tracker.values():
+        for jid in chunk_ids:
+            all_job_ids.append(jid)
+            task_counts["predict_chunk"] = (
+                task_counts.get("predict_chunk", 0) + 1
+            )
+    for chunk_ids in cov_chunk_job_tracker.values():
+        for jid in chunk_ids:
+            all_job_ids.append(jid)
+            task_counts["cov_chunk"] = (
+                task_counts.get("cov_chunk", 0) + 1
+            )
 
-    num_submitted = len(all_job_ids) - len(skipped_jobs)
     print(f"\n{'='*60}")
-    print(f"Submitted {num_submitted} new jobs")
+    print(f"Submitted {submitted_count} new jobs")
     if skipped_jobs:
         print(f"Skipped {len(skipped_jobs)} jobs already in queue")
-    print(f"  - Predict: {task_counts['predict']}")
-    print(f"  - CoV: {task_counts['cov']}")
-    print(f"  - AoA: {task_counts['aoa']}")
-    print(f"  - Final: {task_counts['final']}")
+    for tt in [
+        "predict", "predict_chunk", "predict_merge",
+        "cov", "cov_chunk", "cov_merge",
+        "aoa", "final",
+    ]:
+        if task_counts.get(tt, 0) > 0:
+            print(f"  - {tt}: {task_counts[tt]}")
 
     # Show partition distribution if using multiple partitions
     if len(distributor) > 1:
@@ -718,13 +972,25 @@ def main() -> None:
     print(f"  - Final: {tasks_to_run['final']}")
 
     # Generate all inference tasks
-    tasks = generate_tasks(traits, trait_sets, tasks_to_run)
+    predict_chunks = getattr(args, "predict_chunks", 1)
+    cov_chunks = getattr(args, "cov_chunks", 1)
+    n_folds = cfg.train.cv_splits.n_splits
+    tasks = generate_tasks(
+        traits, trait_sets, tasks_to_run,
+        predict_chunks=predict_chunks,
+        cov_chunks=cov_chunks,
+        n_folds=n_folds,
+    )
 
     print(f"\nTotal inference tasks: {len(tasks)}")
-    print(f"  - Predict tasks: {len([t for t in tasks if t['task_type'] == 'predict'])}")
-    print(f"  - CoV tasks: {len([t for t in tasks if t['task_type'] == 'cov'])}")
-    print(f"  - AoA tasks: {len([t for t in tasks if t['task_type'] == 'aoa'])}")
-    print(f"  - Final tasks: {len([t for t in tasks if t['task_type'] == 'final'])}")
+    for tt in [
+        "predict", "predict_chunk", "predict_merge",
+        "cov", "cov_chunk", "cov_merge",
+        "aoa", "final",
+    ]:
+        count = len([t for t in tasks if t["task_type"] == tt])
+        if count > 0:
+            print(f"  - {tt}: {count}")
     print(f"\nExecution mode: {mode}")
 
     if use_local:
