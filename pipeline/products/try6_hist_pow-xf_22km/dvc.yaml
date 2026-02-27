@@ -42,6 +42,7 @@ stages:
       --cpus 4
       --mem 16GB
       --time 01:00:00
+      --exclude g3607
     deps:
       - ${project_root}/src/models/histogram_mlp/hpo.py
       - ${project_root}/src/models/histogram_mlp/train.py
@@ -68,6 +69,7 @@ stages:
       --cpus 4
       --mem 8GB
       --time 01:30:00
+      --exclude g3607
     deps:
       - ${project_root}/src/models/histogram_mlp/train.py
       - ${project_root}/src/models/histogram_mlp/model.py
