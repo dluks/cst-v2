@@ -218,9 +218,12 @@ def train_fold(
     scheduler = CosineAnnealingLR(optimizer, T_max=cfg.train.max_epochs)
 
     # Training loop
+    from torch.utils.tensorboard import SummaryWriter
+
     best_val_loss = float("inf")
     patience_counter = 0
     training_log: list[dict] = []
+    writer = SummaryWriter(log_dir=output_dir / "tb")
 
     for epoch in range(cfg.train.max_epochs):
         train_loss = train_one_epoch(model, train_dl, criterion, optimizer, device)
@@ -234,6 +237,10 @@ def train_fold(
             "val_loss": val_loss,
             "lr": lr,
         })
+
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("Loss/val", val_loss, epoch)
+        writer.add_scalar("LearningRate", lr, epoch)
 
         if epoch % 10 == 0 or epoch == cfg.train.max_epochs - 1:
             log.info(
@@ -255,6 +262,8 @@ def train_fold(
         if patience_counter >= cfg.train.patience:
             log.info("Early stopping at epoch %d (patience=%d)", epoch, cfg.train.patience)
             break
+
+    writer.close()
 
     # Save training log
     _save_training_log(training_log, output_dir / "training_log.csv")
@@ -336,15 +345,24 @@ def train_full_model(
     )
     scheduler = CosineAnnealingLR(optimizer, T_max=cfg.train.max_epochs)
 
+    from torch.utils.tensorboard import SummaryWriter
+
     training_log: list[dict] = []
+    writer = SummaryWriter(log_dir=output_dir / "tb")
+
     for epoch in range(cfg.train.max_epochs):
         train_loss = train_one_epoch(model, train_dl, criterion, optimizer, device)
         scheduler.step()
         lr = optimizer.param_groups[0]["lr"]
         training_log.append({"epoch": epoch, "train_loss": train_loss, "lr": lr})
 
+        writer.add_scalar("Loss/train", train_loss, epoch)
+        writer.add_scalar("LearningRate", lr, epoch)
+
         if epoch % 10 == 0 or epoch == cfg.train.max_epochs - 1:
             log.info("  Epoch %3d: train=%.6f  lr=%.2e", epoch, train_loss, lr)
+
+    writer.close()
 
     torch.save(model.state_dict(), output_dir / "best_model.pt")
     _save_training_log(training_log, output_dir / "training_log.csv")
@@ -410,7 +428,7 @@ def run_cv(
         fold_metrics.append(metrics)
 
     # Aggregate CV metrics
-    summary = _aggregate_cv_metrics(fold_metrics)
+    summary = aggregate_cv_metrics(fold_metrics)
     with open(cv_dir / "cv_summary.json", "w") as f:
         json.dump(summary, f, indent=2, default=_json_default)
 
@@ -443,7 +461,7 @@ def _save_training_log(log_entries: list[dict], path: Path) -> None:
         writer.writerows(log_entries)
 
 
-def _aggregate_cv_metrics(fold_metrics: list[dict]) -> dict:
+def aggregate_cv_metrics(fold_metrics: list[dict]) -> dict:
     """Aggregate per-fold metrics into a CV summary."""
     summary: dict = {}
 
