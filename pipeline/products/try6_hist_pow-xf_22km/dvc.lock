@@ -45,8 +45,8 @@ stages:
       nfiles: 217
   run_histogram_hpo:
     cmd: uv run python ../../../stages/run_histogram_hpo.py --params params.yaml --partitions
-      l40s --n-workers 8 --n-trials-per-worker 25 --hpo-fold 0 --gpus 1 --cpus 4 --mem
-      16GB --time 01:00:00
+      l40s --n-workers 6 --n-trials-per-worker 25 --hpo-fold None --gpus 1 --cpus
+      4 --mem 16GB --time 01:00:00
     deps:
     - path: ../../../data/features/try6_hist_pow-xf_22km/xy_data/train.zarr
       hash: md5
@@ -83,9 +83,9 @@ stages:
           n_bins: 20
           label_smoothing_epsilon: 0.01
         hpo:
-          n_workers: 8
+          n_workers: 6
           n_trials_per_worker: 25
-          hpo_fold: 0
+          hpo_fold:
         train:
           arch: histogram_mlp
           hidden_dims:
@@ -106,6 +106,6 @@ stages:
     outs:
     - path: ../../../models/try6_hist_pow-xf_22km/hpo
       hash: md5
-      md5: c8fa5aab37cc848eefa13600c09e9008.dir
-      size: 2754984715
-      nfiles: 1262
+      md5: 2ec5cc4d09e9bced7e5c947de8e9fc55.dir
+      size: 1279428027
+      nfiles: 534
