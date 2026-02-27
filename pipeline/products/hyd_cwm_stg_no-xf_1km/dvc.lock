@@ -640,3 +640,47 @@ stages:
       hash: md5
       md5: 9e5b023c4473cc5a49cc45291053c559
       size: 180287865
+  predict:
+    cmd: python ../../../stages/inference.py --params params.yaml --predict-only --trait-sets
+      splot_gbif --partitions milan genoa --predict-chunks 64 --predict-cpus 16 --predict-mem
+      20GB --predict-time 06:00:00 --merge-cpus 8 --merge-mem 64GB --merge-time 02:00:00
+      --overwrite
+    deps:
+    - path: ../../../data/features/predict/modis_wc2_soil_canopy_vodca_alos_1km/X.parquet
+      hash: md5
+      md5: 9c9a86422be1edfff220bad343985715
+      size: 28636601445
+    - path: ../../../models/hyd_cwm_stg_no-xf_1km
+      hash: md5
+      md5: 2fb35f047d3b90fb0681ef33f0ac1b06.dir
+      size: 834581517109
+      nfiles: 17386
+    - path: ../../../src/models/predict_single_trait.py
+      hash: md5
+      md5: c4f4c62f197ac4af8f953d7c63293a61
+      size: 28226
+    - path: ../../../stages/inference.py
+      hash: md5
+      md5: 02a8058de5b3fa70a0e09aacb1eea7e7
+      size: 33877
+      isexec: true
+    params:
+      params.yaml:
+        predict:
+          dir: predict
+          nemo:
+            batches: 1
+          geos:
+            n_workers: 1
+            batches: 8
+          pylos:
+            n_workers: 1
+            batches: 24
+        train.trait_sets:
+        - splot_gbif
+    outs:
+    - path: ../../../data/processed/hyd_cwm_stg_no-xf_1km/predict
+      hash: md5
+      md5: a312e29b08d25f6c54fca14cc551661f.dir
+      size: 1823020764
+      nfiles: 6
