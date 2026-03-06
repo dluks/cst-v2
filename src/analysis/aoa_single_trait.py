@@ -25,13 +25,23 @@ from src.utils.dask_utils import close_dask, df_to_dd, init_dask
 from src.utils.dataset_utils import (
     get_aoa_dir,
     get_latest_run,
-    get_predict_imputed_fn,
     get_trait_models_dir,
     get_y_fn,
 )
 from src.utils.df_utils import rasterize_points
 from src.utils.raster_utils import pack_xr, xr_to_raster_rasterio
 from src.utils.training_utils import assign_splits, filter_trait_set, set_yx_index
+
+
+def _get_predict_fp(cfg: ConfigBox) -> Path:
+    """Get the path to the raw predict features file."""
+    return Path(cfg.train.predict.fp)
+
+
+def _impute_nans_median(df: pd.DataFrame) -> pd.DataFrame:
+    """Impute NaN values with column medians (in-place for efficiency)."""
+    medians = df.median()
+    return df.fillna(medians)
 
 
 def cli() -> argparse.Namespace:
@@ -85,6 +95,9 @@ def load_train_data(
     if cfg is None:
         cfg = get_config()
 
+    predict_fp = _get_predict_fp(cfg)
+    log.info("Loading predict features from %s", predict_fp)
+
     with Client(n_workers=20, dashboard_address=cfg.dask_dashboard):
         train = (
             pd.read_parquet(get_y_fn(), columns=["x", "y", y_col, "source"])
@@ -97,8 +110,7 @@ def load_train_data(
             .drop(columns=[y_col, "source"])
             .pipe(df_to_dd, npartitions=50)
             .merge(
-                # Merge using inner join with the imputed predict data
-                dd.read_parquet(get_predict_imputed_fn()).repartition(npartitions=200),
+                dd.read_parquet(predict_fp).repartition(npartitions=200),
                 how="inner",
                 on=["x", "y"],
             )
@@ -108,13 +120,20 @@ def load_train_data(
             .reset_index(drop=True)
         )
 
+    n_nans = train.drop(columns=["fold"]).isna().any(axis=1).sum()
+    if n_nans > 0:
+        log.info("Imputing %d rows with NaN values (median imputation)...", n_nans)
+        fold_col = train["fold"]
+        train = _impute_nans_median(train.drop(columns=["fold"]))
+        train["fold"] = fold_col
+
     return train
 
 
 def load_predict_data(
     npartitions: int | None = None, sample: int | float = 1, cfg: ConfigBox | None = None
 ) -> dd.DataFrame:
-    """Load the imputed predict data for the AoA analysis.
+    """Load the predict data for the AoA analysis, imputing NaN with medians.
 
     Args:
         npartitions: Number of partitions for Dask DataFrame
@@ -122,14 +141,22 @@ def load_predict_data(
         cfg: Configuration (if None, loads from get_config())
 
     Returns:
-        Dask DataFrame with features
+        Dask DataFrame with features (NaN-free)
     """
     if cfg is None:
         cfg = get_config()
 
-    ddf = dd.read_parquet(get_predict_imputed_fn()).sample(
+    predict_fp = _get_predict_fp(cfg)
+    log.info("Loading predict features from %s", predict_fp)
+
+    ddf = dd.read_parquet(predict_fp).sample(
         frac=sample, random_state=cfg.random_seed
     )
+
+    # Compute medians from a sample for efficiency, then impute all partitions
+    log.info("Computing column medians for NaN imputation...")
+    medians = ddf.median().compute()
+    ddf = ddf.fillna(medians)
 
     if npartitions is not None:
         return ddf.repartition(npartitions=npartitions)

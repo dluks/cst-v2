@@ -355,6 +355,8 @@ def get_cv_models_dir(predictor: TabularPredictor) -> Path:
 
 def get_train_dir(config: ConfigBox = cfg) -> Path:
     """Get the path to the train directory for a specific configuration."""
+    if getattr(config, "product_code", None) is not None:
+        return Path(config.train.dir) / config.product_code
     return Path(config.train.dir) / config.PFT / config.model_res
 
 
@@ -386,6 +388,8 @@ def get_autocorr_ranges_fn(config: ConfigBox = cfg) -> Path:
 
 def get_cv_splits_dir(config: ConfigBox = cfg) -> Path:
     """Get the path to the CV splits directory for a specific configuration."""
+    if getattr(config.train.cv_splits, "dir_fp", None) is not None:
+        return Path(config.train.cv_splits.dir_fp)
     return get_train_dir(config) / config.train.cv_splits.dir
 
 

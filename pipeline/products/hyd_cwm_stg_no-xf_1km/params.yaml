@@ -47,6 +47,15 @@ nemo:
   calc_spatial_autocorr:
     n_workers: 4
     n_chunks: 24 # x direction only
+  1km:
+    aoa:
+      device_ids: [0, 0]  # Slurm assigns 1 GPU; both CuPy and Dask share device 0
+      predict_sample: 0.5
+      splot_gbif:
+        chunked_dist: true
+        train_sample: 0.5
+        avg_dist_batch_size: 5000
+        predict_partitions: null
 
 mask:
   path: data/raw/esa_worldcover_v100_1km/esa_worldcover_v100_1km.tif
