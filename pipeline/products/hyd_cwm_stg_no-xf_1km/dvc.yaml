@@ -177,11 +177,12 @@ stages:
       --aoa-only
       --trait-sets splot_gbif
       --partitions l40s
-      --aoa-cpus 112
-      --aoa-mem 128GB
+      --aoa-cpus 15
+      --aoa-mem 60GB
       --aoa-gpus 1
       --aoa-time 04:00:00
       --overwrite
+      --traits rdmax
     deps:
       - ${project_root}/stages/inference.py
       - ${project_root}/src/analysis/aoa_single_trait.py

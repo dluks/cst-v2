@@ -581,6 +581,51 @@ def build_base_command(
     return cmd
 
 
+def get_nvidia_ld_library_path() -> str:
+    """
+    Build LD_LIBRARY_PATH entries for pip-installed NVIDIA CUDA libraries.
+
+    When CUDA packages are installed via pip (e.g., nvidia-cuda-runtime-cu12),
+    the shared libraries end up in site-packages/nvidia/*/lib/ and are not
+    on the default library path. This function discovers those directories
+    so they can be prepended to LD_LIBRARY_PATH in Slurm job commands.
+
+    Returns:
+        Colon-separated string of nvidia lib directories, or empty string
+        if none found.
+    """
+    import site
+
+    nvidia_dirs = []
+    for sp in site.getsitepackages() + [site.getusersitepackages()]:
+        nvidia_base = Path(sp) / "nvidia"
+        if nvidia_base.is_dir():
+            for lib_dir in nvidia_base.glob("*/lib"):
+                if lib_dir.is_dir():
+                    nvidia_dirs.append(str(lib_dir))
+    return ":".join(nvidia_dirs)
+
+
+def wrap_command_with_cuda_env(command: str) -> str:
+    """
+    Wrap a shell command with LD_LIBRARY_PATH exports for NVIDIA CUDA libraries.
+
+    Use this for Slurm jobs that need GPU access (e.g., cuDF, cuML, CuPy)
+    when CUDA libraries are pip-installed rather than system-installed.
+
+    Args:
+        command: Shell command string to wrap
+
+    Returns:
+        Command string with LD_LIBRARY_PATH export prepended, or the
+        original command if no NVIDIA libraries are found.
+    """
+    nvidia_path = get_nvidia_ld_library_path()
+    if nvidia_path:
+        return f'export LD_LIBRARY_PATH="{nvidia_path}:$LD_LIBRARY_PATH" && {command}'
+    return command
+
+
 def format_command_string(cmd_parts: list[str]) -> str:
     """
     Format command parts into a string suitable for execution.

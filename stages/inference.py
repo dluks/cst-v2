@@ -33,6 +33,7 @@ from src.pipeline.entrypoint_utils import (
     setup_environment,
     setup_log_directory,
     wait_for_job_completion,
+    wrap_command_with_cuda_env,
 )
 
 project_root = setup_environment()
@@ -761,8 +762,10 @@ def run_slurm(
         )
         command = " ".join(cmd_parts)
 
-        # Get resources for task type
+        # Wrap GPU tasks with CUDA library path setup
         resources = get_task_resources(task_type, args)
+        if resources["gres"]:
+            command = wrap_command_with_cuda_env(command)
 
         # Determine dependencies
         dependency = None
