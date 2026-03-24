@@ -111,7 +111,7 @@ stages:
       nfiles: 534
   train_histogram_model:
     cmd: uv run python ../../../stages/train_histogram_model.py --params params.yaml
-      --partitions l40s --gpus 1 --cpus 4 --mem 8GB --time 01:30:00
+      --partitions l40s --gpus 1 --cpus 4 --mem 8GB --time 01:30:00 --exclude g3607
     deps:
     - path: ../../../data/features/try6_hist_pow-xf_22km/xy_data/train.zarr
       hash: md5
@@ -133,8 +133,8 @@ stages:
       size: 5090
     - path: ../../../src/models/histogram_mlp/evaluate.py
       hash: md5
-      md5: 7446511d66bad3677b1bc04276239177
-      size: 9601
+      md5: b9bfef1e69aadd4cd958fb71e17f4bf0
+      size: 11331
     - path: ../../../src/models/histogram_mlp/loss.py
       hash: md5
       md5: f8e0a851b59726627e4ff57a0ded9256
@@ -145,8 +145,8 @@ stages:
       size: 2141
     - path: ../../../src/models/histogram_mlp/train.py
       hash: md5
-      md5: 1e93ab1f9fcd1888439f0607432a0fe4
-      size: 23534
+      md5: 3f1770f4a8a2d5fd660303c76b8e12f8
+      size: 30556
     params:
       params.yaml:
         histogram:
@@ -174,6 +174,6 @@ stages:
     outs:
     - path: ../../../models/try6_hist_pow-xf_22km/training
       hash: md5
-      md5: 8f3140a685654c7f94ed4956345bb6dd.dir
-      size: 67582492
-      nfiles: 64
+      md5: a8132a21da6ba756c9b9ec9ec7af6ef8.dir
+      size: 162580410
+      nfiles: 119
