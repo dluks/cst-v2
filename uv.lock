@@ -356,6 +356,7 @@ dependencies = [
     { name = "simple-slurm" },
     { name = "statsmodels" },
     { name = "tabulate" },
+    { name = "torch" },
     { name = "tqdm" },
     { name = "utm" },
     { name = "wheel" },
@@ -370,11 +371,11 @@ analysis = [
 cuda = [
     { name = "cupy-cuda12x" },
     { name = "optuna" },
-    { name = "torch" },
 ]
 
 [package.dev-dependencies]
 dev = [
+    { name = "ipykernel" },
     { name = "jupyterlab" },
     { name = "optuna-dashboard" },
     { name = "pre-commit" },
@@ -421,7 +422,7 @@ requires-dist = [
     { name = "simple-slurm", specifier = ">=0.3.6" },
     { name = "statsmodels", specifier = ">=0.14.2" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "torch", marker = "extra == 'cuda'", specifier = ">=2.0.0", index = "https://download.pytorch.org/whl/cu121" },
+    { name = "torch", specifier = ">=2.0.0", index = "https://download.pytorch.org/whl/cu121" },
     { name = "tqdm", specifier = ">=4.66.4" },
     { name = "utm", specifier = ">=0.7.0" },
     { name = "wheel", specifier = ">=0.43.0" },
@@ -431,6 +432,7 @@ provides-extras = ["cuda", "analysis"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "jupyterlab", specifier = ">=4.5.3" },
     { name = "optuna-dashboard", specifier = ">=0.20.0" },
     { name = "pre-commit", specifier = ">=3.6.2" },

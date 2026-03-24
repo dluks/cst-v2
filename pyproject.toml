@@ -40,11 +40,11 @@ dependencies = [
     "openpyxl>=3.1.5",
     "simple-slurm>=0.3.6",
     "zarr>=3.1.5",
+    "torch>=2.0.0"
 ]
 
 [project.optional-dependencies]
 cuda = [
-    "torch>=2.0.0",
     "cupy-cuda12x>=13.6.0",
     "optuna>=3.6.0",
     # "cudf-cu11>=24.10.0",
@@ -66,6 +66,7 @@ dev = [
     "jupyterlab>=4.5.3",
     "optuna-dashboard>=0.20.0",
     "tensorboard>=2.20.0",
+    "ipykernel>=7.1.0",
 ]
 
 [build-system]
