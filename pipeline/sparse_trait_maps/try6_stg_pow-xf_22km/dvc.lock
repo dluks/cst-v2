@@ -1,0 +1,24 @@
+schema: '2.0'
+stages:
+  build_splot_maps:
+    cmd: python ../../../stages/build_splot_maps.py --params params.yaml --output-format
+      zarr --partitions milan genoa --cpus 2 --mem 16GB --time 00:15:00
+    deps:
+    - path: ../../../data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      hash: md5
+      md5: 365278ea23f682c67d2244c470471b53
+      size: 144452091
+    - path: ../../../data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+      hash: md5
+      md5: 54ac228d3bd13c72802925f6e8401f2f
+      size: 13514924
+    - path: ../../../src/data/build_splot_map.py
+      hash: md5
+      md5: 9db0afb3298d4f4c641318d5c07e8f58
+      size: 15146
+    outs:
+    - path: ../../../data/interim/splot/maps/try6_stg_pow-xf_22km
+      hash: md5
+      md5: 001f7c8fd8c36b489750b2a74f526cc4.dir
+      size: 63520491
+      nfiles: 837
