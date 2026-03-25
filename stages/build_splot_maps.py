@@ -54,18 +54,26 @@ def cli() -> argparse.Namespace:
         mem_default="30GB",
         include_gpus=False,
     )
+    parser.add_argument(
+        "-f",
+        "--output-format",
+        type=str,
+        choices=["tif", "zarr"],
+        default="tif",
+        help="Output format passed to build_splot_map: 'tif' or 'zarr'. Default: tif.",
+    )
     return parser.parse_args()
 
 
 def run_trait_job(
-    trait: str, params_path: str | None, overwrite: bool
+    trait: str, params_path: str | None, overwrite: bool, output_format: str = "tif"
 ) -> tuple[str, int]:
     """Run a single trait job locally."""
     cmd = build_base_command(
         "src.data.build_splot_map",
         params_path=params_path,
         overwrite=overwrite,
-        extra_args={"--trait": trait}
+        extra_args={"--trait": trait, "--output-format": output_format}
     )
 
     print(f"Running: {' '.join(cmd)}")
@@ -74,7 +82,8 @@ def run_trait_job(
 
 
 def run_local(
-    trait_names: list[str], params_path: str | None, overwrite: bool, n_jobs: int
+    trait_names: list[str], params_path: str | None, overwrite: bool, n_jobs: int,
+    output_format: str = "tif",
 ) -> None:
     """Run trait jobs locally in parallel."""
     print(f"\nRunning {len(trait_names)} traits locally with {n_jobs} parallel jobs")
@@ -82,7 +91,7 @@ def run_local(
     with ProcessPoolExecutor(max_workers=n_jobs) as executor:
         # Submit all jobs
         futures = {
-            executor.submit(run_trait_job, trait, params_path, overwrite): trait
+            executor.submit(run_trait_job, trait, params_path, overwrite, output_format): trait
             for trait in trait_names
         }
 
@@ -127,6 +136,7 @@ def run_slurm(
     time_limit: str,
     cpus: int,
     mem: str,
+    output_format: str = "tif",
 ) -> None:
     """Submit trait jobs to Slurm and wait for completion."""
     # Create partition distributor for round-robin distribution
@@ -140,7 +150,7 @@ def run_slurm(
             "src.data.build_splot_map",
             params_path=params_path,
             overwrite=overwrite,
-            extra_args={"--trait": trait}
+            extra_args={"--trait": trait, "--output-format": output_format}
         )
         command = " ".join(cmd_parts)
 
@@ -224,7 +234,8 @@ def main() -> None:
 
     if use_local:
         # Run locally in parallel
-        run_local(trait_names, str(params_path), args.overwrite, args.n_jobs)
+        run_local(trait_names, str(params_path), args.overwrite, args.n_jobs,
+                  args.output_format)
     else:
         # Determine partitions to use
         partitions = resolve_partitions(args.partition, args.partitions)
@@ -248,6 +259,7 @@ def main() -> None:
             args.time,
             args.cpus,
             args.mem,
+            args.output_format,
         )
 
 

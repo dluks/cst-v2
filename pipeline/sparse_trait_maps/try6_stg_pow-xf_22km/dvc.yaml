@@ -1,0 +1,20 @@
+params:
+  - params.yaml
+
+stages:
+  build_splot_maps:
+    cmd: >-
+      python ${project_root}/stages/build_splot_maps.py
+      --params params.yaml
+      --output-format zarr
+      --partitions milan genoa
+      --cpus 2
+      --mem 16GB
+      --time 00:15:00
+    deps:
+      - ${project_root}/src/data/build_splot_map.py
+      - ${project_root}/data/interim/splot/filtered_surveys/try6/splot_filtered.parquet
+      - ${project_root}/data/interim/traits/try6_pow-xf/try6_pow-xf.parquet
+    outs:
+      - ${project_root}/${splot.maps.out_dir}/${product_code}:
+          persist: true
